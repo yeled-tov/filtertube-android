@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:  # מאפשר הרצה ידנית
 
+# הרשאה ליצור Releases (אחרת מקבלים 403)
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
