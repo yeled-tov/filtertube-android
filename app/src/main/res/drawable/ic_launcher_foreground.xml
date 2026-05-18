@@ -4,7 +4,16 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- מלבן אדום מעוגל (כמו לוגו YouTube) -->
+    <path
+        android:fillColor="#FF0000"
+        android:pathData="M28,38 Q28,32 34,32 L74,32 Q80,32 80,38 L80,70 Q80,76 74,76 L34,76 Q28,76 28,70 Z"/>
+    <!-- משולש play לבן עם FT בתוך -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M30,40 L78,40 L78,68 L65,68 L65,75 L43,75 L43,68 L30,68 Z M48,45 L48,63 L62,54 Z"/>
+        android:pathData="M48,44 L48,64 L66,54 Z"/>
+    <!-- F + T בכחול תוך הפליי (FT) -->
+    <path
+        android:fillColor="#FF0000"
+        android:pathData="M50,49 L50,59 L52,59 L52,55 L54,55 L54,53 L52,53 L52,51 L55,51 L55,49 Z M56,49 L56,51 L58,51 L58,59 L60,59 L60,51 L62,51 L62,49 Z"/>
 </vector>
