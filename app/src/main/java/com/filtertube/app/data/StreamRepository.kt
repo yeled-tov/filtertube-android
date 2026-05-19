@@ -13,21 +13,12 @@ data class StreamData(
     val uploaderName: String,
     val durationSec: Long,
     val viewCount: Long,
-    val likeCount: Long,
     val description: String?,
     val thumbnailUrl: String?,
-    // ה-URL הטוב ביותר — דחיפת ExoPlayer
+    /** ה-URL הטוב ביותר ל-ExoPlayer (mp4 muxed) */
     val bestVideoUrl: String,
-    // אופציונלי — לניגון ברקע (אודיו בלבד)
+    /** אופציונלי — לניגון ברקע בעתיד */
     val bestAudioUrl: String?,
-    // איכויות זמינות (לבחירה ידנית בעתיד)
-    val qualities: List<VideoQuality>,
-)
-
-data class VideoQuality(
-    val label: String,    // "720p", "1080p"...
-    val url: String,
-    val isHls: Boolean,
 )
 
 /**
@@ -37,44 +28,58 @@ data class VideoQuality(
  */
 object StreamRepository {
 
-    /**
-     * מחלץ stream URLs לסרטון. עלול לקחת 2-5 שניות.
-     */
     suspend fun getStream(videoId: String): StreamData = withContext(Dispatchers.IO) {
         val url = "https://www.youtube.com/watch?v=$videoId"
         val info = StreamInfo.getInfo(ServiceList.YouTube, url)
 
-        // Muxed streams עם אודיו וביוואו ביחד
-        val muxed = info.videoStreams?.filter { !it.isVideoOnly } ?: emptyList()
-        // Video-only streams (יותר איכויות זמינות אבל צריך לערבב עם אודיו)
-        val videoOnly = info.videoStreams?.filter { it.isVideoOnly } ?: emptyList()
+        // Muxed streams עם אודיו ווידאו ביחד (פחות איכויות אבל יותר פשוט)
+        val muxed = info.videoStreams.orEmpty().filter { !it.isVideoOnly }
+        val videoOnly = info.videoStreams.orEmpty().filter { it.isVideoOnly }
 
-        // עדיפות לmuxed (אין צורך בערבוב). אם אין — ניקח את ההגבוה ביותר
-        val best = muxed.maxByOrNull { it.height ?: 0 }
-            ?: videoOnly.maxByOrNull { it.height ?: 0 }
-            ?: throw IllegalStateException("לא נמצא video stream")
+        // עדיפות לmuxed; אם אין → הגבוה ביותר מ-videoOnly
+        @Suppress("DEPRECATION")
+        val best = muxed.maxByOrNull { it.height }
+            ?: videoOnly.maxByOrNull { it.height }
+            ?: throw IllegalStateException("לא נמצא video stream לסרטון")
 
-        val audioBest = info.audioStreams?.maxByOrNull { it.bitrate } ?: info.audioStreams?.firstOrNull()
+        val audioBest = info.audioStreams.orEmpty().maxByOrNull { it.bitrate }
 
-        val qualities = muxed.map { s ->
-            VideoQuality(
-                label = "${s.height ?: 0}p",
-                url = s.content,
-                isHls = false,
-            )
+        // Description ו-thumbnail — שונים בין גרסאות של NewPipeExtractor.
+        // משתמשים בreflection-safe access דרך try/catch
+        val description = try {
+            info.description?.content
+        } catch (_: Throwable) { null }
+
+        val thumbnail = try {
+            // ננסה תחילה .thumbnails (גרסאות חדשות), אם נכשל → .thumbnailUrl
+            val thumbsField = info.javaClass.methods.firstOrNull {
+                it.name == "getThumbnails" && it.parameterCount == 0
+            }
+            if (thumbsField != null) {
+                @Suppress("UNCHECKED_CAST")
+                val list = thumbsField.invoke(info) as? List<Any?>
+                list?.firstOrNull()?.let { img ->
+                    img.javaClass.methods.firstOrNull { it.name == "getUrl" }
+                        ?.invoke(img) as? String
+                }
+            } else {
+                // fallback ישן
+                val urlField = info.javaClass.methods.firstOrNull { it.name == "getThumbnailUrl" }
+                urlField?.invoke(info) as? String
+            }
+        } catch (_: Throwable) {
+            "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
         }
 
         StreamData(
-            title = info.name ?: "",
-            uploaderName = info.uploaderName ?: "",
+            title = info.name.orEmpty(),
+            uploaderName = info.uploaderName.orEmpty(),
             durationSec = info.duration,
             viewCount = info.viewCount,
-            likeCount = info.likeCount,
-            description = info.description?.content,
-            thumbnailUrl = info.thumbnails?.maxByOrNull { it.height }?.url,
-            bestVideoUrl = best.content,
-            bestAudioUrl = audioBest?.content,
-            qualities = qualities,
+            description = description,
+            thumbnailUrl = thumbnail ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+            bestVideoUrl = best.content ?: best.url.orEmpty(),
+            bestAudioUrl = audioBest?.content ?: audioBest?.url,
         )
     }
 }

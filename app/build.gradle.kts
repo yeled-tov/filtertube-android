@@ -79,9 +79,6 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
 
     // NewPipeExtractor — חילוץ stream URLs מ-YouTube ישירות מהטלפון
-    // (אותה ספריה ש-NewPipe משתמש בה — מיליוני משתמשים)
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.5")
-
-    // Rhino — JS interpreter שNewPipeExtractor צריך ל-n-param decoding
-    implementation("org.mozilla:rhino:1.7.14")
+    // גרסה יציבה ידועה (אותה ספריה ש-NewPipe משתמש בה — מיליוני משתמשים)
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.3")
 }
