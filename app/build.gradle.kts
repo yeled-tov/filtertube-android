@@ -77,8 +77,4 @@ dependencies {
 
     // Coil — טעינת תמונות אסינכרונית מ-URLs (thumbnails)
     implementation("io.coil-kt:coil-compose:2.7.0")
-
-    // NewPipeExtractor — חילוץ stream URLs מ-YouTube ישירות מהטלפון
-    // גרסה יציבה ידועה (אותה ספריה ש-NewPipe משתמש בה — מיליוני משתמשים)
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.3")
 }
