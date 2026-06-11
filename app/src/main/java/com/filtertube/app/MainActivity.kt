@@ -30,7 +30,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    FilterTubeApp()
+                    AppRoot()
                 }
             }
         }
@@ -38,7 +38,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun FilterTubeApp() {
+fun AppRoot() {
     val navController = rememberNavController()
 
     NavHost(
