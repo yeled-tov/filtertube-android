@@ -36,21 +36,23 @@ jobs:
           set -o pipefail
           ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee build-output.txt
 
-      - name: Surface build errors on failure
+      - name: Commit error log back to repo on failure
         if: failure()
         run: |
-          echo "## 🔴 Build Errors" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          grep -E "^e: |error: |FAILED|Unresolved|Caused by|Could not|Duplicate class|> Task" build-output.txt | head -60 >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload full build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: build-output.txt
-          retention-days: 7
+          {
+            echo "# Build Error Log"
+            echo ""
+            echo "Commit: ${{ github.sha }}"
+            echo ""
+            echo '```'
+            grep -E "^e: |error: |FAILED|Unresolved|Caused by|Could not|Duplicate|> Task|What went wrong|Execution failed|No matching variant|Required by" build-output.txt | head -80
+            echo '```'
+          } > BUILD_ERROR.md
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add BUILD_ERROR.md
+          git commit -m "ci: build error log [skip ci]" || true
+          git push || true
 
       - name: Rename APK
         run: |
