@@ -8,6 +8,12 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.channel.ChannelInfo
+import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo
+import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs
+import org.schabi.newpipe.extractor.search.SearchInfo
+import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.xmlpull.v1.XmlPullParser
 import java.io.StringReader
 import java.text.SimpleDateFormat
@@ -15,14 +21,6 @@ import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
-/**
- * מושך את הסרטונים האחרונים מערוצי YouTube באמצעות RSS feeds.
- *
- * RSS feeds של YouTube הם ציבוריים, חינמיים, ולא דורשים API key:
- *   GET https://www.youtube.com/feeds/videos.xml?channel_id=UCxxx
- *
- * חשוב: זה רץ על הטלפון של המשתמש (IP ביתי) — YouTube לא חוסם.
- */
 object YouTubeRepository {
 
     private val httpClient = OkHttpClient.Builder()
@@ -34,41 +32,27 @@ object YouTubeRepository {
         timeZone = TimeZone.getTimeZone("UTC")
     }
 
-    /**
-     * מושך את הסרטונים האחרונים מכל הערוצים, ממוין מהחדש לישן.
-     */
+    // ───────────────────────────────────────────────────────────────────────
+    // FEED — RSS feeds (מהיר, ציבורי, ללא API key)
+    // ───────────────────────────────────────────────────────────────────────
     suspend fun fetchAllChannelsFeed(channels: List<Channel>): List<Video> = coroutineScope {
-        // מקבילי — כל ערוץ מובא בכוח עצמו
         val allLists = channels
             .filter { it.youtubeChannelId.startsWith("UC") }
             .map { channel ->
                 async(Dispatchers.IO) {
-                    try {
-                        fetchChannelFeed(channel)
-                    } catch (e: Exception) {
-                        android.util.Log.w(
-                            "YouTubeRepository",
-                            "Failed for ${channel.name}: ${e.message}"
-                        )
+                    try { fetchChannelFeed(channel) } catch (e: Exception) {
+                        android.util.Log.w("YouTubeRepository", "Feed failed for ${channel.name}: ${e.message}")
                         emptyList()
                     }
                 }
             }
             .awaitAll()
-
         allLists.flatten().sortedByDescending { it.publishedAt }
     }
 
-    /**
-     * מושך עד 15 סרטונים אחרונים מערוץ אחד.
-     */
     private suspend fun fetchChannelFeed(channel: Channel): List<Video> = withContext(Dispatchers.IO) {
         val url = "https://www.youtube.com/feeds/videos.xml?channel_id=${channel.youtubeChannelId}"
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "FilterTube/1.0")
-            .build()
-
+        val request = Request.Builder().url(url).header("User-Agent", "FilterTube/1.0").build()
         httpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return@use emptyList()
             val xml = response.body?.string() ?: return@use emptyList()
@@ -84,59 +68,109 @@ object YouTubeRepository {
 
         var event = parser.eventType
         var inEntry = false
-        var currentVideoId: String? = null
-        var currentTitle: String? = null
-        var currentPublished: Long = 0
-        var currentThumbnail: String? = null
+        var vId: String? = null
+        var vTitle: String? = null
+        var vPublished = 0L
+        var vThumb: String? = null
 
         while (event != XmlPullParser.END_DOCUMENT) {
             when (event) {
-                XmlPullParser.START_TAG -> {
-                    when (parser.name) {
-                        "entry" -> {
-                            inEntry = true
-                            currentVideoId = null
-                            currentTitle = null
-                            currentPublished = 0
-                            currentThumbnail = null
-                        }
-                        "yt:videoId" -> if (inEntry) currentVideoId = parser.nextText()
-                        "title" -> if (inEntry && currentTitle == null) currentTitle = parser.nextText()
-                        "published" -> if (inEntry) {
-                            try {
-                                // ISO 8601 format: 2024-01-15T10:30:00+00:00
-                                val cleaned = parser.nextText().substringBefore("+").substringBefore("Z").trim()
-                                currentPublished = iso8601Date.parse(cleaned)?.time ?: 0L
-                            } catch (_: Exception) {}
-                        }
-                        "media:thumbnail" -> if (inEntry) {
-                            currentThumbnail = parser.getAttributeValue(null, "url")
-                        }
-                    }
+                XmlPullParser.START_TAG -> when (parser.name) {
+                    "entry" -> { inEntry = true; vId = null; vTitle = null; vPublished = 0; vThumb = null }
+                    "yt:videoId" -> if (inEntry) vId = parser.nextText()
+                    "title" -> if (inEntry && vTitle == null) vTitle = parser.nextText()
+                    "published" -> if (inEntry) try {
+                        val cleaned = parser.nextText().substringBefore("+").substringBefore("Z").trim()
+                        vPublished = iso8601Date.parse(cleaned)?.time ?: 0L
+                    } catch (_: Exception) {}
+                    "media:thumbnail" -> if (inEntry) vThumb = parser.getAttributeValue(null, "url")
                 }
-                XmlPullParser.END_TAG -> {
-                    if (parser.name == "entry" && inEntry) {
-                        val id = currentVideoId
-                        val title = currentTitle
-                        if (!id.isNullOrEmpty() && !title.isNullOrEmpty()) {
-                            videos.add(
-                                Video(
-                                    id = id,
-                                    title = title,
-                                    channelName = channel.name,
-                                    channelId = channel.youtubeChannelId,
-                                    thumbnailUrl = currentThumbnail
-                                        ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg",
-                                    publishedAt = currentPublished,
-                                )
-                            )
-                        }
-                        inEntry = false
+                XmlPullParser.END_TAG -> if (parser.name == "entry" && inEntry) {
+                    val id = vId; val title = vTitle
+                    if (!id.isNullOrEmpty() && !title.isNullOrEmpty()) {
+                        videos.add(Video(id, title, channel.name, channel.youtubeChannelId,
+                            vThumb ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg", vPublished))
                     }
+                    inEntry = false
                 }
             }
             event = parser.next()
         }
         return videos
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // SEARCH — NewPipeExtractor, מסונן לערוצים מאושרים בלבד
+    // ───────────────────────────────────────────────────────────────────────
+    suspend fun search(query: String, channels: List<Channel>): List<Video> = withContext(Dispatchers.IO) {
+        val allowed = channels.map { it.youtubeChannelId }.toHashSet()
+        val qh = ServiceList.YouTube.searchQHFactory.fromQuery(query, listOf("videos"), "")
+        val info = SearchInfo.getInfo(ServiceList.YouTube, qh)
+        info.relatedItems
+            .filterIsInstance<StreamInfoItem>()
+            .mapNotNull { item -> toVideo(item) }
+            .filter { it.channelId in allowed }
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // SHORTS — מהטאב "Shorts" של ערוצים מאושרים (כך זה תמיד רק מאושרים)
+    // ───────────────────────────────────────────────────────────────────────
+    suspend fun fetchShorts(channels: List<Channel>): List<Video> = coroutineScope {
+        // דגימה של עד 12 ערוצים בכל פעם (לשמור מהירות), ערבוב להגוון
+        val sample = channels.filter { it.youtubeChannelId.startsWith("UC") }.shuffled().take(12)
+
+        val lists = sample.map { channel ->
+            async(Dispatchers.IO) {
+                try { fetchChannelShorts(channel) } catch (e: Exception) {
+                    android.util.Log.w("YouTubeRepository", "Shorts failed for ${channel.name}: ${e.message}")
+                    emptyList()
+                }
+            }
+        }.awaitAll()
+
+        lists.flatten().shuffled()
+    }
+
+    private fun fetchChannelShorts(channel: Channel): List<Video> {
+        val url = "https://www.youtube.com/channel/${channel.youtubeChannelId}"
+        val info = ChannelInfo.getInfo(ServiceList.YouTube, url)
+        val shortsTab = info.tabs.firstOrNull { it.contentFilters.contains(ChannelTabs.SHORTS) }
+            ?: return emptyList()
+        val tabInfo = ChannelTabInfo.getInfo(ServiceList.YouTube, shortsTab)
+        return tabInfo.relatedItems
+            .filterIsInstance<StreamInfoItem>()
+            .mapNotNull { toVideo(it, channel.name, channel.youtubeChannelId) }
+            .take(8)
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // המרת StreamInfoItem → Video
+    // ───────────────────────────────────────────────────────────────────────
+    private fun toVideo(item: StreamInfoItem, fallbackChannel: String? = null, fallbackChannelId: String? = null): Video? {
+        val videoId = extractVideoId(item.url) ?: return null
+        val channelId = fallbackChannelId ?: extractChannelId(item.uploaderUrl) ?: ""
+        val thumb = item.thumbnails?.maxByOrNull { it.height }?.url
+            ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+        return Video(
+            id = videoId,
+            title = item.name ?: "",
+            channelName = fallbackChannel ?: item.uploaderName ?: "",
+            channelId = channelId,
+            thumbnailUrl = thumb,
+            publishedAt = System.currentTimeMillis(), // search/shorts אין תאריך מדויק
+        )
+    }
+
+    private fun extractVideoId(url: String?): String? {
+        if (url == null) return null
+        Regex("[?&]v=([A-Za-z0-9_-]{11})").find(url)?.let { return it.groupValues[1] }
+        Regex("/shorts/([A-Za-z0-9_-]{11})").find(url)?.let { return it.groupValues[1] }
+        Regex("youtu\\.be/([A-Za-z0-9_-]{11})").find(url)?.let { return it.groupValues[1] }
+        return null
+    }
+
+    private fun extractChannelId(url: String?): String? {
+        if (url == null) return null
+        return Regex("/channel/(UC[\\w-]+)").find(url)?.groupValues?.get(1)
     }
 }

@@ -4,20 +4,17 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 
 /**
- * Channel ברשימה הלבנה — מגיע מטבלת `channels` ב-Supabase.
+ * ערוץ ברשימה הלבנה.
+ * מגיע מ-channels.json (GitHub raw / asset מקומי) — לא מ-Supabase יותר.
  */
 @Serializable
 data class Channel(
-    val id: String,
     @SerialName("youtube_channel_id")
     val youtubeChannelId: String,
     val name: String,
-    val category: String,
+    val category: String = "general",
 )
 
-/**
- * תרגום קטגוריות לעברית — לתצוגה במסך.
- */
 val categoryLabels: Map<String, String> = mapOf(
     "torah" to "תורה",
     "music" to "מוזיקה",
