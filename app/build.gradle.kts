@@ -79,5 +79,5 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
 
     // NewPipeExtractor — חילוץ stream URLs מ-YouTube ישירות מהטלפון
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.3")
+implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
 }
