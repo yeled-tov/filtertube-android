@@ -48,6 +48,7 @@ fun PlayerScreen(
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var state by remember(videoId) { mutableStateOf<PlayerState>(PlayerState.Loading) }
 
     LaunchedEffect(videoId) {
