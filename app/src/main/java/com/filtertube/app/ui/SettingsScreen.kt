@@ -3,7 +3,9 @@ package com.filtertube.app.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AdminPanelSettings
@@ -35,7 +37,7 @@ fun SettingsScreen(
         )
         HorizontalDivider(color = Color(0xFF272727))
 
-        Column(modifier = Modifier.verticalScroll0()) {
+        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
             // רמת סינון
             SettingsSection("רמת סינון")
             FilterLevelOption(
@@ -137,7 +139,3 @@ private fun SettingsSection(title: String) {
     Text(title, color = Color(0xFFFF0000), fontSize = 12.sp, fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp))
 }
-
-@Composable
-private fun Modifier.verticalScroll0(): Modifier =
-    this.then(androidx.compose.foundation.verticalScroll(androidx.compose.foundation.rememberScrollState()))
