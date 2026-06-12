@@ -13,23 +13,35 @@ android {
         applicationId = "com.filtertube.app"
         minSdk = 24            // Android 7.0 — תומך ב-99% מהמכשירים
         targetSdk = 34         // Android 14
-        versionCode = 1
-        versionName = "0.1.0-mvp"
+        versionCode = 2
+        versionName = "0.2.0"
 
         // RTL support
         resourceConfigurations += listOf("en", "iw")
     }
 
+    // חתימה קבועה — מאפשרת עדכוני OTA חלקים (אותו signature תמיד) ו-Google OAuth
+    signingConfigs {
+        create("shared") {
+            storeFile = file("../filtertube.keystore")
+            storePassword = "filtertube2026"
+            keyAlias = "filtertube"
+            keyPassword = "filtertube2026"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("shared")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
         }
         debug {
-            applicationIdSuffix = ".debug"
+            // ללא applicationIdSuffix — package קבוע com.filtertube.app
+            signingConfig = signingConfigs.getByName("shared")
         }
     }
 

@@ -50,6 +50,7 @@ fun AppRoot() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val settings = remember { SettingsStore(context) }
     var shortsEnabled by remember { mutableStateOf(settings.shortsEnabled) }
+    var filterLevel by remember { mutableStateOf(settings.filterLevel) }
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -117,7 +118,16 @@ fun AppRoot() {
                         shortsEnabled = enabled
                         settings.shortsEnabled = enabled
                     },
+                    filterLevel = filterLevel,
+                    onFilterLevelChange = { level ->
+                        filterLevel = level
+                        settings.filterLevel = level
+                    },
+                    onOpenAdmin = { navController.navigate("admin") },
                 )
+            }
+            composable("admin") {
+                AdminScreen(onBack = { navController.popBackStack() })
             }
             composable(
                 route = "player/{videoId}/{title}/{channel}",
@@ -132,6 +142,13 @@ fun AppRoot() {
                     title = entry.arguments?.getString("title").orEmpty(),
                     channelName = entry.arguments?.getString("channel").orEmpty(),
                     onBack = { navController.popBackStack() },
+                    onPlayNext = { next ->
+                        val t = Uri.encode(next.title)
+                        val c = Uri.encode(next.channelName)
+                        navController.navigate("player/${next.id}/$t/$c") {
+                            popUpTo("player/{videoId}/{title}/{channel}") { inclusive = true }
+                        }
+                    },
                 )
             }
         }

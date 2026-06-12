@@ -14,6 +14,16 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_SHORTS, true)
         set(value) = prefs.edit().putBoolean(KEY_SHORTS, value).apply()
 
+    /** רמת סינון: 1 = מחמיר (מוזיקה אודיו בלבד), 2 = רגיל (הכל וידאו) */
+    var filterLevel: Int
+        get() = prefs.getInt(KEY_LEVEL, 2)
+        set(value) = prefs.edit().putInt(KEY_LEVEL, value).apply()
+
+    /** GitHub token לפאנל הניהול (מאוחסן מקומית) */
+    var githubToken: String
+        get() = prefs.getString(KEY_GH_TOKEN, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_GH_TOKEN, value).apply()
+
     // ── היסטוריית חיפוש ──────────────────────────────────────────────────
     fun getSearchHistory(): List<String> {
         val raw = prefs.getString(KEY_HISTORY, "") ?: ""
@@ -43,5 +53,7 @@ class SettingsStore(context: Context) {
     companion object {
         private const val KEY_SHORTS = "shorts_enabled"
         private const val KEY_HISTORY = "search_history"
+        private const val KEY_LEVEL = "filter_level"
+        private const val KEY_GH_TOKEN = "github_token"
     }
 }
