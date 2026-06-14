@@ -39,7 +39,8 @@ object YouTubeAccountRepository {
         val items = JSONObject(body).optJSONArray("items") ?: return out
         for (i in 0 until items.length()) {
             val item = items.optJSONObject(i) ?: continue
-            val id = item.optString("id").ifEmpty { continue }
+            val id = item.optString("id")
+            if (id.isEmpty()) continue
             val sn = item.optJSONObject("snippet") ?: continue
             val title = sn.optString("title")
             val channel = sn.optString("channelTitle")
