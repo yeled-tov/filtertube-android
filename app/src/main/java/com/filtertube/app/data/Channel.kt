@@ -18,8 +18,12 @@ data class Channel(
 val categoryLabels: Map<String, String> = mapOf(
     "torah" to "תורה",
     "music" to "מוזיקה",
+    "dati_light" to "דתי לייט",
     "kids" to "ילדים",
     "diy" to "עשה זאת בעצמך",
     "news" to "חדשות",
     "general" to "כללי",
 )
+
+/** קטגוריות שמתנגנות תמיד כאודיו בלבד (ללא וידאו), ללא תלות ברמת הסינון. */
+val audioOnlyCategories: Set<String> = setOf("dati_light")

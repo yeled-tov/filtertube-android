@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.filtertube.app.data.ChannelsRepository
+import com.filtertube.app.data.FeedCache
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeRepository
 import kotlinx.coroutines.launch
@@ -40,21 +41,29 @@ fun ShortsScreen(onVideoClick: (Video) -> Unit) {
     val scope = rememberCoroutineScope()
     var state by remember { mutableStateOf<ShortsState>(ShortsState.Loading) }
 
-    fun load() {
-        state = ShortsState.Loading
+    fun refresh(showSpinner: Boolean) {
+        if (showSpinner) state = ShortsState.Loading
         scope.launch {
-            state = try {
+            try {
                 val channels = ChannelsRepository.getChannels(context)
                 val shorts = YouTubeRepository.fetchShorts(channels)
-                if (shorts.isEmpty()) ShortsState.Error("לא נמצאו Shorts מהערוצים המאושרים")
-                else ShortsState.Success(shorts)
+                if (shorts.isNotEmpty()) {
+                    FeedCache.saveShorts(context, shorts)
+                    state = ShortsState.Success(shorts)
+                } else if (state !is ShortsState.Success) {
+                    state = ShortsState.Error("לא נמצאו Shorts מהערוצים המאושרים")
+                }
             } catch (e: Exception) {
-                ShortsState.Error(e.message ?: "שגיאה")
+                if (state !is ShortsState.Success) state = ShortsState.Error(e.message ?: "שגיאה")
             }
         }
     }
 
-    LaunchedEffect(Unit) { load() }
+    LaunchedEffect(Unit) {
+        val cached = FeedCache.loadShorts(context)
+        if (!cached.isNullOrEmpty()) state = ShortsState.Success(cached)
+        refresh(showSpinner = cached.isNullOrEmpty())
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F0F))) {
         Row(
@@ -64,13 +73,13 @@ fun ShortsScreen(onVideoClick: (Video) -> Unit) {
             Icon(Icons.Default.PlayArrow, null, tint = Color(0xFFFF0000), modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(8.dp))
             Text("Shorts", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.weight(1f))
-            IconButton(onClick = ::load) { Icon(Icons.Default.Refresh, "רענן", tint = Color.White) }
+            IconButton(onClick = { refresh(showSpinner = false) }) { Icon(Icons.Default.Refresh, "רענן", tint = Color.White) }
         }
         HorizontalDivider(color = Color(0xFF272727))
 
         when (val s = state) {
             is ShortsState.Loading -> CenteredLoading("טוען Shorts...")
-            is ShortsState.Error -> CenteredError(s.message, ::load)
+            is ShortsState.Error -> CenteredError(s.message) { refresh(showSpinner = true) }
             is ShortsState.Success -> LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 modifier = Modifier.fillMaxSize(),
