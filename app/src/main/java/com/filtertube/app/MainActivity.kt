@@ -1,5 +1,6 @@
 package com.filtertube.app
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -68,7 +70,7 @@ fun AppRoot() {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    val mainRoutes = listOf("home", "shorts", "search", "settings")
+    val mainRoutes = listOf("home", "shorts", "search", "library", "settings")
     val showBottomBar = currentRoute in mainRoutes
 
     fun openVideo(video: Video) {
@@ -80,6 +82,7 @@ fun AppRoot() {
         add(NavItem("home", "בית", Icons.Default.Home))
         if (shortsEnabled) add(NavItem("shorts", "Shorts", Icons.Default.PlayArrow))
         add(NavItem("search", "חיפוש", Icons.Default.Search))
+        add(NavItem("library", "ספריה", Icons.Default.LibraryMusic))
         add(NavItem("settings", "הגדרות", Icons.Default.Settings))
     }
 
@@ -147,6 +150,19 @@ fun AppRoot() {
             }
             composable("admin") {
                 AdminScreen(onBack = { navController.popBackStack() })
+            }
+            composable("library") {
+                LibraryScreen(
+                    onVideoClick = ::openVideo,
+                    onOpenPlaylist = { name -> navController.navigate("playlist/${Uri.encode(name)}") },
+                )
+            }
+            composable("playlist/{name}") { entry ->
+                PlaylistScreen(
+                    name = Uri.decode(entry.arguments?.getString("name").orEmpty()),
+                    onVideoClick = ::openVideo,
+                    onBack = { navController.popBackStack() },
+                )
             }
             composable("player") {
                 PlayerScreen(

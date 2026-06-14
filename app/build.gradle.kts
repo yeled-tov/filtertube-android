@@ -92,4 +92,7 @@ dependencies {
 
     // NewPipeExtractor — חילוץ stream URLs מ-YouTube ישירות מהטלפון
 implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
+
+    // Google Sign-In — התחברות לחשבון יוטיוב לייבוא "אהבתי"
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
 }

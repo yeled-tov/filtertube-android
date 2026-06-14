@@ -19,8 +19,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.HighQuality
@@ -56,8 +58,10 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.StreamData
 import com.filtertube.app.data.StreamTrack
+import com.filtertube.app.data.Video
 import com.filtertube.app.playback.Playback
 
 @OptIn(UnstableApi::class)
@@ -104,6 +108,13 @@ fun PlayerScreen(
 
     val currentData = Playback.cachedData(ui.mediaId)
     val audioMode = ui.isAudio
+    val store = remember { LibraryStore(context) }
+    fun currentVideo() = Video(
+        id = ui.mediaId ?: "", title = ui.title, channelName = ui.artist,
+        channelId = "", thumbnailUrl = ui.artworkUri?.toString() ?: "", publishedAt = System.currentTimeMillis(),
+    )
+    var liked by remember(ui.mediaId) { mutableStateOf(ui.mediaId?.let { store.isLiked(it) } ?: false) }
+    var showAddToPlaylist by remember { mutableStateOf(false) }
     var qualityIndex by remember(ui.mediaId) {
         mutableStateOf(currentData?.let { Playback.defaultQuality(it) } ?: 0)
     }
@@ -147,7 +158,22 @@ fun PlayerScreen(
             }
             Text("מתנגן עכשיו", color = Color(0xFFAAAAAA), fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            if (currentData != null) DownloadButton(context, currentData, audioMode)
+            IconButton(onClick = { liked = store.toggleLike(currentVideo()) }) {
+                Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    "אהבתי", tint = if (liked) Color(0xFFFF0000) else Color.White)
+            }
+            IconButton(onClick = { showAddToPlaylist = true }) {
+                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, "הוסף לאלבום", tint = Color.White)
+            }
+            if (currentData != null) DownloadButton(context, currentData, ui.mediaId ?: "")
+        }
+
+        if (showAddToPlaylist) {
+            AddToPlaylistDialog(
+                store = store,
+                video = currentVideo(),
+                onDismiss = { showAddToPlaylist = false },
+            )
         }
 
         // אזור מדיה: וידאו או כריכה
@@ -436,23 +462,65 @@ private fun FullscreenVideo(
 }
 
 @Composable
-private fun DownloadButton(context: Context, data: StreamData, audioMode: Boolean) {
+private fun DownloadButton(context: Context, data: StreamData, videoId: String) {
     var menu by remember { mutableStateOf(false) }
     val muxed = remember(data) { data.tracks.filter { it.audioUrl == null } }
+    fun record() {
+        LibraryStore(context).addDownload(
+            Video(videoId, data.title, data.uploaderName, data.channelId,
+                data.thumbnailUrl ?: "", System.currentTimeMillis()),
+        )
+    }
     Box {
         IconButton(onClick = { menu = true }) { Icon(Icons.Default.Download, "הורד", tint = Color.White) }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             if (data.bestAudioUrl != null) {
                 DropdownMenuItem(text = { Text("הורד אודיו (M4A)") },
-                    onClick = { menu = false; downloadStream(context, data.bestAudioUrl, data.title, isAudio = true) })
+                    onClick = { menu = false; record(); downloadStream(context, data.bestAudioUrl, data.title, isAudio = true) })
             }
             val videoOptions = if (muxed.isNotEmpty()) muxed else listOf(StreamTrack(0, "וידאו", data.bestVideoUrl, null))
             videoOptions.forEach { t ->
                 DropdownMenuItem(text = { Text("הורד וידאו · ${t.label}") },
-                    onClick = { menu = false; downloadStream(context, t.videoUrl, data.title, isAudio = false) })
+                    onClick = { menu = false; record(); downloadStream(context, t.videoUrl, data.title, isAudio = false) })
             }
         }
     }
+}
+
+@Composable
+private fun AddToPlaylistDialog(store: LibraryStore, video: Video, onDismiss: () -> Unit) {
+    var playlists by remember { mutableStateOf(store.playlists()) }
+    var newName by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                if (newName.isNotBlank()) { store.createPlaylist(newName); store.addToPlaylist(newName.trim(), video) }
+                onDismiss()
+            }) { Text("צור והוסף") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("סגור") } },
+        title = { Text("הוסף לאלבום") },
+        text = {
+            Column {
+                playlists.forEach { pl ->
+                    Text(
+                        pl.name,
+                        color = Color.White,
+                        modifier = Modifier.fillMaxWidth()
+                            .clickable { store.addToPlaylist(pl.name, video); onDismiss() }
+                            .padding(vertical = 10.dp),
+                    )
+                }
+                if (playlists.isNotEmpty()) HorizontalDivider(color = Color(0xFF333333))
+                OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true,
+                    label = { Text("אלבום חדש") }, modifier = Modifier.padding(top = 8.dp))
+            }
+        },
+        containerColor = Color(0xFF1F1F1F),
+        titleContentColor = Color.White,
+        textContentColor = Color.White,
+    )
 }
 
 private fun fmtTime(ms: Long): String {
