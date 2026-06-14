@@ -25,8 +25,10 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.FeedCache
+import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeRepository
+import com.filtertube.app.data.forLevel
 import kotlinx.coroutines.launch
 
 sealed class ShortsState {
@@ -39,13 +41,14 @@ sealed class ShortsState {
 fun ShortsScreen(onVideoClick: (Video) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val settings = remember { SettingsStore(context) }
     var state by remember { mutableStateOf<ShortsState>(ShortsState.Loading) }
 
     fun refresh(showSpinner: Boolean) {
         if (showSpinner) state = ShortsState.Loading
         scope.launch {
             try {
-                val channels = ChannelsRepository.getChannels(context)
+                val channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
                 val shorts = YouTubeRepository.fetchShorts(channels)
                 if (shorts.isNotEmpty()) {
                     FeedCache.saveShorts(context, shorts)

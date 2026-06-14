@@ -27,6 +27,7 @@ import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeRepository
+import com.filtertube.app.data.forLevel
 import kotlinx.coroutines.launch
 
 sealed class SearchState {
@@ -57,7 +58,7 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
         state = SearchState.Loading
         scope.launch {
             state = try {
-                val channels = ChannelsRepository.getChannels(context)
+                val channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
                 val results = YouTubeRepository.search(trimmed, channels)
                 if (results.isEmpty()) SearchState.Error("לא נמצאו תוצאות בערוצים המאושרים")
                 else SearchState.Results(results)

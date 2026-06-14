@@ -11,7 +11,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -50,24 +49,16 @@ fun SettingsScreen(
             FilterLevelOption(
                 selected = filterLevel == 2,
                 title = "רמה 2 — רגיל",
-                desc = "כל הסרטונים מתנגנים כווידאו רגיל.",
+                desc = "כל הסרטונים מתנגנים כווידאו רגיל. ערוצי \"דתי לייט\" אינם מוצגים.",
                 onClick = { onFilterLevelChange(2) },
             )
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.Top,
-            ) {
-                IconBox(Icons.Default.MusicNote, Color(0xFF10B981))
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text("דתי לייט (אודיו בלבד)", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                    Text(
-                        "ערוצים שתסווג בפאנל הניהול כ‏\"דתי לייט\" יתנגנו תמיד כאודיו בלבד, " +
-                            "ללא וידאו — ללא תלות ברמת הסינון.",
-                        color = Color(0xFF888888), fontSize = 12.sp, lineHeight = 16.sp,
-                    )
-                }
-            }
+            FilterLevelOption(
+                selected = filterLevel == 3,
+                title = "רמה 3 — דתי לייט",
+                desc = "מוסיף את ערוצי \"דתי לייט\" (שתסווג בפאנל הניהול). " +
+                    "כל התוכן שלהם מתנגן כאודיו בלבד, ללא וידאו. בשאר הרמות הערוצים האלה מוסתרים.",
+                onClick = { onFilterLevelChange(3) },
+            )
 
             // תצוגה
             SettingsSection("תצוגה")

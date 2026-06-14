@@ -14,7 +14,12 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_SHORTS, true)
         set(value) = prefs.edit().putBoolean(KEY_SHORTS, value).apply()
 
-    /** רמת סינון: 1 = מחמיר (מוזיקה אודיו בלבד), 2 = רגיל (הכל וידאו) */
+    /**
+     * רמת סינון:
+     *  1 = מחמיר (מוזיקה מתנגנת אודיו בלבד; ערוצי "דתי לייט" מוסתרים)
+     *  2 = רגיל (הכל וידאו; ערוצי "דתי לייט" מוסתרים)
+     *  3 = דתי לייט (ערוצי "דתי לייט" מוצגים ומתנגנים אודיו בלבד)
+     */
     var filterLevel: Int
         get() = prefs.getInt(KEY_LEVEL, 2)
         set(value) = prefs.edit().putInt(KEY_LEVEL, value).apply()

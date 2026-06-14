@@ -2,10 +2,12 @@ package com.filtertube.app.ui
 
 import android.app.Activity
 import android.app.DownloadManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
 import android.net.Uri
+import android.os.Bundle
 import android.os.Environment
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -14,9 +16,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Forward10
@@ -28,6 +33,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -45,26 +51,27 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.MediaSource
-import androidx.media3.exoplayer.source.MergingMediaSource
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.filtertube.app.data.*
+import com.filtertube.app.playback.FilterTubeMediaSourceFactory
+import com.filtertube.app.playback.PlaybackService
 import kotlinx.coroutines.delay
 
 sealed class PlayerState {
     data object Loading : PlayerState()
-    data class Ready(val data: StreamData, val audioOnly: Boolean, val upNext: Video?) : PlayerState()
+    data class Ready(val data: StreamData, val forcedAudio: Boolean, val related: List<Video>) : PlayerState()
     data class Error(val message: String) : PlayerState()
 }
 
@@ -91,13 +98,13 @@ fun PlayerScreen(
             val allowed = channels.map { it.youtubeChannelId }.toHashSet()
 
             val category = catById[data.channelId]
-            // אודיו בלבד: קטגוריית "דתי לייט" תמיד, או רמה 1 מחמירה על מוזיקה
-            val audioOnly = category in audioOnlyCategories ||
+            // אודיו כפוי: קטגוריית "דתי לייט", או רמה 1 מחמירה על מוזיקה
+            val forcedAudio = category in audioOnlyCategories ||
                 (settings.filterLevel == 1 && category == "music")
 
-            val upNext = data.related.firstOrNull { it.channelId in allowed && it.id != videoId }
+            val related = data.related.filter { it.channelId in allowed && it.id != videoId }
 
-            PlayerState.Ready(data, audioOnly, upNext)
+            PlayerState.Ready(data, forcedAudio, related)
         } catch (e: Exception) {
             PlayerState.Error("לא הצלחנו לטעון את הסרטון: ${e.message}")
         }
@@ -166,98 +173,161 @@ fun PlayerScreen(
                 }
                 is PlayerState.Ready -> VideoPlayer(
                     data = s.data,
-                    audioOnly = s.audioOnly,
+                    forcedAudio = s.forcedAudio,
+                    upNext = s.related.firstOrNull(),
                     isFullscreen = isFullscreen,
                     onToggleFullscreen = { isFullscreen = !isFullscreen },
-                    upNext = s.upNext,
                     onPlayNext = onPlayNext,
                 )
             }
         }
 
         if (!isFullscreen) {
-            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                val displayTitle = (state as? PlayerState.Ready)?.data?.title ?: title
-                val displayChannel = (state as? PlayerState.Ready)?.data?.uploaderName ?: channelName
-                Text(displayTitle, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White, lineHeight = 20.sp)
-                Spacer(Modifier.height(8.dp))
-                Text(displayChannel, fontSize = 13.sp, color = Color(0xFFAAAAAA))
+            val ready = state as? PlayerState.Ready
+            DetailsSection(
+                data = ready?.data,
+                fallbackTitle = title,
+                fallbackChannel = channelName,
+                related = ready?.related ?: emptyList(),
+                onPlayNext = onPlayNext,
+            )
+        }
+    }
+}
 
-                val ready = state as? PlayerState.Ready
-                if (ready != null) {
+@Composable
+private fun DetailsSection(
+    data: StreamData?,
+    fallbackTitle: String,
+    fallbackChannel: String,
+    related: List<Video>,
+    onPlayNext: (Video) -> Unit,
+) {
+    val context = LocalContext.current
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        item {
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                Text(data?.title ?: fallbackTitle, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                    color = Color.White, lineHeight = 20.sp)
+                Spacer(Modifier.height(8.dp))
+                Text(data?.uploaderName ?: fallbackChannel, fontSize = 13.sp, color = Color(0xFFAAAAAA))
+
+                if (data != null) {
                     Spacer(Modifier.height(16.dp))
-                    Row(
-                        modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(Color(0xFF272727))
-                            .clickable { downloadVideo(context, ready.data.bestVideoUrl, displayTitle) }
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Default.Download, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("הורד", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    }
+                    DownloadButton(context, data)
                 }
+            }
+        }
+        if (related.isNotEmpty()) {
+            item {
+                Text("הבא בתור", color = Color(0xFFFF0000), fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 8.dp))
+            }
+            items(related, key = { it.id }) { video ->
+                VideoRow(video, onClick = { onPlayNext(video) })
             }
         }
     }
 }
 
-/** נגן מלא בסגנון NewPipe — בקרים מותאמים, מחוות, מהירות ובחירת איכות. */
+@Composable
+private fun DownloadButton(context: Context, data: StreamData) {
+    var menu by remember { mutableStateOf(false) }
+    val muxed = remember(data) { data.tracks.filter { it.audioUrl == null } }
+    Box {
+        Row(
+            modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(Color(0xFF272727))
+                .clickable { menu = true }.padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Default.Download, null, tint = Color.White, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("הורד", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        }
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            if (data.bestAudioUrl != null) {
+                DropdownMenuItem(
+                    text = { Text("אודיו בלבד (M4A)") },
+                    onClick = {
+                        menu = false
+                        downloadStream(context, data.bestAudioUrl, data.title, isAudio = true)
+                    },
+                )
+            }
+            val videoOptions = if (muxed.isNotEmpty()) muxed
+            else listOf(StreamTrack(0, "וידאו", data.bestVideoUrl, null))
+            videoOptions.forEach { t ->
+                DropdownMenuItem(
+                    text = { Text("וידאו · ${t.label}") },
+                    onClick = {
+                        menu = false
+                        downloadStream(context, t.videoUrl, data.title, isAudio = false)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** נגן מלא בסגנון NewPipe — ניגון ברקע (MediaController), מחוות, מהירות, איכות, אודיו/וידאו. */
 @OptIn(UnstableApi::class)
 @Composable
 private fun VideoPlayer(
     data: StreamData,
-    audioOnly: Boolean,
+    forcedAudio: Boolean,
+    upNext: Video?,
     isFullscreen: Boolean,
     onToggleFullscreen: () -> Unit,
-    upNext: Video?,
     onPlayNext: (Video) -> Unit,
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
-    val httpFactory = remember {
-        DefaultHttpDataSource.Factory().setUserAgent("Mozilla/5.0 (Linux; Android) FilterTube")
-    }
 
-    val tracks = data.tracks
+    var audioMode by remember(data) { mutableStateOf(forcedAudio) }
     val initialIndex = remember(data) {
-        tracks.indexOfFirst { it.height in 1..720 }.let { if (it >= 0) it else 0 }
-            .coerceIn(0, (tracks.size - 1).coerceAtLeast(0))
+        data.tracks.indexOfFirst { it.height in 1..720 }.let { if (it >= 0) it else 0 }
+            .coerceIn(0, (data.tracks.size - 1).coerceAtLeast(0))
     }
     var qualityIndex by remember(data) { mutableStateOf(initialIndex) }
     var speed by remember(data) { mutableStateOf(1f) }
 
-    fun sourceFor(index: Int): MediaSource {
-        if (audioOnly) {
-            val a = data.bestAudioUrl ?: data.bestVideoUrl
-            return ProgressiveMediaSource.Factory(httpFactory).createMediaSource(MediaItem.fromUri(a))
+    fun buildMediaItem(): MediaItem {
+        val extras = Bundle()
+        val uri: String = if (audioMode) {
+            data.bestAudioUrl ?: data.bestVideoUrl
+        } else {
+            val t = data.tracks.getOrNull(qualityIndex)
+            if (t == null) data.bestVideoUrl
+            else {
+                if (!t.audioUrl.isNullOrEmpty()) extras.putString(FilterTubeMediaSourceFactory.EXTRA_AUDIO_URL, t.audioUrl)
+                t.videoUrl
+            }
         }
-        val t = tracks.getOrNull(index)
-            ?: return ProgressiveMediaSource.Factory(httpFactory)
-                .createMediaSource(MediaItem.fromUri(data.bestVideoUrl))
-        val v = ProgressiveMediaSource.Factory(httpFactory).createMediaSource(MediaItem.fromUri(t.videoUrl))
-        return if (t.audioUrl != null) {
-            val a = ProgressiveMediaSource.Factory(httpFactory).createMediaSource(MediaItem.fromUri(t.audioUrl))
-            MergingMediaSource(v, a)
-        } else v
+        return MediaItem.Builder()
+            .setUri(uri)
+            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setExtras(extras).build())
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(data.title)
+                    .setArtist(data.uploaderName)
+                    .setArtworkUri(data.thumbnailUrl?.let { Uri.parse(it) })
+                    .build(),
+            )
+            .build()
     }
 
-    val exo = remember(data) {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaSource(sourceFor(initialIndex))
-            prepare()
-            playWhenReady = true
-        }
-    }
-
+    var controller by remember(data) { mutableStateOf<MediaController?>(null) }
     var isPlaying by remember { mutableStateOf(true) }
     var position by remember { mutableStateOf(0L) }
     var duration by remember { mutableStateOf(0L) }
     var buffering by remember { mutableStateOf(true) }
     var showUpNext by remember(data) { mutableStateOf(false) }
 
-    DisposableEffect(exo) {
+    // התחברות לשירות הניגון ברקע
+    DisposableEffect(data) {
+        val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+        val future = MediaController.Builder(context, token).buildAsync()
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 buffering = playbackState == Player.STATE_BUFFERING
@@ -265,27 +335,42 @@ private fun VideoPlayer(
             }
             override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
         }
-        exo.addListener(listener)
-        onDispose { exo.removeListener(listener); exo.release() }
+        future.addListener({
+            val c = try { future.get() } catch (e: Exception) { null }
+            if (c != null) {
+                controller = c
+                c.addListener(listener)
+                c.setMediaItem(buildMediaItem())
+                c.setPlaybackParameters(PlaybackParameters(speed))
+                c.prepare()
+                c.playWhenReady = true
+            }
+        }, ContextCompat.getMainExecutor(context))
+
+        onDispose {
+            controller = null
+            MediaController.releaseFuture(future)
+        }
     }
 
-    LaunchedEffect(exo) {
+    LaunchedEffect(controller) {
+        val c = controller ?: return@LaunchedEffect
         while (true) {
-            position = exo.currentPosition
-            duration = exo.duration.coerceAtLeast(0L)
+            position = c.currentPosition
+            duration = c.duration.coerceAtLeast(0L)
             delay(500)
         }
     }
-    LaunchedEffect(speed) { exo.setPlaybackParameters(PlaybackParameters(speed)) }
+    LaunchedEffect(speed) { controller?.setPlaybackParameters(PlaybackParameters(speed)) }
 
-    fun changeQuality(index: Int) {
-        val pos = exo.currentPosition
-        val pw = exo.playWhenReady
-        qualityIndex = index
-        exo.setMediaSource(sourceFor(index))
-        exo.prepare()
-        exo.seekTo(pos)
-        exo.playWhenReady = pw
+    fun reload() {
+        val c = controller ?: return
+        val pos = c.currentPosition
+        val pw = c.playWhenReady
+        c.setMediaItem(buildMediaItem())
+        c.prepare()
+        c.seekTo(pos)
+        c.playWhenReady = pw
     }
 
     var controlsVisible by remember { mutableStateOf(true) }
@@ -298,8 +383,20 @@ private fun VideoPlayer(
     }
 
     Box(modifier = Modifier.fillMaxSize().onSizeChanged { boxSize = it }) {
-        // משטח וידאו / כריכת אלבום במצב אודיו
-        if (audioOnly) {
+        // משטח וידאו (תמיד) — במצב אודיו מציגים מעליו כריכת אלבום
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    useController = false
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                    setBackgroundColor(android.graphics.Color.BLACK)
+                }
+            },
+            update = { it.player = controller },
+            modifier = Modifier.fillMaxSize(),
+        )
+
+        if (audioMode) {
             Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0A0A0A)), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
@@ -319,21 +416,9 @@ private fun VideoPlayer(
                     }
                 }
             }
-        } else {
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        player = exo
-                        useController = false
-                        setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
-                        setBackgroundColor(android.graphics.Color.BLACK)
-                    }
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
         }
 
-        // שכבת מחוות (פעילה כשהבקרים מוסתרים)
+        // שכבת מחוות
         Box(
             modifier = Modifier.fillMaxSize()
                 .pointerInput(Unit) {
@@ -341,18 +426,21 @@ private fun VideoPlayer(
                         onTap = { controlsVisible = !controlsVisible },
                         onDoubleTap = { offset ->
                             val w = boxSize.width.coerceAtLeast(1)
-                            if (offset.x < w / 2f) {
-                                exo.seekTo((exo.currentPosition - 10_000).coerceAtLeast(0))
-                                feedback = "⏪ 10 ש׳"
-                            } else {
-                                exo.seekTo(exo.currentPosition + 10_000)
-                                feedback = "10 ש׳ ⏩"
+                            val c = controller
+                            if (c != null) {
+                                if (offset.x < w / 2f) {
+                                    c.seekTo((c.currentPosition - 10_000).coerceAtLeast(0))
+                                    feedback = "⏪ 10 ש׳"
+                                } else {
+                                    c.seekTo(c.currentPosition + 10_000)
+                                    feedback = "10 ש׳ ⏩"
+                                }
                             }
                         },
                     )
                 }
-                .pointerInput(audioOnly) {
-                    if (audioOnly) return@pointerInput
+                .pointerInput(audioMode) {
+                    if (audioMode) return@pointerInput
                     detectVerticalDragGestures { change, dragAmount ->
                         val w = boxSize.width.coerceAtLeast(1)
                         val h = boxSize.height.coerceAtLeast(1)
@@ -394,15 +482,17 @@ private fun VideoPlayer(
                 position = position,
                 duration = duration,
                 speed = speed,
-                tracks = tracks,
+                tracks = data.tracks,
                 qualityIndex = qualityIndex,
-                audioOnly = audioOnly,
+                audioMode = audioMode,
+                canToggleAudio = !forcedAudio,
                 isFullscreen = isFullscreen,
-                onPlayPause = { if (exo.isPlaying) exo.pause() else exo.play() },
-                onSeek = { exo.seekTo(it) },
-                onSeekBy = { exo.seekTo((exo.currentPosition + it).coerceIn(0, exo.duration.coerceAtLeast(0))) },
+                onPlayPause = { controller?.let { if (it.isPlaying) it.pause() else it.play() } },
+                onSeek = { controller?.seekTo(it) },
+                onSeekBy = { d -> controller?.let { it.seekTo((it.currentPosition + d).coerceIn(0, it.duration.coerceAtLeast(0))) } },
                 onSpeedChange = { speed = it },
-                onQualityChange = { changeQuality(it) },
+                onQualityChange = { qualityIndex = it; reload() },
+                onToggleAudio = { audioMode = !audioMode; reload() },
                 onToggleFullscreen = onToggleFullscreen,
                 onHide = { controlsVisible = false },
             )
@@ -427,13 +517,15 @@ private fun ControlsOverlay(
     speed: Float,
     tracks: List<StreamTrack>,
     qualityIndex: Int,
-    audioOnly: Boolean,
+    audioMode: Boolean,
+    canToggleAudio: Boolean,
     isFullscreen: Boolean,
     onPlayPause: () -> Unit,
     onSeek: (Long) -> Unit,
     onSeekBy: (Long) -> Unit,
     onSpeedChange: (Float) -> Unit,
     onQualityChange: (Int) -> Unit,
+    onToggleAudio: () -> Unit,
     onToggleFullscreen: () -> Unit,
     onHide: () -> Unit,
 ) {
@@ -444,14 +536,24 @@ private fun ControlsOverlay(
         modifier = Modifier.fillMaxSize().background(Color(0x66000000))
             .pointerInput(Unit) { detectTapGestures(onTap = { onHide() }) },
     ) {
-        // עליון: כותרת + מהירות + איכות
+        // עליון: כותרת + אודיו/וידאו + מהירות + איכות
         Row(
             modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter)
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = 8.dp))
+
+            if (canToggleAudio) {
+                IconButton(onClick = onToggleAudio) {
+                    Icon(
+                        if (audioMode) Icons.Default.Videocam else Icons.Default.Audiotrack,
+                        if (audioMode) "עבור לוידאו" else "עבור לאודיו",
+                        tint = Color.White,
+                    )
+                }
+            }
 
             Box {
                 IconButton(onClick = { speedMenu = true }) {
@@ -467,7 +569,7 @@ private fun ControlsOverlay(
                 }
             }
 
-            if (!audioOnly && tracks.size > 1) {
+            if (!audioMode && tracks.size > 1) {
                 Box {
                     IconButton(onClick = { qualityMenu = true }) {
                         Icon(Icons.Default.HighQuality, "איכות", tint = Color.White)
@@ -484,7 +586,7 @@ private fun ControlsOverlay(
             }
         }
 
-        // מרכז: דילוג אחורה / נגן-עצור / דילוג קדימה
+        // מרכז: דילוג / נגן-עצור / דילוג
         Row(
             modifier = Modifier.align(Alignment.Center),
             verticalAlignment = Alignment.CenterVertically,
@@ -525,7 +627,7 @@ private fun ControlsOverlay(
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
             )
             Text(fmtTime(duration), color = Color.White, fontSize = 11.sp)
-            if (!audioOnly) {
+            if (!audioMode) {
                 IconButton(onClick = onToggleFullscreen) {
                     Icon(
                         if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
@@ -589,14 +691,15 @@ private fun fmtTime(ms: Long): String {
     return if (m >= 60) "%d:%02d:%02d".format(m / 60, m % 60, s) else "%d:%02d".format(m, s)
 }
 
-private fun downloadVideo(context: Context, url: String, title: String) {
+private fun downloadStream(context: Context, url: String, title: String, isAudio: Boolean) {
     try {
-        val safeTitle = title.replace(Regex("[^\\p{L}\\p{N} _-]"), "").trim().take(60).ifEmpty { "filtertube_video" }
+        val safeTitle = title.replace(Regex("[^\\p{L}\\p{N} _-]"), "").trim().take(60).ifEmpty { "filtertube" }
+        val ext = if (isAudio) "m4a" else "mp4"
         val request = DownloadManager.Request(Uri.parse(url)).apply {
             setTitle(safeTitle)
-            setDescription("FilterTube — מוריד סרטון")
+            setDescription("FilterTube — ${if (isAudio) "אודיו" else "וידאו"}")
             setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "$safeTitle.mp4")
+            setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "$safeTitle.$ext")
             setAllowedOverMetered(true)
             setAllowedOverRoaming(true)
         }

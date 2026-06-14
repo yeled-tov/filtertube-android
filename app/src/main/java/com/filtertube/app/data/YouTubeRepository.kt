@@ -103,13 +103,33 @@ object YouTubeRepository {
     // SEARCH — NewPipeExtractor, מסונן לערוצים מאושרים בלבד
     // ───────────────────────────────────────────────────────────────────────
     suspend fun search(query: String, channels: List<Channel>): List<Video> = withContext(Dispatchers.IO) {
-        val allowed = channels.map { it.youtubeChannelId }.toHashSet()
+        val allowedIds = channels.map { it.youtubeChannelId }.toHashSet()
+        val allowedNames = channels.map { it.name.trim().lowercase() }.toHashSet()
         val qh = ServiceList.YouTube.searchQHFactory.fromQuery(query, listOf("videos"), "")
+
         val info = SearchInfo.getInfo(ServiceList.YouTube, qh)
-        info.relatedItems
+        val rawItems = info.relatedItems.toMutableList()
+
+        // מושכים עוד עמודים — אחרת אחרי הסינון לערוצים המאושרים נשארות מעט מאוד תוצאות
+        var nextPage = info.nextPage
+        var pagesFetched = 0
+        while (nextPage != null && pagesFetched < 5) {
+            try {
+                val more = SearchInfo.getMoreItems(ServiceList.YouTube, qh, nextPage)
+                rawItems.addAll(more.items)
+                nextPage = more.nextPage
+                pagesFetched++
+            } catch (e: Exception) {
+                android.util.Log.w("YouTubeRepository", "search page failed: ${e.message}")
+                break
+            }
+        }
+
+        rawItems
             .filterIsInstance<StreamInfoItem>()
             .mapNotNull { item -> toVideo(item) }
-            .filter { it.channelId in allowed }
+            .filter { it.channelId in allowedIds || it.channelName.trim().lowercase() in allowedNames }
+            .distinctBy { it.id }
     }
 
     // ───────────────────────────────────────────────────────────────────────

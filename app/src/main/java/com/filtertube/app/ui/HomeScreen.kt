@@ -24,8 +24,10 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.FeedCache
+import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeRepository
+import com.filtertube.app.data.forLevel
 import kotlinx.coroutines.launch
 
 sealed class HomeState {
@@ -38,6 +40,7 @@ sealed class HomeState {
 fun HomeScreen(onVideoClick: (Video) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val settings = remember { SettingsStore(context) }
     var state by remember { mutableStateOf<HomeState>(HomeState.Loading) }
     var refreshing by remember { mutableStateOf(false) }
 
@@ -46,7 +49,7 @@ fun HomeScreen(onVideoClick: (Video) -> Unit) {
         refreshing = true
         scope.launch {
             try {
-                val channels = ChannelsRepository.getChannels(context)
+                val channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
                 val videos = YouTubeRepository.fetchAllChannelsFeed(channels)
                 if (videos.isNotEmpty()) {
                     FeedCache.saveFeed(context, videos)
