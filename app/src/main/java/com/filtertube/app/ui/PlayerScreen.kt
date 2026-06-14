@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -88,7 +89,7 @@ fun PlayerScreen(
     val activity = context as? Activity
     val settings = remember { SettingsStore(context) }
     var state by remember(videoId) { mutableStateOf<PlayerState>(PlayerState.Loading) }
-    var isFullscreen by remember { mutableStateOf(false) }
+    var isFullscreen by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(videoId) {
         state = try {
