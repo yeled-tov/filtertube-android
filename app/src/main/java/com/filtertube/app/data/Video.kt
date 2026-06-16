@@ -1,9 +1,12 @@
 package com.filtertube.app.data
 
+import kotlinx.serialization.Serializable
+
 /**
  * סרטון YouTube מערוץ מאושר.
  * מגיע מ-RSS feed של YouTube (ללא API key).
  */
+@Serializable
 data class Video(
     val id: String,                  // YouTube video ID (11 chars)
     val title: String,

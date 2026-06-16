@@ -23,8 +23,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.filtertube.app.data.ChannelsRepository
+import com.filtertube.app.data.FeedCache
+import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeRepository
+import com.filtertube.app.data.forLevel
 import kotlinx.coroutines.launch
 
 sealed class HomeState {
@@ -37,23 +40,37 @@ sealed class HomeState {
 fun HomeScreen(onVideoClick: (Video) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val settings = remember { SettingsStore(context) }
     var state by remember { mutableStateOf<HomeState>(HomeState.Loading) }
+    var refreshing by remember { mutableStateOf(false) }
 
-    fun load() {
-        state = HomeState.Loading
+    fun refresh(showSpinner: Boolean) {
+        if (showSpinner) state = HomeState.Loading
+        refreshing = true
         scope.launch {
-            state = try {
-                val channels = ChannelsRepository.getChannels(context)
+            try {
+                val channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
                 val videos = YouTubeRepository.fetchAllChannelsFeed(channels)
-                if (videos.isEmpty()) HomeState.Error("לא נמצאו סרטונים בערוצים המאושרים")
-                else HomeState.Success(videos)
+                if (videos.isNotEmpty()) {
+                    FeedCache.saveFeed(context, videos)
+                    state = HomeState.Success(videos)
+                } else if (state !is HomeState.Success) {
+                    state = HomeState.Error("לא נמצאו סרטונים בערוצים המאושרים")
+                }
             } catch (e: Exception) {
-                HomeState.Error(e.message ?: "שגיאה")
+                if (state !is HomeState.Success) state = HomeState.Error(e.message ?: "שגיאה")
+            } finally {
+                refreshing = false
             }
         }
     }
 
-    LaunchedEffect(Unit) { load() }
+    // טעינה מיידית מהקאש (אם יש), ואז רענון ברקע
+    LaunchedEffect(Unit) {
+        val cached = FeedCache.loadFeed(context)
+        if (!cached.isNullOrEmpty()) state = HomeState.Success(cached)
+        refresh(showSpinner = cached.isNullOrEmpty())
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F0F))) {
         Row(
@@ -66,15 +83,18 @@ fun HomeScreen(onVideoClick: (Video) -> Unit) {
             ) { Text("FT", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold) }
             Spacer(Modifier.width(8.dp))
             Text("FilterTube", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.weight(1f))
-            IconButton(onClick = ::load) {
+            IconButton(onClick = { refresh(showSpinner = false) }) {
                 Icon(Icons.Default.Refresh, contentDescription = "רענן", tint = Color.White)
             }
+        }
+        if (refreshing && state is HomeState.Success) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color(0xFFFF0000), trackColor = Color(0xFF272727))
         }
         HorizontalDivider(color = Color(0xFF272727))
 
         when (val s = state) {
             is HomeState.Loading -> CenteredLoading("טוען סרטונים...")
-            is HomeState.Error -> CenteredError(s.message, ::load)
+            is HomeState.Error -> CenteredError(s.message) { refresh(showSpinner = true) }
             is HomeState.Success -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = 8.dp),

@@ -1,6 +1,7 @@
 package com.filtertube.app
 
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -18,20 +20,33 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.ui.*
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val requestNotifications =
+        registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {}
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        // קצב רענון גבוה (120 הרץ) למסכים שתומכים — תצוגה חלקה
+        if (SettingsStore(this).highRefreshRate) applyHighRefreshRate()
+
+        // הרשאת התראות נדרשת באנדרואיד 13+ כדי להציג את חלונית הנגן
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestNotifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
         setContent {
             FilterTubeTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -39,6 +54,22 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** בוחר את מצב התצוגה עם קצב הרענון הגבוה ביותר באותה רזולוציה (אם נתמך). */
+    @Suppress("DEPRECATION")
+    private fun applyHighRefreshRate() {
+        try {
+            val disp = (if (Build.VERSION.SDK_INT >= 30) display else windowManager.defaultDisplay)
+                ?: return
+            val current = disp.mode ?: return
+            val best = disp.supportedModes
+                .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
+                .maxByOrNull { it.refreshRate } ?: return
+            if (best.modeId != current.modeId) {
+                window.attributes = window.attributes.apply { preferredDisplayModeId = best.modeId }
+            }
+        } catch (_: Exception) { /* בלי קצב גבוה — לא נורא */ }
     }
 }
 
@@ -48,26 +79,30 @@ private data class NavItem(val route: String, val label: String, val icon: Image
 fun AppRoot() {
     val navController = rememberNavController()
     val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val settings = remember { SettingsStore(context) }
     var shortsEnabled by remember { mutableStateOf(settings.shortsEnabled) }
     var filterLevel by remember { mutableStateOf(settings.filterLevel) }
 
+    val controller by com.filtertube.app.ui.rememberMediaController()
+    val playerUi = com.filtertube.app.ui.rememberPlayerUiState(controller)
+
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    val mainRoutes = listOf("home", "shorts", "search", "settings")
+    val mainRoutes = listOf("home", "shorts", "search", "library", "settings")
     val showBottomBar = currentRoute in mainRoutes
 
     fun openVideo(video: Video) {
-        val t = Uri.encode(video.title)
-        val c = Uri.encode(video.channelName)
-        navController.navigate("player/${video.id}/$t/$c")
+        scope.launch { com.filtertube.app.playback.Playback.start(context, controller, video) }
+        navController.navigate("player") { launchSingleTop = true }
     }
 
     val navItems = buildList {
         add(NavItem("home", "בית", Icons.Default.Home))
         if (shortsEnabled) add(NavItem("shorts", "Shorts", Icons.Default.PlayArrow))
         add(NavItem("search", "חיפוש", Icons.Default.Search))
+        add(NavItem("library", "ספריה", Icons.Default.LibraryMusic))
         add(NavItem("settings", "הגדרות", Icons.Default.Settings))
     }
 
@@ -75,29 +110,36 @@ fun AppRoot() {
         containerColor = Color(0xFF0F0F0F),
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar(containerColor = Color(0xFF0A0A0A)) {
-                    navItems.forEach { item ->
-                        NavigationBarItem(
-                            selected = currentRoute == item.route,
-                            onClick = {
-                                if (currentRoute != item.route) {
-                                    navController.navigate(item.route) {
-                                        popUpTo("home") { saveState = true }
-                                        launchSingleTop = true
-                                        restoreState = true
+                androidx.compose.foundation.layout.Column {
+                    com.filtertube.app.ui.MiniPlayer(
+                        controller = controller,
+                        ui = playerUi,
+                        onOpen = { navController.navigate("player") { launchSingleTop = true } },
+                    )
+                    NavigationBar(containerColor = Color(0xFF0A0A0A)) {
+                        navItems.forEach { item ->
+                            NavigationBarItem(
+                                selected = currentRoute == item.route,
+                                onClick = {
+                                    if (currentRoute != item.route) {
+                                        navController.navigate(item.route) {
+                                            popUpTo("home") { saveState = true }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
                                     }
-                                }
-                            },
-                            icon = { Icon(item.icon, contentDescription = item.label) },
-                            label = { Text(item.label) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color(0xFFFF0000),
-                                selectedTextColor = Color.White,
-                                unselectedIconColor = Color(0xFF888888),
-                                unselectedTextColor = Color(0xFF888888),
-                                indicatorColor = Color(0xFF1F1F1F),
-                            ),
-                        )
+                                },
+                                icon = { Icon(item.icon, contentDescription = item.label) },
+                                label = { Text(item.label) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = Color(0xFFFF0000),
+                                    selectedTextColor = Color.White,
+                                    unselectedIconColor = Color(0xFF888888),
+                                    unselectedTextColor = Color(0xFF888888),
+                                    indicatorColor = Color(0xFF1F1F1F),
+                                ),
+                            )
+                        }
                     }
                 }
             }
@@ -129,26 +171,46 @@ fun AppRoot() {
             composable("admin") {
                 AdminScreen(onBack = { navController.popBackStack() })
             }
-            composable(
-                route = "player/{videoId}/{title}/{channel}",
-                arguments = listOf(
-                    navArgument("videoId") { type = NavType.StringType },
-                    navArgument("title") { type = NavType.StringType },
-                    navArgument("channel") { type = NavType.StringType },
-                ),
-            ) { entry ->
-                PlayerScreen(
-                    videoId = entry.arguments?.getString("videoId").orEmpty(),
-                    title = entry.arguments?.getString("title").orEmpty(),
-                    channelName = entry.arguments?.getString("channel").orEmpty(),
+            composable("library") {
+                LibraryScreen(
+                    onOpenCollection = { type -> navController.navigate("collection/$type") },
+                    onOpenSubscriptions = { navController.navigate("subscriptions") },
+                    onOpenPlaylist = { name -> navController.navigate("playlist/${Uri.encode(name)}") },
+                )
+            }
+            composable("collection/{type}") { entry ->
+                CollectionScreen(
+                    type = entry.arguments?.getString("type").orEmpty(),
+                    onVideoClick = ::openVideo,
                     onBack = { navController.popBackStack() },
-                    onPlayNext = { next ->
-                        val t = Uri.encode(next.title)
-                        val c = Uri.encode(next.channelName)
-                        navController.navigate("player/${next.id}/$t/$c") {
-                            popUpTo("player/{videoId}/{title}/{channel}") { inclusive = true }
-                        }
-                    },
+                )
+            }
+            composable("subscriptions") {
+                SubscriptionsScreen(
+                    onOpenChannel = { id, name -> navController.navigate("channel/$id/${Uri.encode(name)}") },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable("channel/{id}/{name}") { entry ->
+                ChannelVideosScreen(
+                    channelId = entry.arguments?.getString("id").orEmpty(),
+                    channelName = Uri.decode(entry.arguments?.getString("name").orEmpty()),
+                    onVideoClick = ::openVideo,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable("playlist/{name}") { entry ->
+                PlaylistScreen(
+                    name = Uri.decode(entry.arguments?.getString("name").orEmpty()),
+                    onVideoClick = ::openVideo,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable("player") {
+                PlayerScreen(
+                    controller = controller,
+                    ui = playerUi,
+                    onCollapse = { navController.popBackStack() },
                 )
             }
         }
