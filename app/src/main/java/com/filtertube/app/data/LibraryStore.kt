@@ -73,10 +73,17 @@ class LibraryStore(context: Context) {
     fun youtubeLikes(): List<Video> = videos(KEY_YT_LIKES)
     fun setYoutubeLikes(list: List<Video>) = saveVideos(KEY_YT_LIKES, list)
 
+    // ── מנויים מיוטיוב (מטמון) ───────────────────────────────────────────
+    fun subscriptions(): List<SubChannel> =
+        prefs.getString(KEY_SUBS, null)?.let { runCatching { json.decodeFromString<List<SubChannel>>(it) }.getOrNull() } ?: emptyList()
+    fun setSubscriptions(list: List<SubChannel>) =
+        prefs.edit().putString(KEY_SUBS, json.encodeToString(list)).apply()
+
     companion object {
         private const val KEY_LIKES = "likes"
         private const val KEY_DOWNLOADS = "downloads"
         private const val KEY_PLAYLISTS = "playlists"
         private const val KEY_YT_LIKES = "youtube_likes"
+        private const val KEY_SUBS = "youtube_subscriptions"
     }
 }

@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
@@ -14,12 +15,15 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Subscriptions
+import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -27,7 +31,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filtertube.app.data.GoogleAuth
 import com.filtertube.app.data.LibraryStore
-import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeAccountRepository
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
@@ -35,7 +38,11 @@ import com.google.android.gms.common.api.ApiException
 import kotlinx.coroutines.launch
 
 @Composable
-fun LibraryScreen(onVideoClick: (Video) -> Unit, onOpenPlaylist: (String) -> Unit) {
+fun LibraryScreen(
+    onOpenCollection: (String) -> Unit,
+    onOpenSubscriptions: () -> Unit,
+    onOpenPlaylist: (String) -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val store = remember { LibraryStore(context) }
@@ -44,25 +51,29 @@ fun LibraryScreen(onVideoClick: (Video) -> Unit, onOpenPlaylist: (String) -> Uni
     val likes = remember(version) { store.likes() }
     val downloads = remember(version) { store.downloads() }
     val playlists = remember(version) { store.playlists() }
+    var ytLikes by remember { mutableStateOf(store.youtubeLikes()) }
+    var subs by remember { mutableStateOf(store.subscriptions()) }
 
     var account by remember { mutableStateOf<GoogleSignInAccount?>(GoogleAuth.lastAccount(context)) }
-    var ytLikes by remember { mutableStateOf(store.youtubeLikes()) }
     var status by remember { mutableStateOf("") }
+    var syncing by remember { mutableStateOf(false) }
     var showCreate by remember { mutableStateOf(false) }
 
-    fun importLikes(acct: GoogleSignInAccount) {
+    // מסנכרן גם לייקים וגם מנויים מחשבון הגוגל
+    fun syncAccount(acct: GoogleSignInAccount) {
         val a = acct.account ?: return
-        status = "מייבא מיוטיוב..."
+        syncing = true; status = "מסנכרן מיוטיוב..."
         scope.launch {
             try {
                 val token = GoogleAuth.accessToken(context, a)
                 val liked = YouTubeAccountRepository.likedVideos(token)
-                store.setYoutubeLikes(liked)
-                ytLikes = liked
-                status = "יובאו ${liked.size} סרטונים ✓"
+                store.setYoutubeLikes(liked); ytLikes = liked
+                val subList = YouTubeAccountRepository.subscriptions(token)
+                store.setSubscriptions(subList); subs = subList
+                status = "סונכרנו ${liked.size} לייקים ו-${subList.size} מנויים ✓"
             } catch (e: Exception) {
-                status = "שגיאה בייבוא: ${e.message}"
-            }
+                status = "שגיאה בסנכרון: ${e.message}"
+            } finally { syncing = false }
         }
     }
 
@@ -70,10 +81,9 @@ fun LibraryScreen(onVideoClick: (Video) -> Unit, onOpenPlaylist: (String) -> Uni
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         try {
-            val acct = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-                .getResult(ApiException::class.java)
+            val acct = GoogleSignIn.getSignedInAccountFromIntent(result.data).getResult(ApiException::class.java)
             account = acct
-            importLikes(acct)
+            syncAccount(acct)
         } catch (e: ApiException) {
             status = "ההתחברות נכשלה (${e.statusCode})"
         }
@@ -93,7 +103,7 @@ fun LibraryScreen(onVideoClick: (Video) -> Unit, onOpenPlaylist: (String) -> Uni
             HorizontalDivider(color = Color(0xFF272727))
         }
 
-        // חיבור Google
+        // כרטיס חיבור Google
         item {
             Column(modifier = Modifier.fillMaxWidth().padding(16.dp)
                 .clip(RoundedCornerShape(12.dp)).background(Color(0xFF1A1A1A)).padding(16.dp)) {
@@ -102,27 +112,32 @@ fun LibraryScreen(onVideoClick: (Video) -> Unit, onOpenPlaylist: (String) -> Uni
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            if (account != null) "מחובר: ${account?.email ?: ""}" else "חיבור לחשבון יוטיוב",
+                            if (account != null) account?.email ?: "מחובר" else "חיבור לחשבון יוטיוב",
                             color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
-                        Text("ייבוא הסרטונים שאהבת ביוטיוב", color = Color(0xFF888888), fontSize = 12.sp)
+                        Text("מושך את הלייקים והמנויים שלך", color = Color(0xFF888888), fontSize = 12.sp)
                     }
+                    if (syncing) CircularProgressIndicator(color = Color(0xFFFF0000), strokeWidth = 2.dp,
+                        modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.height(10.dp))
                 Row {
                     Button(
                         onClick = {
                             val acct = account
-                            if (acct != null) importLikes(acct) else signInLauncher.launch(GoogleAuth.client(context).signInIntent)
+                            if (acct != null) syncAccount(acct) else signInLauncher.launch(GoogleAuth.client(context).signInIntent)
                         },
+                        enabled = !syncing,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF0000)),
-                    ) { Text(if (account != null) "רענן ייבוא" else "התחבר") }
+                    ) { Text(if (account != null) "סנכרן מחדש" else "התחבר") }
                     if (account != null) {
                         Spacer(Modifier.width(8.dp))
                         OutlinedButton(onClick = {
                             GoogleAuth.client(context).signOut()
-                            account = null; ytLikes = emptyList(); status = "התנתקת"
+                            account = null; ytLikes = emptyList(); subs = emptyList()
+                            store.setYoutubeLikes(emptyList()); store.setSubscriptions(emptyList())
+                            status = "התנתקת"
                         }) { Text("התנתק") }
                     }
                 }
@@ -133,14 +148,23 @@ fun LibraryScreen(onVideoClick: (Video) -> Unit, onOpenPlaylist: (String) -> Uni
             }
         }
 
-        section("אהבתי", likes, Icons.Default.Favorite, onVideoClick)
-        section("הורדות", downloads, Icons.Default.Download, onVideoClick)
-        section("אהבתי ביוטיוב", ytLikes, Icons.Default.AccountCircle, onVideoClick)
+        // קוביות אוספים — לחיצה פותחת את התוכן
+        item {
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                LibTile("אהבתי", likes.size, Icons.Default.Favorite, Color(0xFFFF0000)) { onOpenCollection("likes") }
+                LibTile("אהבתי ביוטיוב", ytLikes.size, Icons.Default.ThumbUp, Color(0xFF3B82F6)) { onOpenCollection("ytlikes") }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                LibTile("המנויים שלי", subs.size, Icons.Default.Subscriptions, Color(0xFFA855F7)) { onOpenSubscriptions() }
+                LibTile("הורדות", downloads.size, Icons.Default.Download, Color(0xFF10B981)) { onOpenCollection("downloads") }
+            }
+        }
 
         // אלבומים
         item {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 16.dp, bottom = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 24.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, tint = Color(0xFFFF0000), modifier = Modifier.size(20.dp))
@@ -175,27 +199,22 @@ fun LibraryScreen(onVideoClick: (Video) -> Unit, onOpenPlaylist: (String) -> Uni
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.section(
-    title: String,
-    videos: List<Video>,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onVideoClick: (Video) -> Unit,
-) {
-    item {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(icon, null, tint = Color(0xFFFF0000), modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("$title (${videos.size})", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+@Composable
+private fun RowScope.LibTile(title: String, count: Int, icon: ImageVector, accent: Color, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier.weight(1f).height(104.dp).clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF1A1A1A)).clickable(onClick = onClick).padding(14.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Box(modifier = Modifier.size(40.dp).clip(CircleShape).background(accent.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center) {
+            Icon(icon, null, tint = accent, modifier = Modifier.size(22.dp))
         }
-    }
-    if (videos.isEmpty()) {
-        item { Text("ריק", color = Color(0xFF888888), fontSize = 12.sp,
-            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)) }
-    } else {
-        items(videos.take(30), key = { it.id }) { v -> VideoRow(v, onClick = { onVideoClick(v) }) }
+        Column {
+            Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("$count פריטים", color = Color(0xFF888888), fontSize = 11.sp)
+        }
     }
 }
 

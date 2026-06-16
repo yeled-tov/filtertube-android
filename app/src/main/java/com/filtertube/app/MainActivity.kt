@@ -1,6 +1,7 @@
 package com.filtertube.app
 
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -36,6 +37,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
+        // קצב רענון גבוה (120 הרץ) למסכים שתומכים — תצוגה חלקה
+        if (SettingsStore(this).highRefreshRate) applyHighRefreshRate()
+
         // הרשאת התראות נדרשת באנדרואיד 13+ כדי להציג את חלונית הנגן
         if (android.os.Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
@@ -50,6 +54,22 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** בוחר את מצב התצוגה עם קצב הרענון הגבוה ביותר באותה רזולוציה (אם נתמך). */
+    @Suppress("DEPRECATION")
+    private fun applyHighRefreshRate() {
+        try {
+            val disp = (if (Build.VERSION.SDK_INT >= 30) display else windowManager.defaultDisplay)
+                ?: return
+            val current = disp.mode ?: return
+            val best = disp.supportedModes
+                .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
+                .maxByOrNull { it.refreshRate } ?: return
+            if (best.modeId != current.modeId) {
+                window.attributes = window.attributes.apply { preferredDisplayModeId = best.modeId }
+            }
+        } catch (_: Exception) { /* בלי קצב גבוה — לא נורא */ }
     }
 }
 
@@ -153,8 +173,30 @@ fun AppRoot() {
             }
             composable("library") {
                 LibraryScreen(
-                    onVideoClick = ::openVideo,
+                    onOpenCollection = { type -> navController.navigate("collection/$type") },
+                    onOpenSubscriptions = { navController.navigate("subscriptions") },
                     onOpenPlaylist = { name -> navController.navigate("playlist/${Uri.encode(name)}") },
+                )
+            }
+            composable("collection/{type}") { entry ->
+                CollectionScreen(
+                    type = entry.arguments?.getString("type").orEmpty(),
+                    onVideoClick = ::openVideo,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable("subscriptions") {
+                SubscriptionsScreen(
+                    onOpenChannel = { id, name -> navController.navigate("channel/$id/${Uri.encode(name)}") },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable("channel/{id}/{name}") { entry ->
+                ChannelVideosScreen(
+                    channelId = entry.arguments?.getString("id").orEmpty(),
+                    channelName = Uri.decode(entry.arguments?.getString("name").orEmpty()),
+                    onVideoClick = ::openVideo,
+                    onBack = { navController.popBackStack() },
                 )
             }
             composable("playlist/{name}") { entry ->

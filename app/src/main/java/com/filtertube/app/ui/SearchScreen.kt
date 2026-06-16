@@ -59,7 +59,10 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
         scope.launch {
             state = try {
                 val channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
-                val results = YouTubeRepository.search(trimmed, channels)
+                // הדרגתי: כל עמוד שמגיע מתעדכן מיד למסך
+                val results = YouTubeRepository.search(trimmed, channels) { partial ->
+                    if (partial.isNotEmpty()) state = SearchState.Results(partial)
+                }
                 if (results.isEmpty()) SearchState.Error("לא נמצאו תוצאות בערוצים המאושרים")
                 else SearchState.Results(results)
             } catch (e: Exception) {

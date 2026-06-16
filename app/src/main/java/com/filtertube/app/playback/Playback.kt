@@ -6,6 +6,10 @@ import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.session.MediaController
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.StreamData
@@ -89,10 +93,21 @@ object Playback {
         c.prepare()
         c.play()
 
-        // תור רדיו אוטומטי מהקשורים המאושרים
+        // תן לסרטון הראשון "ראש" של ~1.2 שניות להתחיל להיטען לפני שבונים את התור,
+        // כדי שתור הרדיו לא יגזול רוחב פס מהניגון הנוכחי.
+        kotlinx.coroutines.delay(1200)
+
+        // תור רדיו אוטומטי מהקשורים המאושרים — נפתר במקביל (מהיר בהרבה מרצוף)
         val related = data.related.filter { it.channelId in allowed && it.id != video.id }.take(RADIO_SIZE)
-        for (v in related) {
-            val d = runCatching { StreamRepository.getStream(v.id) }.getOrNull() ?: continue
+        val resolved = coroutineScope {
+            related.map { v ->
+                async(Dispatchers.IO) {
+                    runCatching { StreamRepository.getStream(v.id) }.getOrNull()?.let { v to it }
+                }
+            }.awaitAll()
+        }
+        for (pair in resolved) {
+            val (v, d) = pair ?: continue
             cache(v.id, d)
             val a = forcedAudio(catById[d.channelId] ?: catById[v.channelId], level)
             c.addMediaItem(buildItem(d, v.id, a))

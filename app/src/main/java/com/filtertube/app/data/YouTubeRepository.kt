@@ -50,6 +50,11 @@ object YouTubeRepository {
         allLists.flatten().sortedByDescending { it.publishedAt }
     }
 
+    /** סרטוני ערוץ בודד לפי מזהה — להצגת תוכן של מנוי שנבחר. */
+    suspend fun fetchChannelVideos(channelId: String, channelName: String): List<Video> =
+        fetchChannelFeed(Channel(channelId, channelName, "general"))
+            .sortedByDescending { it.publishedAt }
+
     private suspend fun fetchChannelFeed(channel: Channel): List<Video> = withContext(Dispatchers.IO) {
         val url = "https://www.youtube.com/feeds/videos.xml?channel_id=${channel.youtubeChannelId}"
         val request = Request.Builder().url(url).header("User-Agent", "FilterTube/1.0").build()
@@ -102,21 +107,40 @@ object YouTubeRepository {
     // ───────────────────────────────────────────────────────────────────────
     // SEARCH — NewPipeExtractor, מסונן לערוצים מאושרים בלבד
     // ───────────────────────────────────────────────────────────────────────
-    suspend fun search(query: String, channels: List<Channel>): List<Video> = withContext(Dispatchers.IO) {
+    /**
+     * חיפוש מסונן לערוצים מאושרים. **הדרגתי** — [onPartial] נקרא אחרי כל עמוד
+     * עם כל התוצאות שנאספו עד כה, כך שה-UI מציג תוצאות מיד עם העמוד הראשון
+     * במקום להמתין לכל 6 העמודים. מחזיר את הרשימה הסופית בסוף.
+     */
+    suspend fun search(
+        query: String,
+        channels: List<Channel>,
+        onPartial: (List<Video>) -> Unit = {},
+    ): List<Video> = withContext(Dispatchers.IO) {
         val allowedIds = channels.map { it.youtubeChannelId }.toHashSet()
         val allowedNames = channels.map { it.name.trim().lowercase() }.toHashSet()
         val qh = ServiceList.YouTube.searchQHFactory.fromQuery(query, listOf("videos"), "")
 
-        val info = SearchInfo.getInfo(ServiceList.YouTube, qh)
-        val rawItems = info.relatedItems.toMutableList()
+        // אוסף שומר סדר ומונע כפילויות
+        val collected = LinkedHashMap<String, Video>()
+        fun ingest(items: List<Any?>) {
+            items.filterIsInstance<StreamInfoItem>()
+                .mapNotNull { item -> toVideo(item) }
+                .filter { it.channelId in allowedIds || it.channelName.trim().lowercase() in allowedNames }
+                .forEach { if (!collected.containsKey(it.id)) collected[it.id] = it }
+        }
 
-        // מושכים עוד עמודים — אחרת אחרי הסינון לערוצים המאושרים נשארות מעט מאוד תוצאות
+        val info = SearchInfo.getInfo(ServiceList.YouTube, qh)
+        ingest(info.relatedItems)
+        onPartial(collected.values.toList())   // ← תוצאות ראשונות מופיעות כאן מיד
+
         var nextPage = info.nextPage
         var pagesFetched = 0
         while (nextPage != null && pagesFetched < 5) {
             try {
                 val more = SearchInfo.getMoreItems(ServiceList.YouTube, qh, nextPage)
-                rawItems.addAll(more.items)
+                ingest(more.items)
+                onPartial(collected.values.toList())
                 nextPage = more.nextPage
                 pagesFetched++
             } catch (e: Exception) {
@@ -125,11 +149,7 @@ object YouTubeRepository {
             }
         }
 
-        rawItems
-            .filterIsInstance<StreamInfoItem>()
-            .mapNotNull { item -> toVideo(item) }
-            .filter { it.channelId in allowedIds || it.channelName.trim().lowercase() in allowedNames }
-            .distinctBy { it.id }
+        collected.values.toList()
     }
 
     // ───────────────────────────────────────────────────────────────────────

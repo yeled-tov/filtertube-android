@@ -29,6 +29,23 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_GH_TOKEN, "") ?: ""
         set(value) = prefs.edit().putString(KEY_GH_TOKEN, value).apply()
 
+    /**
+     * סיסמת הורים על הגדרות הסינון (כולל הצגת Shorts).
+     * ריק = עדיין לא נקבעה סיסמה. כל שינוי ברמת הסינון דורש קודם אימות.
+     */
+    var filterPassword: String
+        get() = prefs.getString(KEY_FILTER_PW, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_FILTER_PW, value).apply()
+
+    val hasFilterPassword: Boolean get() = filterPassword.isNotEmpty()
+
+    fun checkFilterPassword(input: String): Boolean = filterPassword == input.trim()
+
+    /** קצב רענון גבוה (120 הרץ) — תצוגה חלקה במכשירים שתומכים. */
+    var highRefreshRate: Boolean
+        get() = prefs.getBoolean(KEY_HIGH_HZ, true)
+        set(value) = prefs.edit().putBoolean(KEY_HIGH_HZ, value).apply()
+
     // ── היסטוריית חיפוש ──────────────────────────────────────────────────
     fun getSearchHistory(): List<String> {
         val raw = prefs.getString(KEY_HISTORY, "") ?: ""
@@ -60,5 +77,7 @@ class SettingsStore(context: Context) {
         private const val KEY_HISTORY = "search_history"
         private const val KEY_LEVEL = "filter_level"
         private const val KEY_GH_TOKEN = "github_token"
+        private const val KEY_FILTER_PW = "filter_password"
+        private const val KEY_HIGH_HZ = "high_refresh_rate"
     }
 }
