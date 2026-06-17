@@ -22,6 +22,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.filtertube.app.ThemeState
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.FeedCache
 import com.filtertube.app.data.SettingsStore
@@ -78,7 +79,7 @@ fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFFF0000)),
+                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(ThemeState.accent),
                 contentAlignment = Alignment.Center,
             ) { Text("FT", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold) }
             Spacer(Modifier.width(8.dp))
@@ -88,7 +89,7 @@ fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit) {
             }
         }
         if (refreshing && state is HomeState.Success) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color(0xFFFF0000), trackColor = Color(0xFF272727))
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = ThemeState.accent, trackColor = Color(0xFF272727))
         }
         HorizontalDivider(color = Color(0xFF272727))
 

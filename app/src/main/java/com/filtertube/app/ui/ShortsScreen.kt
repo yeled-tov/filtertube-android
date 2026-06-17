@@ -14,7 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -62,7 +62,7 @@ sealed class ShortsState {
 
 /** טאב Shorts — גריד של תמונות ממוזערות. לחיצה פותחת את הנגן המלא בסגנון טיקטוק. */
 @Composable
-fun ShortsScreen(onOpenShort: () -> Unit) {
+fun ShortsScreen(onOpenShort: () -> Unit, onSearch: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settings = remember { SettingsStore(context) }
@@ -98,8 +98,8 @@ fun ShortsScreen(onOpenShort: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("Shorts", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.weight(1f))
-            IconButton(onClick = { refresh(showSpinner = true) }) {
-                Icon(Icons.Default.Refresh, "רענן", tint = Color.White)
+            IconButton(onClick = onSearch) {
+                Icon(Icons.Default.Search, "חיפוש", tint = Color.White)
             }
         }
         HorizontalDivider(color = Color(0xFF272727))
@@ -164,23 +164,35 @@ fun ShortsPlayerScreen(onBack: () -> Unit) {
     DisposableEffect(Unit) { onDispose { exo.release() } }
 
     var loading by remember { mutableStateOf(true) }
+    val urlCache = remember { mutableMapOf<String, String>() }
+    val prefetchScope = rememberCoroutineScope()
 
-    // טוען ומנגן את הסרטון של העמוד הנוכחי
-    LaunchedEffect(pagerState.currentPage) {
-        val video = videos.getOrNull(pagerState.currentPage) ?: return@LaunchedEffect
-        loading = true
+    suspend fun resolveUrl(video: Video): String? {
+        urlCache[video.id]?.let { return it }
         val url = withContext(Dispatchers.IO) {
             runCatching {
                 val data = StreamRepository.getStream(video.id)
                 data.tracks.firstOrNull { it.audioUrl == null }?.videoUrl ?: data.bestVideoUrl
             }.getOrNull()
         }
+        if (url != null) urlCache[video.id] = url
+        return url
+    }
+
+    // טוען ומנגן את הסרטון של העמוד הנוכחי, ומקדים את הבא
+    LaunchedEffect(pagerState.currentPage) {
+        val page = pagerState.currentPage
+        val video = videos.getOrNull(page) ?: return@LaunchedEffect
+        loading = urlCache[video.id] == null
+        val url = resolveUrl(video)
         if (url != null) {
             exo.setMediaItem(MediaItem.fromUri(url))
             exo.prepare()
             exo.playWhenReady = true
         }
         loading = false
+        // טעינה מקדימה של השורט הבא — כך ההחלקה הבאה מיידית
+        videos.getOrNull(page + 1)?.let { next -> prefetchScope.launch { resolveUrl(next) } }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {

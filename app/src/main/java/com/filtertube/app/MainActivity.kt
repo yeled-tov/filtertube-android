@@ -42,8 +42,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
+        val settings = SettingsStore(this)
+        ThemeState.accent = Color(settings.accentColor)   // צבע ראשי שנבחר
+
         // קצב רענון גבוה (120 הרץ) למסכים שתומכים — תצוגה חלקה
-        if (SettingsStore(this).highRefreshRate) applyHighRefreshRate()
+        if (settings.highRefreshRate) applyHighRefreshRate()
 
         // הרשאת התראות נדרשת באנדרואיד 13+ כדי להציג את חלונית הנגן
         if (android.os.Build.VERSION.SDK_INT >= 33 &&
@@ -145,7 +148,7 @@ fun AppRoot() {
                                 icon = { Icon(item.icon, contentDescription = item.label) },
                                 label = { Text(item.label) },
                                 colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = Color(0xFFFF0000),
+                                    selectedIconColor = ThemeState.accent,
                                     selectedTextColor = Color.White,
                                     unselectedIconColor = Color(0xFF888888),
                                     unselectedTextColor = Color(0xFF888888),
@@ -164,7 +167,7 @@ fun AppRoot() {
             modifier = Modifier.padding(padding),
         ) {
             composable("home") { HomeScreen(onVideoClick = ::openVideo, onSearch = { navController.navigate("search") }) }
-            composable("shorts") { ShortsScreen(onOpenShort = { navController.navigate("shortsPlayer") }) }
+            composable("shorts") { ShortsScreen(onOpenShort = { navController.navigate("shortsPlayer") }, onSearch = { navController.navigate("search") }) }
             composable("shortsPlayer") { ShortsPlayerScreen(onBack = { navController.popBackStack() }) }
             composable("search") { SearchScreen(onVideoClick = ::openVideo) }
             composable("settings") {
@@ -264,10 +267,15 @@ private fun CrashReportDialog(report: String, onDismiss: () -> Unit) {
     )
 }
 
+/** מצב ערכת-נושא גלובלי — הצבע הראשי. שינוי שלו מרענן את כל המסכים מיד. */
+object ThemeState {
+    var accent by mutableStateOf(Color(0xFFFF0000))
+}
+
 @Composable
 fun FilterTubeTheme(content: @Composable () -> Unit) {
     val colorScheme = darkColorScheme(
-        primary = Color(0xFFFF0000),
+        primary = ThemeState.accent,
         background = Color(0xFF0F0F0F),
         surface = Color(0xFF1F1F1F),
         onBackground = Color.White,

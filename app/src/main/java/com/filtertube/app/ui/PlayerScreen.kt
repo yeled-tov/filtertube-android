@@ -14,6 +14,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,8 +29,11 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -58,6 +63,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import com.filtertube.app.ThemeState
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.StreamData
 import com.filtertube.app.data.StreamTrack
@@ -101,7 +107,7 @@ fun PlayerScreen(
 
     if (controller == null || !ui.hasMedia) {
         Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F0F)), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Color(0xFFFF0000))
+            CircularProgressIndicator(color = ThemeState.accent)
         }
         return
     }
@@ -115,6 +121,7 @@ fun PlayerScreen(
     )
     var liked by remember(ui.mediaId) { mutableStateOf(ui.mediaId?.let { store.isLiked(it) } ?: false) }
     var showAddToPlaylist by remember { mutableStateOf(false) }
+    var showDownload by remember { mutableStateOf(false) }
     var qualityIndex by remember(ui.mediaId) {
         mutableStateOf(currentData?.let { Playback.defaultQuality(it) } ?: 0)
     }
@@ -160,12 +167,16 @@ fun PlayerScreen(
                 fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             IconButton(onClick = { liked = store.toggleLike(currentVideo()) }) {
                 Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    "אהבתי", tint = if (liked) Color(0xFFFF0000) else Color.White)
+                    "אהבתי", tint = if (liked) ThemeState.accent else Color.White)
             }
-            IconButton(onClick = { showAddToPlaylist = true }) {
-                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, "הוסף לאלבום", tint = Color.White)
-            }
-            if (currentData != null) DownloadButton(context, currentData, ui.mediaId ?: "")
+            PlayerOverflowMenu(
+                context = context,
+                hasData = currentData != null,
+                artist = ui.artist,
+                videoId = ui.mediaId ?: "",
+                onAddToPlaylist = { showAddToPlaylist = true },
+                onDownload = { showDownload = true },
+            )
         }
 
         if (showAddToPlaylist) {
@@ -173,6 +184,15 @@ fun PlayerScreen(
                 store = store,
                 video = currentVideo(),
                 onDismiss = { showAddToPlaylist = false },
+            )
+        }
+
+        if (showDownload && currentData != null) {
+            DownloadDialog(
+                context = context,
+                data = currentData,
+                videoId = ui.mediaId ?: "",
+                onDismiss = { showDownload = false },
             )
         }
 
@@ -196,7 +216,7 @@ fun PlayerScreen(
             Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
                 VideoSurface(controller)
                 VideoGestures(controller, activity, audioMode = false)
-                if (ui.buffering) CircularProgressIndicator(color = Color(0xFFFF0000), modifier = Modifier.align(Alignment.Center))
+                if (ui.buffering) CircularProgressIndicator(color = ThemeState.accent, modifier = Modifier.align(Alignment.Center))
             }
         }
 
@@ -215,7 +235,7 @@ fun PlayerScreen(
                 onValueChange = { controller.seekTo(it.toLong()) },
                 valueRange = 0f..ui.duration.toFloat().coerceAtLeast(1f),
                 colors = SliderDefaults.colors(
-                    thumbColor = Color(0xFFFF0000), activeTrackColor = Color(0xFFFF0000),
+                    thumbColor = ThemeState.accent, activeTrackColor = ThemeState.accent,
                     inactiveTrackColor = Color(0x55FFFFFF),
                 ),
             )
@@ -238,7 +258,7 @@ fun PlayerScreen(
             }
             Spacer(Modifier.width(20.dp))
             Box(
-                modifier = Modifier.size(68.dp).clip(RoundedCornerShape(50)).background(Color(0xFFFF0000))
+                modifier = Modifier.size(68.dp).clip(RoundedCornerShape(50)).background(ThemeState.accent)
                     .clickable { if (ui.isPlaying) controller.pause() else controller.play() },
                 contentAlignment = Alignment.Center,
             ) {
@@ -314,7 +334,7 @@ private fun QueueList(controller: MediaController, ui: PlayerUiState, modifier: 
     Column(modifier = modifier) {
         if (items.isEmpty()) return@Column
         HorizontalDivider(color = Color(0xFF222222), modifier = Modifier.padding(vertical = 6.dp))
-        Text("הבא בתור", color = Color(0xFFFF0000), fontSize = 13.sp, fontWeight = FontWeight.Bold,
+        Text("הבא בתור", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(start = 16.dp, bottom = 4.dp))
         LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
             itemsIndexed(items, key = { _, p -> p.first }) { _, (index, item) ->
@@ -428,12 +448,12 @@ private fun FullscreenVideo(
         Box(modifier = Modifier.fillMaxSize().pointerInput(Unit) {
             detectTapGestures(onTap = { controlsVisible = !controlsVisible })
         })
-        if (ui.buffering) CircularProgressIndicator(color = Color(0xFFFF0000), modifier = Modifier.align(Alignment.Center))
+        if (ui.buffering) CircularProgressIndicator(color = ThemeState.accent, modifier = Modifier.align(Alignment.Center))
         if (controlsVisible) {
             Box(modifier = Modifier.fillMaxSize().background(Color(0x66000000))) {
                 Box(
                     modifier = Modifier.size(72.dp).align(Alignment.Center).clip(RoundedCornerShape(50))
-                        .background(Color(0xFFFF0000))
+                        .background(ThemeState.accent)
                         .clickable { if (ui.isPlaying) controller.pause() else controller.play() },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -449,8 +469,8 @@ private fun FullscreenVideo(
                         value = ui.position.toFloat().coerceIn(0f, ui.duration.toFloat().coerceAtLeast(0f)),
                         onValueChange = { controller.seekTo(it.toLong()) },
                         valueRange = 0f..ui.duration.toFloat().coerceAtLeast(1f),
-                        colors = SliderDefaults.colors(thumbColor = Color(0xFFFF0000),
-                            activeTrackColor = Color(0xFFFF0000), inactiveTrackColor = Color(0x55FFFFFF)),
+                        colors = SliderDefaults.colors(thumbColor = ThemeState.accent,
+                            activeTrackColor = ThemeState.accent, inactiveTrackColor = Color(0x55FFFFFF)),
                         modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                     )
                     Text(fmtTime(ui.duration), color = Color.White, fontSize = 11.sp)
@@ -462,29 +482,95 @@ private fun FullscreenVideo(
 }
 
 @Composable
-private fun DownloadButton(context: Context, data: StreamData, videoId: String) {
+private fun PlayerOverflowMenu(
+    context: Context,
+    hasData: Boolean,
+    artist: String,
+    videoId: String,
+    onAddToPlaylist: () -> Unit,
+    onDownload: () -> Unit,
+) {
     var menu by remember { mutableStateOf(false) }
-    val muxed = remember(data) { data.tracks.filter { it.audioUrl == null } }
+    Box {
+        IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "עוד", tint = Color.White) }
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            if (hasData) {
+                DropdownMenuItem(
+                    text = { Text("הורד") },
+                    leadingIcon = { Icon(Icons.Default.Download, null) },
+                    onClick = { menu = false; onDownload() },
+                )
+            }
+            DropdownMenuItem(
+                text = { Text("הוסף לאלבום") },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null) },
+                onClick = { menu = false; onAddToPlaylist() },
+            )
+            DropdownMenuItem(
+                text = { Text("הצג אמן") },
+                leadingIcon = { Icon(Icons.Default.Person, null) },
+                onClick = {
+                    menu = false
+                    Toast.makeText(context, artist.ifEmpty { "—" }, Toast.LENGTH_SHORT).show()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("העתק קישור") },
+                leadingIcon = { Icon(Icons.Default.Link, null) },
+                onClick = {
+                    menu = false
+                    val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    clip.setPrimaryClip(android.content.ClipData.newPlainText("link", "https://youtu.be/$videoId"))
+                    Toast.makeText(context, "הקישור הועתק", Toast.LENGTH_SHORT).show()
+                },
+            )
+        }
+    }
+}
+
+/** דיאלוג הורדה — אודיו (מקסימלי) או וידאו בכל האיכויות. וידאו מעל 720p הוא ללא קול. */
+@Composable
+private fun DownloadDialog(context: Context, data: StreamData, videoId: String, onDismiss: () -> Unit) {
     fun record() {
         LibraryStore(context).addDownload(
             Video(videoId, data.title, data.uploaderName, data.channelId,
                 data.thumbnailUrl ?: "", System.currentTimeMillis()),
         )
     }
-    Box {
-        IconButton(onClick = { menu = true }) { Icon(Icons.Default.Download, "הורד", tint = Color.White) }
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            if (data.bestAudioUrl != null) {
-                DropdownMenuItem(text = { Text("הורד אודיו (M4A)") },
-                    onClick = { menu = false; record(); downloadStream(context, data.bestAudioUrl, data.title, isAudio = true) })
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("הורדה") },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                Text("אודיו", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                if (data.bestAudioUrl != null) {
+                    DownloadRow("איכות מקסימלית (M4A / Opus)") {
+                        record(); downloadStream(context, data.bestAudioUrl, data.title, isAudio = true); onDismiss()
+                    }
+                } else {
+                    Text("לא זמין", color = Color(0xFF888888), fontSize = 12.sp)
+                }
+                HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
+                Text("וידאו", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                data.tracks.forEach { t ->
+                    val silent = t.audioUrl != null   // זרם וידאו-בלבד (DASH) = ללא קול
+                    val label = t.label + if (silent) "  (ללא קול)" else ""
+                    DownloadRow(label) {
+                        record(); downloadStream(context, t.videoUrl, data.title, isAudio = false); onDismiss()
+                    }
+                }
             }
-            val videoOptions = if (muxed.isNotEmpty()) muxed else listOf(StreamTrack(0, "וידאו", data.bestVideoUrl, null))
-            videoOptions.forEach { t ->
-                DropdownMenuItem(text = { Text("הורד וידאו · ${t.label}") },
-                    onClick = { menu = false; record(); downloadStream(context, t.videoUrl, data.title, isAudio = false) })
-            }
-        }
-    }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("סגור") } },
+        containerColor = Color(0xFF1F1F1F),
+        titleContentColor = Color.White, textContentColor = Color.White,
+    )
+}
+
+@Composable
+private fun DownloadRow(label: String, onClick: () -> Unit) {
+    Text(label, color = Color.White, fontSize = 14.sp,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp))
 }
 
 @Composable

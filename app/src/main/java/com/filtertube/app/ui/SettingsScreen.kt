@@ -3,9 +3,11 @@ package com.filtertube.app.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -21,12 +23,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.filtertube.app.ThemeState
 import com.filtertube.app.data.GoogleAuth
 import com.filtertube.app.data.SettingsStore
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -319,6 +323,11 @@ private fun LevelRow(value: Int, title: String, desc: String, selected: Int, onC
 }
 
 // ── תצוגה ────────────────────────────────────────────────────────────────
+private val accentOptions = listOf(
+    Color(0xFFFF0000), Color(0xFFFF6D00), Color(0xFFFFC400), Color(0xFF00C853),
+    Color(0xFF2962FF), Color(0xFFAA00FF), Color(0xFF00BFA5), Color(0xFFEC407A),
+)
+
 @Composable
 private fun DisplayDialog(settings: SettingsStore, onDismiss: () -> Unit) {
     var high by remember { mutableStateOf(settings.highRefreshRate) }
@@ -341,6 +350,22 @@ private fun DisplayDialog(settings: SettingsStore, onDismiss: () -> Unit) {
                             uncheckedThumbColor = Color(0xFF888888), uncheckedTrackColor = Color(0xFF333333),
                         ),
                     )
+                }
+
+                HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 12.dp))
+
+                Text("צבע ראשי", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text("נכנס לתוקף מיד", color = Color(0xFF888888), fontSize = 11.sp)
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    accentOptions.forEach { c ->
+                        val selected = ThemeState.accent.toArgb() == c.toArgb()
+                        Box(
+                            modifier = Modifier.size(34.dp).clip(CircleShape).background(c)
+                                .border(if (selected) 3.dp else 0.dp, Color.White, CircleShape)
+                                .clickable { ThemeState.accent = c; settings.accentColor = c.toArgb() },
+                        )
+                    }
                 }
             }
         },

@@ -46,6 +46,16 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_HIGH_HZ, true)
         set(value) = prefs.edit().putBoolean(KEY_HIGH_HZ, value).apply()
 
+    /** הצבע הראשי של האפליקציה (ARGB int). ברירת מחדל אדום. */
+    var accentColor: Int
+        get() = prefs.getInt(KEY_ACCENT, 0xFFFF0000.toInt())
+        set(value) = prefs.edit().putInt(KEY_ACCENT, value).apply()
+
+    /** איכות ניגון מועדפת לפי גובה (px). 0 = אוטומטי (עד 720). */
+    var preferredQuality: Int
+        get() = prefs.getInt(KEY_QUALITY, 0)
+        set(value) = prefs.edit().putInt(KEY_QUALITY, value).apply()
+
     // ── היסטוריית חיפוש ──────────────────────────────────────────────────
     fun getSearchHistory(): List<String> {
         val raw = prefs.getString(KEY_HISTORY, "") ?: ""
@@ -79,5 +89,7 @@ class SettingsStore(context: Context) {
         private const val KEY_GH_TOKEN = "github_token"
         private const val KEY_FILTER_PW = "filter_password"
         private const val KEY_HIGH_HZ = "high_refresh_rate"
+        private const val KEY_ACCENT = "accent_color"
+        private const val KEY_QUALITY = "preferred_quality"
     }
 }
