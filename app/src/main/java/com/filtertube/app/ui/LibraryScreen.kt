@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.GoogleAuth
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.YouTubeAccountRepository
@@ -66,11 +67,13 @@ fun LibraryScreen(
         scope.launch {
             try {
                 val token = GoogleAuth.accessToken(context, a)
-                val liked = YouTubeAccountRepository.likedVideos(token)
+                // רק תוכן מהערוצים המאושרים — לייק/מנוי שלא ברשימה הלבנה לא נשמר ולא מוצג
+                val approved = ChannelsRepository.getChannels(context).map { it.youtubeChannelId }.toHashSet()
+                val liked = YouTubeAccountRepository.likedVideos(token).filter { it.channelId in approved }
                 store.setYoutubeLikes(liked); ytLikes = liked
-                val subList = YouTubeAccountRepository.subscriptions(token)
+                val subList = YouTubeAccountRepository.subscriptions(token).filter { it.channelId in approved }
                 store.setSubscriptions(subList); subs = subList
-                status = "סונכרנו ${liked.size} לייקים ו-${subList.size} מנויים ✓"
+                status = "סונכרנו ${liked.size} לייקים ו-${subList.size} מנויים (מאושרים בלבד) ✓"
             } catch (e: Exception) {
                 status = "שגיאה בסנכרון: ${e.message}"
             } finally { syncing = false }

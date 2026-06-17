@@ -7,7 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -37,7 +37,7 @@ sealed class HomeState {
 }
 
 @Composable
-fun HomeScreen(onVideoClick: (Video) -> Unit) {
+fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settings = remember { SettingsStore(context) }
@@ -83,8 +83,8 @@ fun HomeScreen(onVideoClick: (Video) -> Unit) {
             ) { Text("FT", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold) }
             Spacer(Modifier.width(8.dp))
             Text("FilterTube", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.weight(1f))
-            IconButton(onClick = { refresh(showSpinner = false) }) {
-                Icon(Icons.Default.Refresh, contentDescription = "רענן", tint = Color.White)
+            IconButton(onClick = onSearch) {
+                Icon(Icons.Default.Search, contentDescription = "חיפוש", tint = Color.White)
             }
         }
         if (refreshing && state is HomeState.Success) {

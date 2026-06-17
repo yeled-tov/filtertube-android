@@ -1,17 +1,29 @@
 package com.filtertube.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,14 +48,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** מחזיק את רשימת ה-Shorts הנוכחית כדי להעביר אותה למסך הנגן המלא ללא ניווט מסובך. */
+object ShortsHolder {
+    var videos: List<Video> = emptyList()
+    var startIndex: Int = 0
+}
+
 sealed class ShortsState {
     data object Loading : ShortsState()
     data class Success(val videos: List<Video>) : ShortsState()
     data class Error(val message: String) : ShortsState()
 }
 
+/** טאב Shorts — גריד של תמונות ממוזערות. לחיצה פותחת את הנגן המלא בסגנון טיקטוק. */
 @Composable
-fun ShortsScreen(onVideoClick: (Video) -> Unit) {
+fun ShortsScreen(onOpenShort: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settings = remember { SettingsStore(context) }
@@ -73,28 +92,69 @@ fun ShortsScreen(onVideoClick: (Video) -> Unit) {
         refresh(showSpinner = cached.isNullOrEmpty())
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F0F))) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 28.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Shorts", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.weight(1f))
+            IconButton(onClick = { refresh(showSpinner = true) }) {
+                Icon(Icons.Default.Refresh, "רענן", tint = Color.White)
+            }
+        }
+        HorizontalDivider(color = Color(0xFF272727))
+
         when (val s = state) {
             is ShortsState.Loading -> CenteredLoading("טוען Shorts...")
             is ShortsState.Error -> CenteredError(s.message) { refresh(showSpinner = true) }
-            is ShortsState.Success -> ShortsPager(s.videos)
-        }
-
-        IconButton(
-            onClick = { refresh(showSpinner = false) },
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 28.dp, end = 8.dp),
-        ) {
-            Icon(Icons.Default.Refresh, "רענן", tint = Color.White)
+            is ShortsState.Success -> ShortsGrid(s.videos) { index ->
+                ShortsHolder.videos = s.videos
+                ShortsHolder.startIndex = index
+                onOpenShort()
+            }
         }
     }
 }
 
+@Composable
+private fun ShortsGrid(videos: List<Video>, onClick: (Int) -> Unit) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(3),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(2.dp),
+    ) {
+        items(videos, key = { it.id }) { video ->
+            val index = videos.indexOf(video)
+            Box(
+                modifier = Modifier.padding(2.dp).aspectRatio(9f / 16f)
+                    .clip(RoundedCornerShape(8.dp)).background(Color(0xFF1A1A1A))
+                    .clickable { onClick(index) },
+            ) {
+                AsyncImage(
+                    model = video.thumbnailUrl,
+                    contentDescription = video.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+                Box(modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter)
+                    .background(Color(0xAA000000)).padding(horizontal = 6.dp, vertical = 4.dp)) {
+                    Text(video.channelName, color = Color.White, fontSize = 10.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
+/** מסך מלא בסגנון טיקטוק — פיג'ר אנכי עם בקרי נגן. ללא סרגל תחתון. */
 @OptIn(UnstableApi::class)
 @Composable
-private fun ShortsPager(videos: List<Video>) {
+fun ShortsPlayerScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val pagerState = rememberPagerState(pageCount = { videos.size })
+    val videos = remember { ShortsHolder.videos }
+    if (videos.isEmpty()) { onBack(); return }
 
+    val pagerState = rememberPagerState(initialPage = ShortsHolder.startIndex, pageCount = { videos.size })
     val exo = remember {
         ExoPlayer.Builder(context).build().apply {
             repeatMode = Player.REPEAT_MODE_ONE
@@ -106,7 +166,7 @@ private fun ShortsPager(videos: List<Video>) {
     var loading by remember { mutableStateOf(true) }
 
     // טוען ומנגן את הסרטון של העמוד הנוכחי
-    LaunchedEffect(pagerState.currentPage, videos) {
+    LaunchedEffect(pagerState.currentPage) {
         val video = videos.getOrNull(pagerState.currentPage) ?: return@LaunchedEffect
         loading = true
         val url = withContext(Dispatchers.IO) {
@@ -123,20 +183,70 @@ private fun ShortsPager(videos: List<Video>) {
         loading = false
     }
 
-    VerticalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-        ShortPage(
-            video = videos[page],
-            isActive = page == pagerState.currentPage,
-            loading = loading && page == pagerState.currentPage,
-            player = exo,
-        )
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        VerticalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+            ShortPage(
+                video = videos[page],
+                isActive = page == pagerState.currentPage,
+                loading = loading && page == pagerState.currentPage,
+                player = exo,
+            )
+        }
+        // כפתור חזרה לגריד
+        IconButton(onClick = onBack, modifier = Modifier.align(Alignment.TopStart).padding(top = 28.dp, start = 4.dp)) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = Color.White)
+        }
     }
 }
 
 @OptIn(UnstableApi::class)
 @Composable
 private fun ShortPage(video: Video, isActive: Boolean, loading: Boolean, player: ExoPlayer) {
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    var controlsVisible by remember { mutableStateOf(true) }
+    var isPlaying by remember { mutableStateOf(true) }
+    var position by remember { mutableStateOf(0L) }
+    var duration by remember { mutableStateOf(0L) }
+    var feedback by remember { mutableStateOf<String?>(null) }
+    var boxWidth by remember { mutableStateOf(1) }
+
+    // בקרים נעלמים אחרי 2.5 שניות בזמן ניגון
+    LaunchedEffect(controlsVisible, isPlaying, isActive) {
+        if (isActive && controlsVisible && isPlaying) {
+            kotlinx.coroutines.delay(2500); controlsVisible = false
+        }
+    }
+    LaunchedEffect(feedback) { if (feedback != null) { kotlinx.coroutines.delay(700); feedback = null } }
+
+    // עדכון פס ההתקדמות
+    LaunchedEffect(isActive) {
+        while (isActive) {
+            isPlaying = player.isPlaying
+            position = player.currentPosition.coerceAtLeast(0)
+            duration = player.duration.coerceAtLeast(0)
+            kotlinx.coroutines.delay(300)
+        }
+    }
+
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black)
+            .onSizeChanged { boxWidth = it.width.coerceAtLeast(1) }
+            .pointerInput(isActive) {
+                detectTapGestures(
+                    onDoubleTap = { offset ->
+                        if (offset.x < boxWidth / 2f) {
+                            player.seekTo((player.currentPosition - 5_000).coerceAtLeast(0)); feedback = "⏪ 5 ש׳"
+                        } else {
+                            player.seekTo(player.currentPosition + 5_000); feedback = "5 ש׳ ⏩"
+                        }
+                    },
+                    onTap = {
+                        if (player.isPlaying) player.pause() else player.play()
+                        isPlaying = player.isPlaying
+                        controlsVisible = true
+                    },
+                )
+            },
+    ) {
         AsyncImage(
             model = video.thumbnailUrl,
             contentDescription = video.title,
@@ -157,19 +267,44 @@ private fun ShortPage(video: Video, isActive: Boolean, loading: Boolean, player:
                 update = { it.player = player },
                 modifier = Modifier.fillMaxSize(),
             )
-            if (loading) {
-                CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.Center))
+            if (loading) CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.Center))
+        }
+
+        // כפתור פליי/עצור במרכז — מופיע כשהבקרים גלויים
+        if (controlsVisible && !loading) {
+            Box(
+                modifier = Modifier.size(64.dp).align(Alignment.Center).clip(RoundedCornerShape(50))
+                    .background(Color(0x88000000))
+                    .clickable {
+                        if (player.isPlaying) player.pause() else player.play()
+                        isPlaying = player.isPlaying; controlsVisible = true
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null,
+                    tint = Color.White, modifier = Modifier.size(36.dp))
             }
         }
 
-        // מידע על הסרטון
-        Column(
-            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(16.dp),
-        ) {
+        feedback?.let {
+            Text(it, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.Center).clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xCC000000)).padding(horizontal = 16.dp, vertical = 8.dp))
+        }
+
+        // מידע + פס התקדמות בתחתית
+        Column(modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(16.dp)) {
             Text(video.channelName, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
             Text(video.title, color = Color.White, fontSize = 13.sp, maxLines = 2,
                 overflow = TextOverflow.Ellipsis, lineHeight = 17.sp)
+            Spacer(Modifier.height(8.dp))
+            LinearProgressIndicator(
+                progress = { if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f },
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFFFF0000),
+                trackColor = Color(0x55FFFFFF),
+            )
         }
     }
 }
