@@ -1,4 +1,5 @@
 package com.filtertube.app.ui
+import com.filtertube.app.ThemeState
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -92,17 +93,17 @@ fun ShortsScreen(onOpenShort: () -> Unit, onSearch: () -> Unit) {
         refresh(showSpinner = cached.isNullOrEmpty())
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F0F))) {
+    Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 28.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Shorts", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.weight(1f))
+            Text("Shorts", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = ThemeState.text, modifier = Modifier.weight(1f))
             IconButton(onClick = onSearch) {
-                Icon(Icons.Default.Search, "חיפוש", tint = Color.White)
+                Icon(Icons.Default.Search, "חיפוש", tint = ThemeState.text)
             }
         }
-        HorizontalDivider(color = Color(0xFF272727))
+        HorizontalDivider(color = ThemeState.divider)
 
         when (val s = state) {
             is ShortsState.Loading -> CenteredLoading("טוען Shorts...")
@@ -127,7 +128,7 @@ private fun ShortsGrid(videos: List<Video>, onClick: (Int) -> Unit) {
             val index = videos.indexOf(video)
             Box(
                 modifier = Modifier.padding(2.dp).aspectRatio(9f / 16f)
-                    .clip(RoundedCornerShape(8.dp)).background(Color(0xFF1A1A1A))
+                    .clip(RoundedCornerShape(8.dp)).background(ThemeState.card)
                     .clickable { onClick(index) },
             ) {
                 AsyncImage(
@@ -138,7 +139,7 @@ private fun ShortsGrid(videos: List<Video>, onClick: (Int) -> Unit) {
                 )
                 Box(modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter)
                     .background(Color(0xAA000000)).padding(horizontal = 6.dp, vertical = 4.dp)) {
-                    Text(video.channelName, color = Color.White, fontSize = 10.sp,
+                    Text(video.channelName, color = ThemeState.text, fontSize = 10.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -206,7 +207,7 @@ fun ShortsPlayerScreen(onBack: () -> Unit) {
         }
         // כפתור חזרה לגריד
         IconButton(onClick = onBack, modifier = Modifier.align(Alignment.TopStart).padding(top = 28.dp, start = 4.dp)) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = Color.White)
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = ThemeState.text)
         }
     }
 }
@@ -279,7 +280,7 @@ private fun ShortPage(video: Video, isActive: Boolean, loading: Boolean, player:
                 update = { it.player = player },
                 modifier = Modifier.fillMaxSize(),
             )
-            if (loading) CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.Center))
+            if (loading) CircularProgressIndicator(color = ThemeState.text, modifier = Modifier.align(Alignment.Center))
         }
 
         // כפתור פליי/עצור במרכז — מופיע כשהבקרים גלויים
@@ -294,21 +295,21 @@ private fun ShortPage(video: Video, isActive: Boolean, loading: Boolean, player:
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null,
-                    tint = Color.White, modifier = Modifier.size(36.dp))
+                    tint = ThemeState.text, modifier = Modifier.size(36.dp))
             }
         }
 
         feedback?.let {
-            Text(it, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+            Text(it, color = ThemeState.text, fontSize = 16.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.align(Alignment.Center).clip(RoundedCornerShape(8.dp))
                     .background(Color(0xCC000000)).padding(horizontal = 16.dp, vertical = 8.dp))
         }
 
         // מידע + פס התקדמות בתחתית
         Column(modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(16.dp)) {
-            Text(video.channelName, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(video.channelName, color = ThemeState.text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
-            Text(video.title, color = Color.White, fontSize = 13.sp, maxLines = 2,
+            Text(video.title, color = ThemeState.text, fontSize = 13.sp, maxLines = 2,
                 overflow = TextOverflow.Ellipsis, lineHeight = 17.sp)
             Spacer(Modifier.height(8.dp))
             LinearProgressIndicator(

@@ -1,4 +1,5 @@
 package com.filtertube.app.ui
+import com.filtertube.app.ThemeState
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -36,19 +37,19 @@ fun DetailTopBar(title: String, onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = Color.White)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = ThemeState.text)
             }
-            Text(title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+            Text(title, color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        HorizontalDivider(color = Color(0xFF272727))
+        HorizontalDivider(color = ThemeState.divider)
     }
 }
 
 @Composable
 private fun EmptyHint(text: String) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(text, color = Color(0xFF888888), fontSize = 14.sp,
+        Text(text, color = ThemeState.subtext, fontSize = 14.sp,
             modifier = Modifier.padding(32.dp))
     }
 }
@@ -69,7 +70,7 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
             else -> "אוסף" to emptyList()
         }
     }
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F0F))) {
+    Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar("$title (${videos.size})", onBack)
         if (videos.isEmpty()) EmptyHint("האוסף ריק")
         else LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
@@ -84,7 +85,7 @@ fun SubscriptionsScreen(onOpenChannel: (String, String) -> Unit, onBack: () -> U
     val context = LocalContext.current
     val store = remember { LibraryStore(context) }
     val subs = remember { store.subscriptions() }
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F0F))) {
+    Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar("המנויים שלי (${subs.size})", onBack)
         if (subs.isEmpty()) EmptyHint("התחבר לחשבון גוגל בספריה כדי למשוך את המנויים שלך")
         else LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
@@ -103,17 +104,17 @@ private fun SubRow(sub: SubChannel, onClick: () -> Unit) {
             AsyncImage(
                 model = sub.thumbnailUrl,
                 contentDescription = sub.title,
-                modifier = Modifier.size(48.dp).clip(CircleShape).background(Color(0xFF272727)),
+                modifier = Modifier.size(48.dp).clip(CircleShape).background(ThemeState.divider),
                 contentScale = ContentScale.Crop,
             )
         } else {
             Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(channelColor(sub.title)),
                 contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Person, null, tint = Color.White)
+                Icon(Icons.Default.Person, null, tint = ThemeState.text)
             }
         }
         Spacer(Modifier.width(12.dp))
-        Text(sub.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium,
+        Text(sub.title, color = ThemeState.text, fontSize = 15.sp, fontWeight = FontWeight.Medium,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -137,7 +138,7 @@ fun ChannelVideosScreen(
             HomeState.Error(e.message ?: "שגיאה בטעינה")
         }
     }
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F0F))) {
+    Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar(channelName, onBack)
         when (val s = state) {
             is HomeState.Loading -> CenteredLoading("טוען סרטונים...")

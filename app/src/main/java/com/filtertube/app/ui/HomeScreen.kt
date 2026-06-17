@@ -73,7 +73,7 @@ fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit) {
         refresh(showSpinner = cached.isNullOrEmpty())
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F0F))) {
+    Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -81,17 +81,17 @@ fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit) {
             Box(
                 modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(ThemeState.accent),
                 contentAlignment = Alignment.Center,
-            ) { Text("FT", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+            ) { Text("FT", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold) }
             Spacer(Modifier.width(8.dp))
-            Text("FilterTube", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.weight(1f))
+            Text("FilterTube", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = ThemeState.text, modifier = Modifier.weight(1f))
             IconButton(onClick = onSearch) {
-                Icon(Icons.Default.Search, contentDescription = "חיפוש", tint = Color.White)
+                Icon(Icons.Default.Search, contentDescription = "חיפוש", tint = ThemeState.text)
             }
         }
         if (refreshing && state is HomeState.Success) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = ThemeState.accent, trackColor = Color(0xFF272727))
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = ThemeState.accent, trackColor = ThemeState.divider)
         }
-        HorizontalDivider(color = Color(0xFF272727))
+        HorizontalDivider(color = ThemeState.divider)
 
         when (val s = state) {
             is HomeState.Loading -> CenteredLoading("טוען סרטונים...")
@@ -114,7 +114,7 @@ fun CenteredLoading(text: String) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator(color = Color(0xFFFF0000))
             Spacer(Modifier.height(16.dp))
-            Text(text, color = Color(0xFFAAAAAA), fontSize = 14.sp)
+            Text(text, color = ThemeState.subtext2, fontSize = 14.sp)
         }
     }
 }
@@ -125,9 +125,9 @@ fun CenteredError(message: String, onRetry: () -> Unit) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
             Icon(Icons.Default.Warning, null, tint = Color(0xFFFF0000), modifier = Modifier.size(48.dp))
             Spacer(Modifier.height(16.dp))
-            Text("שגיאה בטעינה", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Text("שגיאה בטעינה", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ThemeState.text)
             Spacer(Modifier.height(8.dp))
-            Text(message, color = Color(0xFFAAAAAA), fontSize = 13.sp)
+            Text(message, color = ThemeState.subtext2, fontSize = 13.sp)
             Spacer(Modifier.height(24.dp))
             Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF0000))) {
                 Text("נסה שוב")
@@ -142,7 +142,7 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
         AsyncImage(
             model = video.thumbnailUrl,
             contentDescription = video.title,
-            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color(0xFF272727)),
+            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(ThemeState.divider),
             contentScale = ContentScale.Crop,
         )
         Row(modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp)) {
@@ -150,14 +150,14 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                 modifier = Modifier.size(36.dp).clip(RoundedCornerShape(50)).background(channelColor(video.channelName)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(video.channelName.firstOrNull()?.uppercase() ?: "?", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text(video.channelName.firstOrNull()?.uppercase() ?: "?", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(video.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White,
+                Text(video.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = ThemeState.text,
                     maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 18.sp)
                 Spacer(Modifier.height(4.dp))
-                Text("${video.channelName} · ${video.timeAgoHe()}", fontSize = 12.sp, color = Color(0xFFAAAAAA),
+                Text("${video.channelName} · ${video.timeAgoHe()}", fontSize = 12.sp, color = ThemeState.subtext2,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }

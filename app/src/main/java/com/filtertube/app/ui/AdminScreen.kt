@@ -1,4 +1,5 @@
 package com.filtertube.app.ui
+import com.filtertube.app.ThemeState
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -107,16 +108,16 @@ fun AdminScreen(onBack: () -> Unit) {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F0F))) {
+    Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         // Top bar
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 24.dp, start = 4.dp, end = 16.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = Color.White) }
-            Text("פאנל ניהול ערוצים", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = ThemeState.text) }
+            Text("פאנל ניהול ערוצים", color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
-        HorizontalDivider(color = Color(0xFF272727))
+        HorizontalDivider(color = ThemeState.divider)
 
         LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             item {
@@ -125,17 +126,17 @@ fun AdminScreen(onBack: () -> Unit) {
                 OutlinedTextField(
                     value = token,
                     onValueChange = { token = it },
-                    label = { Text("GitHub Token", color = Color(0xFF888888)) },
+                    label = { Text("GitHub Token", color = ThemeState.subtext) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                        focusedTextColor = ThemeState.text, unfocusedTextColor = ThemeState.text,
                         focusedBorderColor = Color(0xFFFF0000), unfocusedBorderColor = Color(0xFF333333),
                     ),
                 )
                 Spacer(Modifier.height(8.dp))
                 Button(onClick = { loadChannels() }, modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF272727))) {
+                    colors = ButtonDefaults.buttonColors(containerColor = ThemeState.divider)) {
                     Text(if (loading) "טוען..." else "טען ערוצים")
                 }
 
@@ -151,11 +152,11 @@ fun AdminScreen(onBack: () -> Unit) {
                     OutlinedTextField(
                         value = newChannelInput,
                         onValueChange = { newChannelInput = it },
-                        label = { Text("קישור / @handle / UC...", color = Color(0xFF888888)) },
+                        label = { Text("קישור / @handle / UC...", color = ThemeState.subtext) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                            focusedTextColor = ThemeState.text, unfocusedTextColor = ThemeState.text,
                             focusedBorderColor = Color(0xFFFF0000), unfocusedBorderColor = Color(0xFF333333),
                         ),
                     )
@@ -166,10 +167,10 @@ fun AdminScreen(onBack: () -> Unit) {
                             val selected = newCategory == key
                             Box(
                                 modifier = Modifier.padding(end = 6.dp).clip(RoundedCornerShape(16.dp))
-                                    .background(if (selected) Color(0xFFFF0000) else Color(0xFF272727))
+                                    .background(if (selected) Color(0xFFFF0000) else ThemeState.divider)
                                     .clickable { newCategory = key }
                                     .padding(horizontal = 12.dp, vertical = 6.dp),
-                            ) { Text(label, color = Color.White, fontSize = 12.sp) }
+                            ) { Text(label, color = ThemeState.text, fontSize = 12.sp) }
                         }
                     }
                     Spacer(Modifier.height(8.dp))
@@ -181,7 +182,7 @@ fun AdminScreen(onBack: () -> Unit) {
                     }
 
                     Spacer(Modifier.height(16.dp))
-                    Text("${channels.size} ערוצים מאושרים", color = Color(0xFFAAAAAA), fontSize = 13.sp)
+                    Text("${channels.size} ערוצים מאושרים", color = ThemeState.subtext2, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
                 }
             }
@@ -192,16 +193,16 @@ fun AdminScreen(onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(channel.name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                        Text(channel.name, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(categoryLabels[channel.category] ?: channel.category,
-                            color = Color(0xFF888888), fontSize = 11.sp)
+                            color = ThemeState.subtext, fontSize = 11.sp)
                     }
                     IconButton(onClick = { removeChannel(channel) }, enabled = !busy) {
                         Icon(Icons.Default.Delete, "הסר", tint = Color(0xFFFF0000))
                     }
                 }
-                HorizontalDivider(color = Color(0xFF1A1A1A))
+                HorizontalDivider(color = ThemeState.card)
             }
         }
     }

@@ -6,7 +6,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -44,6 +46,9 @@ class MainActivity : ComponentActivity() {
 
         val settings = SettingsStore(this)
         ThemeState.accent = Color(settings.accentColor)   // צבע ראשי שנבחר
+        val sysDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+        ThemeState.dark = when (settings.themeMode) { 1 -> true; 2 -> false; else -> sysDark }
 
         // קצב רענון גבוה (120 הרץ) למסכים שתומכים — תצוגה חלקה
         if (settings.highRefreshRate) applyHighRefreshRate()
@@ -92,6 +97,11 @@ fun AppRoot() {
     var shortsEnabled by remember { mutableStateOf(settings.shortsEnabled) }
     var filterLevel by remember { mutableStateOf(settings.filterLevel) }
     var crashReport by remember { mutableStateOf(com.filtertube.app.data.CrashLog.lastCrash(context)) }
+    var pendingUpdate by remember { mutableStateOf<com.filtertube.app.data.UpdateChecker.Update?>(null) }
+    LaunchedEffect(Unit) {
+        val u = com.filtertube.app.data.UpdateChecker.check()
+        if (u != null && u.isNewer) pendingUpdate = u
+    }
 
     val controller by com.filtertube.app.ui.rememberMediaController()
     val playerUi = com.filtertube.app.ui.rememberPlayerUiState(controller)
@@ -123,7 +133,7 @@ fun AppRoot() {
     }
 
     Scaffold(
-        containerColor = Color(0xFF0F0F0F),
+        containerColor = ThemeState.bg,
         bottomBar = {
             if (showBottomBar) {
                 androidx.compose.foundation.layout.Column {
@@ -132,7 +142,7 @@ fun AppRoot() {
                         ui = playerUi,
                         onOpen = { navController.navigate("player") { launchSingleTop = true } },
                     )
-                    NavigationBar(containerColor = Color(0xFF0A0A0A)) {
+                    NavigationBar(containerColor = ThemeState.bg2) {
                         navItems.forEach { item ->
                             NavigationBarItem(
                                 selected = currentRoute == item.route,
@@ -149,10 +159,10 @@ fun AppRoot() {
                                 label = { Text(item.label) },
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = ThemeState.accent,
-                                    selectedTextColor = Color.White,
-                                    unselectedIconColor = Color(0xFF888888),
-                                    unselectedTextColor = Color(0xFF888888),
-                                    indicatorColor = Color(0xFF1F1F1F),
+                                    selectedTextColor = ThemeState.text,
+                                    unselectedIconColor = ThemeState.subtext,
+                                    unselectedTextColor = ThemeState.subtext,
+                                    indicatorColor = ThemeState.surface,
                                 ),
                             )
                         }
@@ -240,6 +250,34 @@ fun AppRoot() {
             crashReport = null
         }
     }
+
+    pendingUpdate?.let { u ->
+        AlertDialog(
+            onDismissRequest = { pendingUpdate = null },
+            title = { Text("עדכון זמין: ${u.name}") },
+            text = {
+                Column(modifier = Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
+                    Text("מה השתנה:", color = ThemeState.accent, fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    Text(u.changelog.ifEmpty { "—" }, color = Color(0xFFAAAAAA), fontSize = 12.sp)
+                }
+            },
+            confirmButton = {
+                val apk = u.apkUrl
+                if (apk != null) {
+                    TextButton(onClick = { com.filtertube.app.data.UpdateChecker.downloadApk(context, apk); pendingUpdate = null }) {
+                        Text("הורד והתקן")
+                    }
+                } else {
+                    TextButton(onClick = { pendingUpdate = null }) { Text("סגור") }
+                }
+            },
+            dismissButton = { TextButton(onClick = { pendingUpdate = null }) { Text("אחר כך") } },
+            containerColor = Color(0xFF1F1F1F),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+        )
+    }
 }
 
 @Composable
@@ -267,20 +305,34 @@ private fun CrashReportDialog(report: String, onDismiss: () -> Unit) {
     )
 }
 
-/** מצב ערכת-נושא גלובלי — הצבע הראשי. שינוי שלו מרענן את כל המסכים מיד. */
+/**
+ * מצב ערכת-נושא גלובלי — צבע ראשי + כהה/בהיר וטוקני צבע נגזרים.
+ * שינוי של accent או dark מרענן את כל המסכים מיד (mutableState).
+ */
 object ThemeState {
     var accent by mutableStateOf(Color(0xFFFF0000))
+    var dark by mutableStateOf(true)
+
+    val bg: Color get() = if (dark) Color(0xFF0F0F0F) else Color(0xFFFAFAFA)
+    val bg2: Color get() = if (dark) Color(0xFF0A0A0A) else Color(0xFFEDEDED)   // נאב/נגן כהה יותר
+    val surface: Color get() = if (dark) Color(0xFF1F1F1F) else Color(0xFFFFFFFF)
+    val card: Color get() = if (dark) Color(0xFF1A1A1A) else Color(0xFFF1F1F1)
+    val divider: Color get() = if (dark) Color(0xFF272727) else Color(0xFFE2E2E2)
+    val text: Color get() = if (dark) Color.White else Color(0xFF111111)
+    val subtext: Color get() = if (dark) Color(0xFF888888) else Color(0xFF6B6B6B)
+    val subtext2: Color get() = if (dark) Color(0xFFAAAAAA) else Color(0xFF555555)
 }
 
 @Composable
 fun FilterTubeTheme(content: @Composable () -> Unit) {
-    val colorScheme = darkColorScheme(
+    val base = if (ThemeState.dark) darkColorScheme() else lightColorScheme()
+    val colorScheme = base.copy(
         primary = ThemeState.accent,
-        background = Color(0xFF0F0F0F),
-        surface = Color(0xFF1F1F1F),
-        onBackground = Color.White,
-        onSurface = Color.White,
-        onSurfaceVariant = Color(0xFFAAAAAA),
+        background = ThemeState.bg,
+        surface = ThemeState.surface,
+        onBackground = ThemeState.text,
+        onSurface = ThemeState.text,
+        onSurfaceVariant = ThemeState.subtext2,
     )
     MaterialTheme(colorScheme = colorScheme, content = content)
 }

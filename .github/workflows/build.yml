@@ -34,7 +34,7 @@ jobs:
       - name: Build debug APK
         run: |
           set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee build-output.txt
+          ./gradlew assembleDebug --no-daemon --stacktrace -PbuildNumber=${{ github.run_number }} 2>&1 | tee build-output.txt
 
       - name: Commit error log back to repo on failure
         if: failure()

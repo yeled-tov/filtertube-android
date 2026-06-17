@@ -1,4 +1,5 @@
 package com.filtertube.app.ui
+import com.filtertube.app.ThemeState
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -99,27 +100,27 @@ fun LibraryScreen(
         )
     }
 
-    LazyColumn(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F0F))) {
+    LazyColumn(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         item {
-            Text("ספריה", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White,
+            Text("ספריה", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = ThemeState.text,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 8.dp))
-            HorizontalDivider(color = Color(0xFF272727))
+            HorizontalDivider(color = ThemeState.divider)
         }
 
         // כרטיס חיבור Google
         item {
             Column(modifier = Modifier.fillMaxWidth().padding(16.dp)
-                .clip(RoundedCornerShape(12.dp)).background(Color(0xFF1A1A1A)).padding(16.dp)) {
+                .clip(RoundedCornerShape(12.dp)).background(ThemeState.card).padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.AccountCircle, null, tint = Color(0xFFFF0000), modifier = Modifier.size(28.dp))
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             if (account != null) account?.email ?: "מחובר" else "חיבור לחשבון יוטיוב",
-                            color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                            color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
-                        Text("מושך את הלייקים והמנויים שלך", color = Color(0xFF888888), fontSize = 12.sp)
+                        Text("מושך את הלייקים והמנויים שלך", color = ThemeState.subtext, fontSize = 12.sp)
                     }
                     if (syncing) CircularProgressIndicator(color = Color(0xFFFF0000), strokeWidth = 2.dp,
                         modifier = Modifier.size(20.dp))
@@ -172,12 +173,12 @@ fun LibraryScreen(
             ) {
                 Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, tint = Color(0xFFFF0000), modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("אלבומים", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                IconButton(onClick = { showCreate = true }) { Icon(Icons.Default.Add, "אלבום חדש", tint = Color.White) }
+                Text("אלבומים", color = ThemeState.text, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                IconButton(onClick = { showCreate = true }) { Icon(Icons.Default.Add, "אלבום חדש", tint = ThemeState.text) }
             }
         }
         if (playlists.isEmpty()) {
-            item { Text("עדיין אין אלבומים — צור אחד עם +", color = Color(0xFF888888), fontSize = 12.sp,
+            item { Text("עדיין אין אלבומים — צור אחד עם +", color = ThemeState.subtext, fontSize = 12.sp,
                 modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)) }
         } else {
             items(playlists, key = { it.name }) { pl ->
@@ -186,14 +187,14 @@ fun LibraryScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF272727)),
+                    Box(modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)).background(ThemeState.divider),
                         contentAlignment = Alignment.Center) {
-                        Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, tint = Color(0xFF888888))
+                        Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, tint = ThemeState.subtext)
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(pl.name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        Text("${pl.videos.size} שירים", color = Color(0xFF888888), fontSize = 12.sp)
+                        Text(pl.name, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text("${pl.videos.size} שירים", color = ThemeState.subtext, fontSize = 12.sp)
                     }
                 }
             }
@@ -206,7 +207,7 @@ fun LibraryScreen(
 private fun RowScope.LibTile(title: String, count: Int, icon: ImageVector, accent: Color, onClick: () -> Unit) {
     Column(
         modifier = Modifier.weight(1f).height(104.dp).clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFF1A1A1A)).clickable(onClick = onClick).padding(14.dp),
+            .background(ThemeState.card).clickable(onClick = onClick).padding(14.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Box(modifier = Modifier.size(40.dp).clip(CircleShape).background(accent.copy(alpha = 0.18f)),
@@ -214,9 +215,9 @@ private fun RowScope.LibTile(title: String, count: Int, icon: ImageVector, accen
             Icon(icon, null, tint = accent, modifier = Modifier.size(22.dp))
         }
         Column {
-            Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+            Text(title, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("$count פריטים", color = Color(0xFF888888), fontSize = 11.sp)
+            Text("$count פריטים", color = ThemeState.subtext, fontSize = 11.sp)
         }
     }
 }
@@ -233,8 +234,8 @@ private fun CreatePlaylistDialog(onCreate: (String) -> Unit, onDismiss: () -> Un
             OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true,
                 label = { Text("שם האלבום") })
         },
-        containerColor = Color(0xFF1F1F1F),
-        titleContentColor = Color.White,
-        textContentColor = Color.White,
+        containerColor = ThemeState.surface,
+        titleContentColor = ThemeState.text,
+        textContentColor = ThemeState.text,
     )
 }

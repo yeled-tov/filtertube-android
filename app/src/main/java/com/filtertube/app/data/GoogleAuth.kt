@@ -17,7 +17,8 @@ import kotlinx.coroutines.withContext
  */
 object GoogleAuth {
 
-    const val YT_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
+    // force-ssl כולל קריאה (לייקים/מנויים) וגם כתיבה (videos.rate — סימון לייק חזרה ליוטיוב)
+    const val YT_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
 
     fun client(context: Context): GoogleSignInClient {
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)

@@ -56,6 +56,16 @@ class SettingsStore(context: Context) {
         get() = prefs.getInt(KEY_QUALITY, 0)
         set(value) = prefs.edit().putInt(KEY_QUALITY, value).apply()
 
+    /** עיצוב הנגן: 1 = "מתנגן עכשיו" (נוכחי), 2 = בקרים על הוידאו + הבא בתור מתחת. */
+    var playerStyle: Int
+        get() = prefs.getInt(KEY_PLAYER_STYLE, 1)
+        set(value) = prefs.edit().putInt(KEY_PLAYER_STYLE, value).apply()
+
+    /** מצב נושא: 0 = לפי המערכת, 1 = כהה, 2 = בהיר. */
+    var themeMode: Int
+        get() = prefs.getInt(KEY_THEME_MODE, 1)
+        set(value) = prefs.edit().putInt(KEY_THEME_MODE, value).apply()
+
     // ── היסטוריית חיפוש ──────────────────────────────────────────────────
     fun getSearchHistory(): List<String> {
         val raw = prefs.getString(KEY_HISTORY, "") ?: ""
@@ -91,5 +101,7 @@ class SettingsStore(context: Context) {
         private const val KEY_HIGH_HZ = "high_refresh_rate"
         private const val KEY_ACCENT = "accent_color"
         private const val KEY_QUALITY = "preferred_quality"
+        private const val KEY_PLAYER_STYLE = "player_style"
+        private const val KEY_THEME_MODE = "theme_mode"
     }
 }

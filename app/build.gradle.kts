@@ -13,8 +13,12 @@ android {
         applicationId = "com.filtertube.app"
         minSdk = 24            // Android 7.0 — תומך ב-99% מהמכשירים
         targetSdk = 34         // Android 14
-        versionCode = 2
-        versionName = "0.2.0"
+
+        // versionCode נקבע ממספר ה-build של GitHub Actions (להשוואת עדכונים).
+        // מקומית ברירת המחדל 2.
+        val buildNum = (project.findProperty("buildNumber") as String?)?.toIntOrNull() ?: 2
+        versionCode = buildNum
+        versionName = "0.2.$buildNum"
 
         // RTL support
         resourceConfigurations += listOf("en", "iw")
@@ -56,6 +60,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

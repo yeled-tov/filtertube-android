@@ -1,4 +1,5 @@
 package com.filtertube.app.ui
+import com.filtertube.app.ThemeState
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -25,22 +26,22 @@ fun PlaylistScreen(name: String, onVideoClick: (Video) -> Unit, onBack: () -> Un
     val store = remember { LibraryStore(context) }
     val videos = remember { store.playlists().firstOrNull { it.name == name }?.videos ?: emptyList() }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F0F))) {
+    Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 24.dp, start = 4.dp, end = 16.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = Color.White) }
-            Text(name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = ThemeState.text) }
+            Text(name, color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             IconButton(onClick = { store.deletePlaylist(name); onBack() }) {
                 Icon(Icons.Default.Delete, "מחק אלבום", tint = Color(0xFFFF0000))
             }
         }
-        HorizontalDivider(color = Color(0xFF272727))
+        HorizontalDivider(color = ThemeState.divider)
 
         if (videos.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("האלבום ריק — הוסף שירים מתוך הנגן", color = Color(0xFF888888), fontSize = 13.sp)
+                Text("האלבום ריק — הוסף שירים מתוך הנגן", color = ThemeState.subtext, fontSize = 13.sp)
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {

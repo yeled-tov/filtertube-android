@@ -16,6 +16,8 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,9 +32,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.filtertube.app.BuildConfig
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.GoogleAuth
 import com.filtertube.app.data.SettingsStore
+import com.filtertube.app.data.UpdateChecker
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 
@@ -52,23 +56,29 @@ fun SettingsScreen(
     var showFilter by remember { mutableStateOf(false) }
     var showChangePw by remember { mutableStateOf(false) }
     var showDisplay by remember { mutableStateOf(false) }
+    var showPlayerAudio by remember { mutableStateOf(false) }
+    var showUpdate by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F0F))) {
+    Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         Text(
-            "הגדרות", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White,
+            "הגדרות", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = ThemeState.text,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 12.dp),
         )
-        HorizontalDivider(color = Color(0xFF272727))
+        HorizontalDivider(color = ThemeState.divider)
 
         Spacer(Modifier.height(8.dp))
         SettingsRow(Icons.Default.AccountCircle, Color(0xFFFF0000), "חשבון Google",
             "התחברות וסנכרון לייקים ומנויים") { showAccount = true }
         SettingsRow(Icons.Default.FilterAlt, Color(0xFFFFAA00), "הגדרות סינון 🔒",
             "רמת סינון והצגת Shorts — מוגן בסיסמה") { showGate = true }
+        SettingsRow(Icons.Default.MusicNote, Color(0xFF10B981), "נגן ושמע",
+            "עיצוב הנגן ואיכות") { showPlayerAudio = true }
         SettingsRow(Icons.Default.Tune, Color(0xFF3B82F6), "הגדרות תצוגה",
-            "קצב רענון גבוה (120 הרץ)") { showDisplay = true }
-        SettingsRow(Icons.Default.Info, Color(0xFFAAAAAA), "אודות",
+            "צבע ראשי · מצב כהה/בהיר · 120 הרץ") { showDisplay = true }
+        SettingsRow(Icons.Default.SystemUpdate, Color(0xFFA855F7), "עדכונים",
+            "בדוק והורד גרסה חדשה") { showUpdate = true }
+        SettingsRow(Icons.Default.Info, ThemeState.subtext2, "אודות",
             "FilterTube — רק ערוצים מאושרים") { showAbout = true }
     }
 
@@ -98,6 +108,10 @@ fun SettingsScreen(
 
     if (showDisplay) DisplayDialog(settings = settings, onDismiss = { showDisplay = false })
 
+    if (showPlayerAudio) PlayerAudioDialog(settings = settings, onDismiss = { showPlayerAudio = false })
+
+    if (showUpdate) UpdateDialog(onDismiss = { showUpdate = false })
+
     if (showAbout) AboutDialog(onDismiss = { showAbout = false })
 }
 
@@ -109,12 +123,12 @@ private fun SettingsRow(icon: ImageVector, accent: Color, title: String, subtitl
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFF1F1F1F)),
+        Box(modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(ThemeState.surface),
             contentAlignment = Alignment.Center) { Icon(icon, null, tint = accent) }
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            Text(subtitle, color = Color(0xFF888888), fontSize = 12.sp)
+            Text(title, color = ThemeState.text, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Text(subtitle, color = ThemeState.subtext, fontSize = 12.sp)
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color(0xFF666666))
     }
@@ -136,9 +150,9 @@ private fun AccountDialog(onDismiss: () -> Unit) {
         text = {
             Column {
                 Text(if (account != null) "מחובר: ${account?.email}" else "לא מחובר",
-                    color = Color.White, fontSize = 14.sp)
+                    color = ThemeState.text, fontSize = 14.sp)
                 Spacer(Modifier.height(8.dp))
-                Text("סנכרון הלייקים והמנויים מתבצע בטאב ״ספריה״.", color = Color(0xFF888888), fontSize = 12.sp)
+                Text("סנכרון הלייקים והמנויים מתבצע בטאב ״ספריה״.", color = ThemeState.subtext, fontSize = 12.sp)
             }
         },
         confirmButton = {
@@ -151,8 +165,8 @@ private fun AccountDialog(onDismiss: () -> Unit) {
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("סגור") } },
-        containerColor = Color(0xFF1F1F1F),
-        titleContentColor = Color.White, textContentColor = Color.White,
+        containerColor = ThemeState.surface,
+        titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
     )
 }
 
@@ -172,7 +186,7 @@ private fun FilterGateDialog(settings: SettingsStore, onUnlock: () -> Unit, onDi
                 Text(
                     if (isSetup) "קבע סיסמה שתידרש כל פעם שמשנים את רמת הסינון או את הצגת ה-Shorts."
                     else "נדרשת סיסמה כדי לשנות את הגדרות הסינון.",
-                    color = Color(0xFFAAAAAA), fontSize = 12.sp,
+                    color = ThemeState.subtext2, fontSize = 12.sp,
                 )
                 Spacer(Modifier.height(12.dp))
                 PwField(pw, { pw = it; error = "" }, "סיסמה")
@@ -200,8 +214,8 @@ private fun FilterGateDialog(settings: SettingsStore, onUnlock: () -> Unit, onDi
             }) { Text(if (isSetup) "שמור והמשך" else "אישור") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("בטל") } },
-        containerColor = Color(0xFF1F1F1F),
-        titleContentColor = Color.White, textContentColor = Color.White,
+        containerColor = ThemeState.surface,
+        titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
     )
 }
 
@@ -234,8 +248,8 @@ private fun ChangePasswordDialog(settings: SettingsStore, onDone: () -> Unit, on
             }) { Text("שמור") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("בטל") } },
-        containerColor = Color(0xFF1F1F1F),
-        titleContentColor = Color.White, textContentColor = Color.White,
+        containerColor = ThemeState.surface,
+        titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
     )
 }
 
@@ -243,12 +257,12 @@ private fun ChangePasswordDialog(settings: SettingsStore, onDone: () -> Unit, on
 private fun PwField(value: String, onValueChange: (String) -> Unit, label: String) {
     OutlinedTextField(
         value = value, onValueChange = onValueChange,
-        label = { Text(label, color = Color(0xFF888888)) },
+        label = { Text(label, color = ThemeState.subtext) },
         singleLine = true,
         visualTransformation = PasswordVisualTransformation(),
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+            focusedTextColor = ThemeState.text, unfocusedTextColor = ThemeState.text,
             focusedBorderColor = Color(0xFFFFAA00), unfocusedBorderColor = Color(0xFF333333),
         ),
     )
@@ -280,27 +294,27 @@ private fun FilterSettingsDialog(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("הצג טאב Shorts", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        Text("סרטונים קצרים מהערוצים המאושרים", color = Color(0xFF888888), fontSize = 11.sp)
+                        Text("הצג טאב Shorts", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text("סרטונים קצרים מהערוצים המאושרים", color = ThemeState.subtext, fontSize = 11.sp)
                     }
                     Switch(
                         checked = shorts,
                         onCheckedChange = { shorts = it; onShortsToggle(it) },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Color.White, checkedTrackColor = Color(0xFFFF0000),
-                            uncheckedThumbColor = Color(0xFF888888), uncheckedTrackColor = Color(0xFF333333),
+                            uncheckedThumbColor = ThemeState.subtext, uncheckedTrackColor = Color(0xFF333333),
                         ),
                     )
                 }
 
                 HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
                 TextButton(onClick = onOpenAdmin) { Text("פאנל ניהול ערוצים ›", color = Color(0xFFFFAA00)) }
-                TextButton(onClick = onChangePassword) { Text("שנה סיסמה", color = Color(0xFF888888)) }
+                TextButton(onClick = onChangePassword) { Text("שנה סיסמה", color = ThemeState.subtext) }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("סגור") } },
-        containerColor = Color(0xFF1F1F1F),
-        titleContentColor = Color.White, textContentColor = Color.White,
+        containerColor = ThemeState.surface,
+        titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
     )
 }
 
@@ -316,8 +330,8 @@ private fun LevelRow(value: Int, title: String, desc: String, selected: Int, onC
         )
         Spacer(Modifier.width(4.dp))
         Column {
-            Text("רמה $value — $title", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-            Text(desc, color = Color(0xFF888888), fontSize = 11.sp, lineHeight = 15.sp)
+            Text("רמה $value — $title", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(desc, color = ThemeState.subtext, fontSize = 11.sp, lineHeight = 15.sp)
         }
     }
 }
@@ -331,31 +345,42 @@ private val accentOptions = listOf(
 @Composable
 private fun DisplayDialog(settings: SettingsStore, onDismiss: () -> Unit) {
     var high by remember { mutableStateOf(settings.highRefreshRate) }
+    val sysDark = androidx.compose.foundation.isSystemInDarkTheme()
+    var mode by remember { mutableStateOf(settings.themeMode) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("הגדרות תצוגה") },
         text = {
             Column {
+                Text("ערכת נושא", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ThemeChip("מערכת", mode == 0) { mode = 0; settings.themeMode = 0; ThemeState.dark = sysDark }
+                    ThemeChip("כהה", mode == 1) { mode = 1; settings.themeMode = 1; ThemeState.dark = true }
+                    ThemeChip("בהיר", mode == 2) { mode = 2; settings.themeMode = 2; ThemeState.dark = false }
+                }
+                HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 12.dp))
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("קצב רענון גבוה (120 הרץ)", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text("קצב רענון גבוה (120 הרץ)", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                         Text("תצוגה חלקה במכשירים שתומכים · החלפה דורשת הפעלה מחדש",
-                            color = Color(0xFF888888), fontSize = 11.sp)
+                            color = ThemeState.subtext, fontSize = 11.sp)
                     }
                     Switch(
                         checked = high,
                         onCheckedChange = { high = it; settings.highRefreshRate = it },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF3B82F6),
-                            uncheckedThumbColor = Color(0xFF888888), uncheckedTrackColor = Color(0xFF333333),
+                            uncheckedThumbColor = ThemeState.subtext, uncheckedTrackColor = Color(0xFF333333),
                         ),
                     )
                 }
 
                 HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 12.dp))
 
-                Text("צבע ראשי", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Text("נכנס לתוקף מיד", color = Color(0xFF888888), fontSize = 11.sp)
+                Text("צבע ראשי", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text("נכנס לתוקף מיד", color = ThemeState.subtext, fontSize = 11.sp)
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     accentOptions.forEach { c ->
@@ -370,8 +395,8 @@ private fun DisplayDialog(settings: SettingsStore, onDismiss: () -> Unit) {
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("סגור") } },
-        containerColor = Color(0xFF1F1F1F),
-        titleContentColor = Color.White, textContentColor = Color.White,
+        containerColor = ThemeState.surface,
+        titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
     )
 }
 
@@ -383,11 +408,105 @@ private fun AboutDialog(onDismiss: () -> Unit) {
         icon = { Icon(Icons.Default.Info, null, tint = Color(0xFFFF0000)) },
         title = { Text("FilterTube") },
         text = {
-            Text("פלטפורמת וידאו מסוננת — מציגה אך ורק ערוצים מאושרים. כל התוכן מסונן לפי רמת הסינון שנבחרה.",
-                color = Color(0xFFAAAAAA), fontSize = 13.sp, lineHeight = 18.sp)
+            Text("פלטפורמת וידאו מסוננת — מציגה אך ורק ערוצים מאושרים. כל התוכן מסונן לפי רמת הסינון שנבחרה.\n\nגרסה ${BuildConfig.VERSION_NAME}",
+                color = ThemeState.subtext2, fontSize = 13.sp, lineHeight = 18.sp)
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("סגור") } },
-        containerColor = Color(0xFF1F1F1F),
-        titleContentColor = Color.White, textContentColor = Color.White,
+        containerColor = ThemeState.surface,
+        titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
+    )
+}
+
+@Composable
+private fun ThemeChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier.clip(RoundedCornerShape(16.dp))
+            .background(if (selected) ThemeState.accent else Color(0xFF2A2A2A))
+            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
+    ) { Text(label, color = ThemeState.text, fontSize = 13.sp) }
+}
+
+// ── נגן ושמע ─────────────────────────────────────────────────────────────
+@Composable
+private fun PlayerAudioDialog(settings: SettingsStore, onDismiss: () -> Unit) {
+    var style by remember { mutableStateOf(settings.playerStyle) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("נגן ושמע") },
+        text = {
+            Column {
+                Text("עיצוב הנגן", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                StyleRow(1, "מתנגן עכשיו", "וידאו למעלה ובקרים גדולים מתחת", style) { style = 1; settings.playerStyle = 1 }
+                StyleRow(2, "בקרים על הוידאו", "בקרים על הסרטון, ״הבא בתור״ מתחת", style) { style = 2; settings.playerStyle = 2 }
+                Spacer(Modifier.height(8.dp))
+                Text("איכות הניגון (144→4K) נבחרת בתוך הנגן עצמו דרך כפתור האיכות.",
+                    color = ThemeState.subtext, fontSize = 11.sp, lineHeight = 15.sp)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("סגור") } },
+        containerColor = ThemeState.surface,
+        titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
+    )
+}
+
+@Composable
+private fun StyleRow(value: Int, title: String, desc: String, selected: Int, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected == value, onClick = onClick,
+            colors = RadioButtonDefaults.colors(selectedColor = ThemeState.accent, unselectedColor = Color(0xFF666666)))
+        Spacer(Modifier.width(4.dp))
+        Column {
+            Text(title, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(desc, color = ThemeState.subtext, fontSize = 11.sp, lineHeight = 15.sp)
+        }
+    }
+}
+
+// ── עדכונים ──────────────────────────────────────────────────────────────
+@Composable
+private fun UpdateDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var status by remember { mutableStateOf("בודק עדכונים...") }
+    var update by remember { mutableStateOf<UpdateChecker.Update?>(null) }
+    LaunchedEffect(Unit) {
+        val u = UpdateChecker.check()
+        when {
+            u == null -> status = "לא ניתן לבדוק כעת — נסה שוב מאוחר יותר"
+            u.isNewer -> { update = u; status = "" }
+            else -> status = "אתה מעודכן (גרסה ${BuildConfig.VERSION_NAME})"
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("עדכונים") },
+        text = {
+            Column(modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                val u = update
+                if (u != null) {
+                    Text("יש גרסה חדשה: ${u.name}", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    Text("מה השתנה:", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    Text(u.changelog.ifEmpty { "—" }, color = ThemeState.subtext2, fontSize = 12.sp, lineHeight = 16.sp)
+                } else {
+                    Text(status, color = ThemeState.text, fontSize = 14.sp)
+                }
+            }
+        },
+        confirmButton = {
+            val u = update
+            val apk = u?.apkUrl
+            if (apk != null) {
+                TextButton(onClick = { UpdateChecker.downloadApk(context, apk); onDismiss() }) { Text("הורד והתקן") }
+            } else {
+                TextButton(onClick = onDismiss) { Text("סגור") }
+            }
+        },
+        dismissButton = { if (update != null) TextButton(onClick = onDismiss) { Text("אחר כך") } },
+        containerColor = ThemeState.surface,
+        titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
     )
 }

@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -80,6 +81,20 @@ object YouTubeAccountRepository {
             pages++
         }
         out.distinctBy { it.channelId }
+    }
+
+    /** סימון לייק (או ביטולו) ביוטיוב המקורי. דורש scope force-ssl. */
+    suspend fun rate(token: String, videoId: String, like: Boolean): Boolean = withContext(Dispatchers.IO) {
+        if (videoId.isEmpty()) return@withContext false
+        val rating = if (like) "like" else "none"
+        val request = Request.Builder()
+            .url("https://www.googleapis.com/youtube/v3/videos/rate?id=$videoId&rating=$rating")
+            .header("Authorization", "Bearer $token")
+            .post(ByteArray(0).toRequestBody(null))
+            .build()
+        runCatching {
+            http.newCall(request).execute().use { it.isSuccessful }
+        }.getOrDefault(false)
     }
 
     private fun parseVideos(body: String): List<Video> {

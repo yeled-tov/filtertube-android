@@ -64,11 +64,16 @@ import androidx.media3.session.MediaController
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.filtertube.app.ThemeState
+import com.filtertube.app.data.GoogleAuth
 import com.filtertube.app.data.LibraryStore
+import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.StreamData
 import com.filtertube.app.data.StreamTrack
 import com.filtertube.app.data.Video
+import com.filtertube.app.data.YouTubeAccountRepository
 import com.filtertube.app.playback.Playback
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -79,6 +84,8 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
+    val scope = rememberCoroutineScope()
+    val settings = remember { SettingsStore(context) }
     var isFullscreen by rememberSaveable { mutableStateOf(false) }
 
     // מסך מלא — סיבוב + הסתרת סרגלים
@@ -106,7 +113,7 @@ fun PlayerScreen(
     BackHandler { if (isFullscreen) isFullscreen = false else onCollapse() }
 
     if (controller == null || !ui.hasMedia) {
-        Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F0F)), contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.fillMaxSize().background(ThemeState.bg), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = ThemeState.accent)
         }
         return
@@ -138,6 +145,15 @@ fun PlayerScreen(
         controller.playWhenReady = pw
     }
 
+    // עיצוב 2 — בקרים על הוידאו + "הבא בתור" מתחת
+    if (!isFullscreen && settings.playerStyle == 2 && !audioMode) {
+        OnVideoPlayerScreen(
+            controller = controller, ui = ui, activity = activity,
+            onCollapse = onCollapse, onFullscreen = { isFullscreen = true },
+        )
+        return
+    }
+
     if (isFullscreen) {
         FullscreenVideo(
             controller = controller, ui = ui, activity = activity,
@@ -146,7 +162,7 @@ fun PlayerScreen(
         return
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0B0B0B))) {
+    Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         // סרגל עליון + גרירה למטה לכיווץ
         Row(
             modifier = Modifier.fillMaxWidth()
@@ -161,11 +177,14 @@ fun PlayerScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onCollapse) {
-                Icon(Icons.Default.KeyboardArrowDown, "כווץ", tint = Color.White)
+                Icon(Icons.Default.KeyboardArrowDown, "כווץ", tint = ThemeState.text)
             }
-            Text("מתנגן עכשיו", color = Color(0xFFAAAAAA), fontSize = 13.sp,
+            Text("מתנגן עכשיו", color = ThemeState.subtext2, fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            IconButton(onClick = { liked = store.toggleLike(currentVideo()) }) {
+            IconButton(onClick = {
+                liked = store.toggleLike(currentVideo())
+                syncLikeToYoutube(context, scope, ui.mediaId ?: "", liked)
+            }) {
                 Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                     "אהבתי", tint = if (liked) ThemeState.accent else Color.White)
             }
@@ -201,7 +220,7 @@ fun PlayerScreen(
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
                 Box(
                     modifier = Modifier.fillMaxWidth(0.7f).aspectRatio(1f)
-                        .clip(RoundedCornerShape(20.dp)).background(Color(0xFF1A1A1A)),
+                        .clip(RoundedCornerShape(20.dp)).background(ThemeState.card),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (ui.artworkUri != null) {
@@ -222,10 +241,10 @@ fun PlayerScreen(
 
         // כותרת + אמן
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
-            Text(ui.title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+            Text(ui.title, color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold,
                 maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 22.sp)
             Spacer(Modifier.height(4.dp))
-            Text(ui.artist, color = Color(0xFFAAAAAA), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(ui.artist, color = ThemeState.subtext2, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
 
         // פס התקדמות
@@ -240,9 +259,9 @@ fun PlayerScreen(
                 ),
             )
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-                Text(fmtTime(ui.position), color = Color(0xFFAAAAAA), fontSize = 11.sp)
+                Text(fmtTime(ui.position), color = ThemeState.subtext2, fontSize = 11.sp)
                 Spacer(Modifier.weight(1f))
-                Text(fmtTime(ui.duration), color = Color(0xFFAAAAAA), fontSize = 11.sp)
+                Text(fmtTime(ui.duration), color = ThemeState.subtext2, fontSize = 11.sp)
             }
         }
 
@@ -263,7 +282,7 @@ fun PlayerScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(if (ui.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    if (ui.isPlaying) "השהה" else "נגן", tint = Color.White, modifier = Modifier.size(40.dp))
+                    if (ui.isPlaying) "השהה" else "נגן", tint = ThemeState.text, modifier = Modifier.size(40.dp))
             }
             Spacer(Modifier.width(20.dp))
             IconButton(onClick = { controller.seekToNextMediaItem() }, enabled = ui.hasNext) {
@@ -281,13 +300,13 @@ fun PlayerScreen(
             if (currentData != null) {
                 IconButton(onClick = { replaceCurrent(!audioMode, qualityIndex) }) {
                     Icon(if (audioMode) Icons.Default.Videocam else Icons.Default.Audiotrack,
-                        if (audioMode) "וידאו" else "אודיו", tint = Color.White)
+                        if (audioMode) "וידאו" else "אודיו", tint = ThemeState.text)
                 }
             }
 
             var speedMenu by remember { mutableStateOf(false) }
             Box {
-                IconButton(onClick = { speedMenu = true }) { Icon(Icons.Default.Speed, "מהירות", tint = Color.White) }
+                IconButton(onClick = { speedMenu = true }) { Icon(Icons.Default.Speed, "מהירות", tint = ThemeState.text) }
                 DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
                     listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { sp ->
                         DropdownMenuItem(
@@ -301,7 +320,7 @@ fun PlayerScreen(
             if (!audioMode && currentData != null && currentData.tracks.size > 1) {
                 var qMenu by remember { mutableStateOf(false) }
                 Box {
-                    IconButton(onClick = { qMenu = true }) { Icon(Icons.Default.HighQuality, "איכות", tint = Color.White) }
+                    IconButton(onClick = { qMenu = true }) { Icon(Icons.Default.HighQuality, "איכות", tint = ThemeState.text) }
                     DropdownMenu(expanded = qMenu, onDismissRequest = { qMenu = false }) {
                         currentData.tracks.forEachIndexed { i, t ->
                             DropdownMenuItem(
@@ -315,7 +334,7 @@ fun PlayerScreen(
 
             if (!audioMode) {
                 IconButton(onClick = { isFullscreen = true }) {
-                    Icon(Icons.Default.Fullscreen, "מסך מלא", tint = Color.White)
+                    Icon(Icons.Default.Fullscreen, "מסך מלא", tint = ThemeState.text)
                 }
             }
         }
@@ -344,7 +363,7 @@ private fun QueueList(controller: MediaController, ui: PlayerUiState, modifier: 
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    modifier = Modifier.size(44.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF272727)),
+                    modifier = Modifier.size(44.dp).clip(RoundedCornerShape(6.dp)).background(ThemeState.divider),
                     contentAlignment = Alignment.Center,
                 ) {
                     val art = item.mediaMetadata.artworkUri
@@ -353,9 +372,9 @@ private fun QueueList(controller: MediaController, ui: PlayerUiState, modifier: 
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(item.mediaMetadata.title?.toString() ?: "", color = Color.White, fontSize = 13.sp,
+                    Text(item.mediaMetadata.title?.toString() ?: "", color = ThemeState.text, fontSize = 13.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(item.mediaMetadata.artist?.toString() ?: "", color = Color(0xFF888888), fontSize = 11.sp,
+                    Text(item.mediaMetadata.artist?.toString() ?: "", color = ThemeState.subtext, fontSize = 11.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -423,7 +442,7 @@ private fun VideoGestures(controller: MediaController, activity: Activity?, audi
             },
     ) {
         feedback?.let {
-            Text(it, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+            Text(it, color = ThemeState.text, fontSize = 16.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.align(Alignment.Center).clip(RoundedCornerShape(8.dp))
                     .background(Color(0xCC000000)).padding(horizontal = 16.dp, vertical = 8.dp))
         }
@@ -458,13 +477,13 @@ private fun FullscreenVideo(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(if (ui.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null,
-                        tint = Color.White, modifier = Modifier.size(44.dp))
+                        tint = ThemeState.text, modifier = Modifier.size(44.dp))
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(fmtTime(ui.position), color = Color.White, fontSize = 11.sp)
+                    Text(fmtTime(ui.position), color = ThemeState.text, fontSize = 11.sp)
                     Slider(
                         value = ui.position.toFloat().coerceIn(0f, ui.duration.toFloat().coerceAtLeast(0f)),
                         onValueChange = { controller.seekTo(it.toLong()) },
@@ -473,8 +492,8 @@ private fun FullscreenVideo(
                             activeTrackColor = ThemeState.accent, inactiveTrackColor = Color(0x55FFFFFF)),
                         modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                     )
-                    Text(fmtTime(ui.duration), color = Color.White, fontSize = 11.sp)
-                    IconButton(onClick = onExit) { Icon(Icons.Default.FullscreenExit, "צא ממסך מלא", tint = Color.White) }
+                    Text(fmtTime(ui.duration), color = ThemeState.text, fontSize = 11.sp)
+                    IconButton(onClick = onExit) { Icon(Icons.Default.FullscreenExit, "צא ממסך מלא", tint = ThemeState.text) }
                 }
             }
         }
@@ -492,7 +511,7 @@ private fun PlayerOverflowMenu(
 ) {
     var menu by remember { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "עוד", tint = Color.White) }
+        IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "עוד", tint = ThemeState.text) }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             if (hasData) {
                 DropdownMenuItem(
@@ -548,7 +567,7 @@ private fun DownloadDialog(context: Context, data: StreamData, videoId: String, 
                         record(); downloadStream(context, data.bestAudioUrl, data.title, isAudio = true); onDismiss()
                     }
                 } else {
-                    Text("לא זמין", color = Color(0xFF888888), fontSize = 12.sp)
+                    Text("לא זמין", color = ThemeState.subtext, fontSize = 12.sp)
                 }
                 HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
                 Text("וידאו", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -562,14 +581,14 @@ private fun DownloadDialog(context: Context, data: StreamData, videoId: String, 
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("סגור") } },
-        containerColor = Color(0xFF1F1F1F),
-        titleContentColor = Color.White, textContentColor = Color.White,
+        containerColor = ThemeState.surface,
+        titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
     )
 }
 
 @Composable
 private fun DownloadRow(label: String, onClick: () -> Unit) {
-    Text(label, color = Color.White, fontSize = 14.sp,
+    Text(label, color = ThemeState.text, fontSize = 14.sp,
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp))
 }
 
@@ -592,7 +611,7 @@ private fun AddToPlaylistDialog(store: LibraryStore, video: Video, onDismiss: ()
                 playlists.forEach { pl ->
                     Text(
                         pl.name,
-                        color = Color.White,
+                        color = ThemeState.text,
                         modifier = Modifier.fillMaxWidth()
                             .clickable { store.addToPlaylist(pl.name, video); onDismiss() }
                             .padding(vertical = 10.dp),
@@ -603,10 +622,118 @@ private fun AddToPlaylistDialog(store: LibraryStore, video: Video, onDismiss: ()
                     label = { Text("אלבום חדש") }, modifier = Modifier.padding(top = 8.dp))
             }
         },
-        containerColor = Color(0xFF1F1F1F),
-        titleContentColor = Color.White,
-        textContentColor = Color.White,
+        containerColor = ThemeState.surface,
+        titleContentColor = ThemeState.text,
+        textContentColor = ThemeState.text,
     )
+}
+
+/** עיצוב נגן 2 — וידאו עם בקרים עליו, ומתחת רשימת "הבא בתור". */
+@OptIn(UnstableApi::class)
+@Composable
+private fun OnVideoPlayerScreen(
+    controller: MediaController,
+    ui: PlayerUiState,
+    activity: Activity?,
+    onCollapse: () -> Unit,
+    onFullscreen: () -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val store = remember { LibraryStore(context) }
+    val currentData = Playback.cachedData(ui.mediaId)
+    fun currentVideo() = Video(ui.mediaId ?: "", ui.title, ui.artist, "",
+        ui.artworkUri?.toString() ?: "", System.currentTimeMillis())
+    var liked by remember(ui.mediaId) { mutableStateOf(ui.mediaId?.let { store.isLiked(it) } ?: false) }
+    var showAddToPlaylist by remember { mutableStateOf(false) }
+    var showDownload by remember { mutableStateOf(false) }
+    var controlsVisible by remember { mutableStateOf(true) }
+
+    LaunchedEffect(controlsVisible, ui.isPlaying) {
+        if (controlsVisible && ui.isPlaying) { kotlinx.coroutines.delay(3000); controlsVisible = false }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
+        Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
+            VideoSurface(controller)
+            VideoGestures(controller, activity, audioMode = false)
+            Box(modifier = Modifier.fillMaxSize().pointerInput(Unit) {
+                detectTapGestures(onTap = { controlsVisible = !controlsVisible })
+            })
+            if (ui.buffering) CircularProgressIndicator(color = ThemeState.accent, modifier = Modifier.align(Alignment.Center))
+            if (controlsVisible) {
+                Box(modifier = Modifier.fillMaxSize().background(Color(0x66000000))) {
+                    IconButton(onClick = onCollapse, modifier = Modifier.align(Alignment.TopStart)) {
+                        Icon(Icons.Default.KeyboardArrowDown, "כווץ", tint = ThemeState.text)
+                    }
+                    Row(modifier = Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { controller.seekToPreviousMediaItem() }, enabled = ui.hasPrev) {
+                            Icon(Icons.Default.SkipPrevious, "הקודם",
+                                tint = if (ui.hasPrev) Color.White else Color(0x88FFFFFF), modifier = Modifier.size(36.dp))
+                        }
+                        Spacer(Modifier.width(24.dp))
+                        Box(modifier = Modifier.size(60.dp).clip(RoundedCornerShape(50)).background(ThemeState.accent)
+                            .clickable { if (ui.isPlaying) controller.pause() else controller.play() },
+                            contentAlignment = Alignment.Center) {
+                            Icon(if (ui.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null,
+                                tint = ThemeState.text, modifier = Modifier.size(36.dp))
+                        }
+                        Spacer(Modifier.width(24.dp))
+                        IconButton(onClick = { controller.seekToNextMediaItem() }, enabled = ui.hasNext) {
+                            Icon(Icons.Default.SkipNext, "הבא",
+                                tint = if (ui.hasNext) Color.White else Color(0x88FFFFFF), modifier = Modifier.size(36.dp))
+                        }
+                    }
+                    Row(modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text(fmtTime(ui.position), color = ThemeState.text, fontSize = 11.sp)
+                        Slider(value = ui.position.toFloat().coerceIn(0f, ui.duration.toFloat().coerceAtLeast(0f)),
+                            onValueChange = { controller.seekTo(it.toLong()) },
+                            valueRange = 0f..ui.duration.toFloat().coerceAtLeast(1f),
+                            colors = SliderDefaults.colors(thumbColor = ThemeState.accent,
+                                activeTrackColor = ThemeState.accent, inactiveTrackColor = Color(0x55FFFFFF)),
+                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+                        Text(fmtTime(ui.duration), color = ThemeState.text, fontSize = 11.sp)
+                        IconButton(onClick = onFullscreen) { Icon(Icons.Default.Fullscreen, "מסך מלא", tint = ThemeState.text) }
+                    }
+                }
+            }
+        }
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(ui.title, color = ThemeState.text, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 20.sp)
+                Text(ui.artist, color = ThemeState.subtext2, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            IconButton(onClick = {
+                liked = store.toggleLike(currentVideo())
+                syncLikeToYoutube(context, scope, ui.mediaId ?: "", liked)
+            }) {
+                Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "אהבתי",
+                    tint = if (liked) ThemeState.accent else ThemeState.text)
+            }
+            PlayerOverflowMenu(context = context, hasData = currentData != null, artist = ui.artist,
+                videoId = ui.mediaId ?: "", onAddToPlaylist = { showAddToPlaylist = true }, onDownload = { showDownload = true })
+        }
+        QueueList(controller, ui, Modifier.weight(1f).fillMaxWidth())
+    }
+
+    if (showAddToPlaylist) AddToPlaylistDialog(store = store, video = currentVideo(), onDismiss = { showAddToPlaylist = false })
+    if (showDownload && currentData != null) {
+        DownloadDialog(context = context, data = currentData, videoId = ui.mediaId ?: "", onDismiss = { showDownload = false })
+    }
+}
+
+private fun syncLikeToYoutube(context: Context, scope: CoroutineScope, videoId: String, like: Boolean) {
+    val acct = GoogleAuth.lastAccount(context)?.account ?: return
+    if (videoId.isEmpty()) return
+    scope.launch {
+        runCatching {
+            val token = GoogleAuth.accessToken(context, acct)
+            YouTubeAccountRepository.rate(token, videoId, like)
+        }
+    }
 }
 
 private fun fmtTime(ms: Long): String {

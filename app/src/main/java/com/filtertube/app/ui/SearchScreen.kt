@@ -1,4 +1,5 @@
 package com.filtertube.app.ui
+import com.filtertube.app.ThemeState
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -71,7 +72,7 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F0F))) {
+    Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         // Search bar
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 28.dp, bottom = 8.dp),
@@ -81,12 +82,12 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
                 value = query,
                 onValueChange = { query = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("חפש בערוצים המאושרים...", color = Color(0xFF888888)) },
-                leadingIcon = { Icon(Icons.Default.Search, null, tint = Color(0xFF888888)) },
+                placeholder = { Text("חפש בערוצים המאושרים...", color = ThemeState.subtext) },
+                leadingIcon = { Icon(Icons.Default.Search, null, tint = ThemeState.subtext) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
                         IconButton(onClick = { query = ""; state = SearchState.Idle }) {
-                            Icon(Icons.Default.Close, "נקה", tint = Color(0xFF888888))
+                            Icon(Icons.Default.Close, "נקה", tint = ThemeState.subtext)
                         }
                     }
                 },
@@ -95,10 +96,10 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { runSearch(query) }),
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color(0xFF272727),
-                    unfocusedContainerColor = Color(0xFF272727),
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
+                    focusedContainerColor = ThemeState.divider,
+                    unfocusedContainerColor = ThemeState.divider,
+                    focusedTextColor = ThemeState.text,
+                    unfocusedTextColor = ThemeState.text,
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                     cursorColor = Color(0xFFFF0000),
@@ -139,7 +140,7 @@ private fun SearchHistory(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Default.Search, null, tint = Color(0xFF444444), modifier = Modifier.size(48.dp))
                 Spacer(Modifier.height(12.dp))
-                Text("חפש סרטונים בערוצים המאושרים", color = Color(0xFF888888), fontSize = 14.sp)
+                Text("חפש סרטונים בערוצים המאושרים", color = ThemeState.subtext, fontSize = 14.sp)
             }
         }
         return
@@ -149,7 +150,7 @@ private fun SearchHistory(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("היסטוריית חיפוש", color = Color(0xFFAAAAAA), fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Text("היסטוריית חיפוש", color = ThemeState.subtext2, fontSize = 13.sp, modifier = Modifier.weight(1f))
             TextButton(onClick = onClear) { Text("נקה הכל", color = Color(0xFFFF0000), fontSize = 12.sp) }
         }
         LazyColumn {
@@ -158,9 +159,9 @@ private fun SearchHistory(
                     modifier = Modifier.fillMaxWidth().clickable { onPick(q) }.padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.History, null, tint = Color(0xFF888888), modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.History, null, tint = ThemeState.subtext, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(12.dp))
-                    Text(q, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Text(q, color = ThemeState.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
                     IconButton(onClick = { onRemove(q) }, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Default.Close, "הסר", tint = Color(0xFF666666), modifier = Modifier.size(18.dp))
                     }
