@@ -99,6 +99,103 @@ object InnerTube {
         return resp != null
     }
 
+    // ── נגן מהיר (לקוח IOS — כתובות ישירות, בלי פענוח חתימות, ללא התחברות) ──
+    suspend fun player(videoId: String): StreamData? = withContext(Dispatchers.IO) {
+        val body = JSONObject().apply {
+            put("videoId", videoId)
+            put("contentCheckOk", true)
+            put("racyCheckOk", true)
+            put("context", JSONObject().put("client", JSONObject().apply {
+                put("clientName", "IOS")
+                put("clientVersion", "19.45.4")
+                put("deviceMake", "Apple")
+                put("deviceModel", "iPhone16,2")
+                put("osName", "iPhone")
+                put("osVersion", "18.1.0.22B83")
+                put("hl", "he"); put("gl", "IL")
+            }))
+        }
+        val req = Request.Builder()
+            .url("${BASE}player?prettyPrint=false")
+            .header("Content-Type", "application/json")
+            .header("User-Agent", "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X;)")
+            .post(body.toString().toRequestBody(jsonMedia))
+            .build()
+        val json = runCatching {
+            http.newCall(req).execute().use { if (!it.isSuccessful) null else it.body?.string()?.let(::JSONObject) }
+        }.getOrNull() ?: return@withContext null
+
+        if (json.optJSONObject("playabilityStatus")?.optString("status") != "OK") return@withContext null
+        val sd = json.optJSONObject("streamingData") ?: return@withContext null
+
+        val muxedTracks = mutableListOf<StreamTrack>()
+        val videoOnly = mutableListOf<Pair<Int, String>>()
+        var bestAudioUrl: String? = null
+        var bestAudioBitrate = -1
+
+        fun handle(f: JSONObject, adaptive: Boolean) {
+            val url = f.optString("url")
+            if (url.isEmpty()) return            // ciphered (אין url ישיר) — ניפול ל-NewPipe
+            val mime = f.optString("mimeType")
+            when {
+                mime.startsWith("audio/") -> {
+                    val br = f.optInt("bitrate")
+                    if (br > bestAudioBitrate) { bestAudioBitrate = br; bestAudioUrl = url }
+                }
+                mime.startsWith("video/") -> {
+                    val h = f.optInt("height")
+                    if (h > 0) {
+                        if (adaptive) videoOnly.add(h to url)
+                        else muxedTracks.add(StreamTrack(h, "${h}p", url, null))
+                    }
+                }
+            }
+        }
+        sd.optJSONArray("formats")?.let { for (i in 0 until it.length()) it.optJSONObject(i)?.let { f -> handle(f, false) } }
+        sd.optJSONArray("adaptiveFormats")?.let { for (i in 0 until it.length()) it.optJSONObject(i)?.let { f -> handle(f, true) } }
+
+        val au = bestAudioUrl
+        val dashTracks = if (au != null) videoOnly.map { StreamTrack(it.first, "${it.first}p", it.second, au) } else emptyList()
+        val tracks = (muxedTracks + dashTracks).distinctBy { it.height }.sortedByDescending { it.height }
+        if (tracks.isEmpty()) return@withContext null
+
+        val vd = json.optJSONObject("videoDetails")
+        val bestMuxed = muxedTracks.maxByOrNull { it.height }?.videoUrl ?: tracks.first().videoUrl
+        val related = runCatching { related(videoId) }.getOrNull() ?: emptyList()
+
+        StreamData(
+            title = vd?.optString("title") ?: "",
+            uploaderName = vd?.optString("author") ?: "",
+            channelId = vd?.optString("channelId") ?: "",
+            durationSec = vd?.optString("lengthSeconds")?.toLongOrNull() ?: 0L,
+            viewCount = vd?.optString("viewCount")?.toLongOrNull() ?: 0L,
+            description = vd?.optString("shortDescription"),
+            thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+            tracks = tracks,
+            bestAudioUrl = au,
+            bestVideoUrl = bestMuxed,
+            related = related,
+        )
+    }
+
+    /** סרטונים קשורים (לתור הרדיו) — אנונימי, לקוח WEB. */
+    private suspend fun related(videoId: String): List<Video> = withContext(Dispatchers.IO) {
+        val body = JSONObject().apply {
+            put("videoId", videoId)
+            put("context", context())
+        }
+        val req = Request.Builder()
+            .url("${BASE}next?prettyPrint=false")
+            .header("Content-Type", "application/json")
+            .header("User-Agent", USER_AGENT)
+            .post(body.toString().toRequestBody(jsonMedia))
+            .build()
+        val json = runCatching {
+            http.newCall(req).execute().use { if (!it.isSuccessful) null else it.body?.string()?.let(::JSONObject) }
+        }.getOrNull() ?: return@withContext emptyList()
+        collectVideos(json)
+    }
+
     // ── פירוש רקורסיבי ───────────────────────────────────────────────────
     private fun collectVideos(root: JSONObject): List<Video> {
         val out = LinkedHashMap<String, Video>()

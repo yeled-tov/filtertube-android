@@ -155,6 +155,8 @@ fun ShortsPlayerScreen(onBack: () -> Unit) {
     val videos = remember { ShortsHolder.videos }
     if (videos.isEmpty()) { onBack(); return }
 
+    KeepScreenOn(true)   // המסך נשאר דלוק בזמן צפייה בשורטס
+
     val pagerState = rememberPagerState(initialPage = ShortsHolder.startIndex, pageCount = { videos.size })
     val exo = remember {
         ExoPlayer.Builder(context).build().apply {

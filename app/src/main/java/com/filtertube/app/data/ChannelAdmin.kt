@@ -83,7 +83,8 @@ object ChannelAdmin {
             val newContent = json.encodeToString(channels)
             val b64 = Base64.encodeToString(newContent.toByteArray(), Base64.NO_WRAP)
             val payload = JSONObject().apply {
-                put("message", message)
+                // [skip ci] — שינוי ערוצים לא יפעיל בנייה/Release ולא יציג עדכון מדומה
+                put("message", "$message [skip ci]")
                 put("content", b64)
                 put("sha", sha)
             }.toString()

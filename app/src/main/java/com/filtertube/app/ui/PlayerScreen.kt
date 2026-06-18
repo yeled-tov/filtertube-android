@@ -50,6 +50,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
@@ -122,6 +123,9 @@ fun PlayerScreen(
     val currentData = Playback.cachedData(ui.mediaId)
     val audioMode = ui.isAudio
     val store = remember { LibraryStore(context) }
+
+    // המסך נשאר דלוק כל עוד מתנגן וידאו (לא אודיו). יוצאים מהמסך → נכבה כרגיל.
+    KeepScreenOn(ui.isPlaying && !audioMode)
     fun currentVideo() = Video(
         id = ui.mediaId ?: "", title = ui.title, channelName = ui.artist,
         channelId = "", thumbnailUrl = ui.artworkUri?.toString() ?: "", publishedAt = System.currentTimeMillis(),
@@ -234,7 +238,7 @@ fun PlayerScreen(
         } else {
             Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
                 VideoSurface(controller)
-                VideoGestures(controller, activity, audioMode = false)
+                VideoGestures(controller, activity, audioMode = false, onSwipeDown = onCollapse)
                 if (ui.buffering) CircularProgressIndicator(color = ThemeState.accent, modifier = Modifier.align(Alignment.Center))
             }
         }
@@ -399,16 +403,15 @@ private fun VideoSurface(controller: MediaController) {
     )
 }
 
-/** מחוות על משטח הוידאו: טאפ יחיד (להצגת בקרים), דאבל-טאפ לדילוג, גרירה אנכית לבהירות/ווליום. */
+/** מחוות על משטח הוידאו: טאפ יחיד (להצגת בקרים), דאבל-טאפ לדילוג, החלקה למטה למזעור הנגן. */
 @Composable
 private fun VideoGestures(
     controller: MediaController,
     activity: Activity?,
     audioMode: Boolean,
     onSingleTap: (() -> Unit)? = null,
+    onSwipeDown: (() -> Unit)? = null,
 ) {
-    val context = LocalContext.current
-    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
     var feedback by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(feedback) { if (feedback != null) { kotlinx.coroutines.delay(800); feedback = null } }
@@ -428,25 +431,13 @@ private fun VideoGestures(
                     },
                 )
             }
-            .pointerInput(Unit) {
-                detectVerticalDragGestures { change, dragAmount ->
-                    val w = boxSize.width.coerceAtLeast(1)
-                    val h = boxSize.height.coerceAtLeast(1)
-                    if (change.position.x < w / 2f) {
-                        val window = activity?.window ?: return@detectVerticalDragGestures
-                        val lp = window.attributes
-                        var b = lp.screenBrightness; if (b < 0f) b = 0.5f
-                        b = (b - dragAmount / h).coerceIn(0.01f, 1f)
-                        lp.screenBrightness = b; window.attributes = lp
-                        feedback = "☀ ${(b * 100).toInt()}%"
-                    } else {
-                        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                        val cur = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                        val nv = (cur + (-dragAmount / h * max * 1.6f)).toInt().coerceIn(0, max)
-                        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, nv, 0)
-                        feedback = "🔊 ${nv * 100 / max}%"
-                    }
-                }
+            .pointerInput(onSwipeDown) {
+                val cb = onSwipeDown ?: return@pointerInput
+                var total = 0f
+                detectVerticalDragGestures(
+                    onDragEnd = { if (total > 180f) cb(); total = 0f },
+                    onVerticalDrag = { _, dy -> total += dy },
+                )
             },
     ) {
         feedback?.let {
@@ -454,6 +445,16 @@ private fun VideoGestures(
                 modifier = Modifier.align(Alignment.Center).clip(RoundedCornerShape(8.dp))
                     .background(Color(0xCC000000)).padding(horizontal = 16.dp, vertical = 8.dp))
         }
+    }
+}
+
+/** שומר את המסך דלוק כל עוד [enabled] (בזמן צפייה בוידאו). */
+@Composable
+fun KeepScreenOn(enabled: Boolean) {
+    val view = LocalView.current
+    DisposableEffect(enabled) {
+        view.keepScreenOn = enabled
+        onDispose { view.keepScreenOn = false }
     }
 }
 
@@ -471,7 +472,7 @@ private fun FullscreenVideo(
     }
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         VideoSurface(controller)
-        VideoGestures(controller, activity, audioMode = false, onSingleTap = { controlsVisible = !controlsVisible })
+        VideoGestures(controller, activity, audioMode = false, onSingleTap = { controlsVisible = !controlsVisible }, onSwipeDown = onExit)
         if (ui.buffering) CircularProgressIndicator(color = ThemeState.accent, modifier = Modifier.align(Alignment.Center))
         if (controlsVisible) {
             Box(modifier = Modifier.fillMaxSize().background(Color(0x66000000))) {
@@ -661,7 +662,7 @@ private fun OnVideoPlayerScreen(
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
             VideoSurface(controller)
-            VideoGestures(controller, activity, audioMode = false, onSingleTap = { controlsVisible = !controlsVisible })
+            VideoGestures(controller, activity, audioMode = false, onSingleTap = { controlsVisible = !controlsVisible }, onSwipeDown = onCollapse)
             if (ui.buffering) CircularProgressIndicator(color = ThemeState.accent, modifier = Modifier.align(Alignment.Center))
             if (controlsVisible) {
                 Box(modifier = Modifier.fillMaxSize().background(Color(0x66000000))) {

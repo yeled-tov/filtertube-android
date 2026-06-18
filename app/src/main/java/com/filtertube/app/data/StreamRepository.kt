@@ -38,8 +38,13 @@ data class StreamData(
 object StreamRepository {
 
     suspend fun getStream(videoId: String): StreamData = withContext(Dispatchers.IO) {
-        val url = "https://www.youtube.com/watch?v=$videoId"
-        val info = StreamInfo.getInfo(ServiceList.YouTube, url)
+        // נתיב מהיר דרך InnerTube (לקוח IOS) — מהיר בהרבה. אם נכשל, נופלים ל-NewPipe.
+        runCatching { InnerTube.player(videoId) }.getOrNull()?.let { return@withContext it }
+
+        // NewPipe עם fromId — עוקף את decodeUrlUtf8 שקורס באנדרואיד < 13 (NoSuchMethodError)
+        val linkHandler = org.schabi.newpipe.extractor.services.youtube.linkHandler
+            .YoutubeStreamLinkHandlerFactory.getInstance().fromId(videoId)
+        val info = StreamInfo.getInfo(ServiceList.YouTube.getStreamExtractor(linkHandler))
 
         val muxed = info.videoStreams.orEmpty().filter { !it.isVideoOnly && it.height > 0 }
         val videoOnly = info.videoStreams.orEmpty().filter { it.isVideoOnly && it.height > 0 }
