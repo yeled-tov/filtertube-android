@@ -118,7 +118,7 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
             is SearchState.Error -> CenteredError(s.message) { runSearch(query) }
             is SearchState.Results -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(vertical = 8.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
             ) {
                 items(s.videos, key = { it.id }) { video ->
                     VideoRow(video, onClick = { onVideoClick(video) })

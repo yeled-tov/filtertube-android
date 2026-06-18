@@ -5,12 +5,17 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.unit.sp
@@ -86,8 +91,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private data class NavItem(val route: String, val label: String, val icon: ImageVector)
-
 @Composable
 fun AppRoot() {
     val navController = rememberNavController()
@@ -126,55 +129,27 @@ fun AppRoot() {
 
     // החיפוש עבר לכפתור למעלה במסך הבית — לא בסרגל התחתון
     val navItems = buildList {
-        add(NavItem("home", "בית", Icons.Default.Home))
+        add(GlassNavItem("home", "בית", Icons.Default.Home))
         if (shortsEnabled) add(NavItem("shorts", "Shorts", Icons.Default.PlayArrow))
-        add(NavItem("library", "ספריה", Icons.Default.LibraryMusic))
-        add(NavItem("settings", "הגדרות", Icons.Default.Settings))
+        add(GlassNavItem("library", "ספריה", Icons.Default.LibraryMusic))
+        add(GlassNavItem("settings", "הגדרות", Icons.Default.Settings))
     }
 
-    Scaffold(
-        containerColor = ThemeState.bg,
-        bottomBar = {
-            if (showBottomBar) {
-                androidx.compose.foundation.layout.Column {
-                    com.filtertube.app.ui.MiniPlayer(
-                        controller = controller,
-                        ui = playerUi,
-                        onOpen = { navController.navigate("player") { launchSingleTop = true } },
-                    )
-                    NavigationBar(containerColor = ThemeState.bg2) {
-                        navItems.forEach { item ->
-                            NavigationBarItem(
-                                selected = currentRoute == item.route,
-                                onClick = {
-                                    if (currentRoute != item.route) {
-                                        navController.navigate(item.route) {
-                                            popUpTo("home") { saveState = true }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    }
-                                },
-                                icon = { Icon(item.icon, contentDescription = item.label) },
-                                label = { Text(item.label) },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = ThemeState.accent,
-                                    selectedTextColor = ThemeState.text,
-                                    unselectedIconColor = ThemeState.subtext,
-                                    unselectedTextColor = ThemeState.subtext,
-                                    indicatorColor = ThemeState.surface,
-                                ),
-                            )
-                        }
-                    }
-                }
+    fun navigateTab(route: String) {
+        if (currentRoute != route) {
+            navController.navigate(route) {
+                popUpTo("home") { saveState = true }
+                launchSingleTop = true
+                restoreState = true
             }
-        },
-    ) { padding ->
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         NavHost(
             navController = navController,
             startDestination = "home",
-            modifier = Modifier.padding(padding),
+            modifier = Modifier.fillMaxSize(),
         ) {
             composable("home") { HomeScreen(onVideoClick = ::openVideo, onSearch = { navController.navigate("search") }) }
             composable("shorts") { ShortsScreen(onOpenShort = { navController.navigate("shortsPlayer") }, onSearch = { navController.navigate("search") }) }
@@ -239,6 +214,18 @@ fun AppRoot() {
                     ui = playerUi,
                     onCollapse = { navController.popBackStack() },
                 )
+            }
+        }
+
+        // מיני-נגן + סרגל ניווט צף (זכוכית), מרחפים מעל התוכן
+        if (showBottomBar) {
+            Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding()) {
+                com.filtertube.app.ui.MiniPlayer(
+                    controller = controller,
+                    ui = playerUi,
+                    onOpen = { navController.navigate("player") { launchSingleTop = true } },
+                )
+                com.filtertube.app.ui.GlassNavBar(navItems, currentRoute) { navigateTab(it) }
             }
         }
     }

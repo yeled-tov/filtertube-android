@@ -44,7 +44,7 @@ fun PlaylistScreen(name: String, onVideoClick: (Video) -> Unit, onBack: () -> Un
                 Text("האלבום ריק — הוסף שירים מתוך הנגן", color = ThemeState.subtext, fontSize = 13.sp)
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
+            LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)) {
                 items(videos, key = { it.id }) { v -> VideoRow(v, onClick = { onVideoClick(v) }) }
             }
         }

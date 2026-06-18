@@ -122,7 +122,7 @@ private fun ShortsGrid(videos: List<Video>, onClick: (Int) -> Unit) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(2.dp),
+        contentPadding = PaddingValues(start = 2.dp, end = 2.dp, top = 2.dp, bottom = 96.dp),
     ) {
         items(videos, key = { it.id }) { video ->
             val index = videos.indexOf(video)

@@ -75,15 +75,15 @@ fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit) {
 
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 18.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(ThemeState.accent),
+                modifier = Modifier.size(28.dp).clip(RoundedCornerShape(7.dp)).background(ThemeState.accent),
                 contentAlignment = Alignment.Center,
-            ) { Text("FT", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+            ) { Text("FT", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
             Spacer(Modifier.width(8.dp))
-            Text("FilterTube", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = ThemeState.text, modifier = Modifier.weight(1f))
+            Text("FilterTube", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ThemeState.text, modifier = Modifier.weight(1f))
             IconButton(onClick = onSearch) {
                 Icon(Icons.Default.Search, contentDescription = "חיפוש", tint = ThemeState.text)
             }
@@ -98,7 +98,7 @@ fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit) {
             is HomeState.Error -> CenteredError(s.message) { refresh(showSpinner = true) }
             is HomeState.Success -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(vertical = 8.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
             ) {
                 items(s.videos, key = { it.id }) { video ->
                     VideoRow(video, onClick = { onVideoClick(video) })

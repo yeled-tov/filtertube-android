@@ -73,7 +73,7 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar("$title (${videos.size})", onBack)
         if (videos.isEmpty()) EmptyHint("האוסף ריק")
-        else LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
+        else LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)) {
             items(videos, key = { it.id }) { v -> VideoRow(v, onClick = { onVideoClick(v) }) }
         }
     }
@@ -88,7 +88,7 @@ fun SubscriptionsScreen(onOpenChannel: (String, String) -> Unit, onBack: () -> U
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar("המנויים שלי (${subs.size})", onBack)
         if (subs.isEmpty()) EmptyHint("התחבר לחשבון גוגל בספריה כדי למשוך את המנויים שלך")
-        else LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
+        else LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)) {
             items(subs, key = { it.channelId }) { sub -> SubRow(sub) { onOpenChannel(sub.channelId, sub.title) } }
         }
     }
@@ -143,7 +143,7 @@ fun ChannelVideosScreen(
         when (val s = state) {
             is HomeState.Loading -> CenteredLoading("טוען סרטונים...")
             is HomeState.Error -> CenteredError(s.message) { retry++ }
-            is HomeState.Success -> LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
+            is HomeState.Success -> LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)) {
                 items(s.videos, key = { it.id }) { v -> VideoRow(v, onClick = { onVideoClick(v) }) }
             }
         }
