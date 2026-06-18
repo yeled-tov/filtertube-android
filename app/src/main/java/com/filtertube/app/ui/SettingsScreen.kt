@@ -5,6 +5,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -342,6 +343,11 @@ private val accentOptions = listOf(
     Color(0xFF2962FF), Color(0xFFAA00FF), Color(0xFF00BFA5), Color(0xFFEC407A),
 )
 
+private val qualityOptions = listOf(
+    0 to "אוטומטי", 2160 to "4K", 1440 to "1440p", 1080 to "1080p",
+    720 to "720p", 480 to "480p", 360 to "360p", 240 to "240p", 144 to "144p",
+)
+
 @Composable
 private fun DisplayDialog(settings: SettingsStore, onDismiss: () -> Unit) {
     var high by remember { mutableStateOf(settings.highRefreshRate) }
@@ -438,8 +444,25 @@ private fun PlayerAudioDialog(settings: SettingsStore, onDismiss: () -> Unit) {
                 Text("עיצוב הנגן", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 StyleRow(1, "מתנגן עכשיו", "וידאו למעלה ובקרים גדולים מתחת", style) { style = 1; settings.playerStyle = 1 }
                 StyleRow(2, "בקרים על הוידאו", "בקרים על הסרטון, ״הבא בתור״ מתחת", style) { style = 2; settings.playerStyle = 2 }
+
+                HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 10.dp))
+
+                var quality by remember { mutableStateOf(settings.preferredQuality) }
+                Text("איכות צפייה", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
-                Text("איכות הניגון (144→4K) נבחרת בתוך הנגן עצמו דרך כפתור האיכות.",
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    qualityOptions.forEach { (h, label) ->
+                        val selected = quality == h
+                        Box(
+                            modifier = Modifier.padding(end = 6.dp).clip(RoundedCornerShape(16.dp))
+                                .background(if (selected) ThemeState.accent else Color(0xFF2A2A2A))
+                                .clickable { quality = h; settings.preferredQuality = h }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) { Text(label, color = Color.White, fontSize = 12.sp) }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text("חל על הסרטון הבא שתפעיל. מעל 720p נטען מעט יותר לאט.",
                     color = ThemeState.subtext, fontSize = 11.sp, lineHeight = 15.sp)
             }
         },

@@ -39,9 +39,19 @@ object Playback {
         }
     }
 
-    fun defaultQuality(data: StreamData): Int =
-        data.tracks.indexOfFirst { it.height in 1..720 }.let { if (it >= 0) it else 0 }
-            .coerceIn(0, (data.tracks.size - 1).coerceAtLeast(0))
+    /**
+     * אינדקס איכות ברירת מחדל. [preferred] = גובה מבוקש (px); 0 = אוטומטי (עד 720).
+     * הרשימה ממוינת מהגבוה לנמוך, אז בוחרים את הגבוה ביותר שאינו עולה על המבוקש.
+     */
+    fun defaultQuality(data: StreamData, preferred: Int = 0): Int {
+        if (data.tracks.isEmpty()) return 0
+        val idx = if (preferred > 0) {
+            data.tracks.indexOfFirst { it.height in 1..preferred }.takeIf { it >= 0 } ?: data.tracks.lastIndex
+        } else {
+            data.tracks.indexOfFirst { it.height in 1..720 }.takeIf { it >= 0 } ?: 0
+        }
+        return idx.coerceIn(0, data.tracks.lastIndex)
+    }
 
     fun forcedAudio(category: String?, level: Int): Boolean =
         category in audioOnlyCategories || (level == 1 && category == "music")
@@ -84,10 +94,11 @@ object Playback {
         val allowed = channels.map { it.youtubeChannelId }.toHashSet()
         val catById = channels.associate { it.youtubeChannelId to it.category }
 
+        val preferred = settings.preferredQuality
         val data = StreamRepository.getStream(video.id)
         cache(video.id, data)
         val audio = forcedAudio(catById[data.channelId], level)
-        val firstItem = buildItem(data, video.id, audio)
+        val firstItem = buildItem(data, video.id, audio, defaultQuality(data, preferred))
 
         c.setMediaItem(firstItem)
         c.prepare()
@@ -110,7 +121,7 @@ object Playback {
             val (v, d) = pair ?: continue
             cache(v.id, d)
             val a = forcedAudio(catById[d.channelId] ?: catById[v.channelId], level)
-            c.addMediaItem(buildItem(d, v.id, a))
+            c.addMediaItem(buildItem(d, v.id, a, defaultQuality(d, preferred)))
         }
     }
 }

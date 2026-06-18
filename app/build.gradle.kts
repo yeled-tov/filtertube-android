@@ -52,6 +52,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // מביא APIs חדשים (URLDecoder.decode(String,Charset), java.time) לאנדרואיד ישן —
+        // בלי זה NewPipe קורס באנדרואיד < 13 עם NoSuchMethodError
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -65,6 +68,9 @@ android {
 }
 
 dependencies {
+    // Core library desugaring — תיקון קריסות NewPipe באנדרואיד < 13
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+
     // Compose BOM — מנהל גרסאות של כל ספריות Compose
     val composeBom = platform("androidx.compose:compose-bom:2024.10.00")
     implementation(composeBom)

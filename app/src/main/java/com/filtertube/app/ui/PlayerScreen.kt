@@ -130,7 +130,7 @@ fun PlayerScreen(
     var showAddToPlaylist by remember { mutableStateOf(false) }
     var showDownload by remember { mutableStateOf(false) }
     var qualityIndex by remember(ui.mediaId) {
-        mutableStateOf(currentData?.let { Playback.defaultQuality(it) } ?: 0)
+        mutableStateOf(currentData?.let { Playback.defaultQuality(it, settings.preferredQuality) } ?: 0)
     }
     var speed by remember(controller) { mutableStateOf(controller.playbackParameters.speed) }
 
@@ -399,9 +399,14 @@ private fun VideoSurface(controller: MediaController) {
     )
 }
 
-/** מחוות על משטח הוידאו: דאבל-טאפ לדילוג, גרירה אנכית לבהירות/ווליום. */
+/** מחוות על משטח הוידאו: טאפ יחיד (להצגת בקרים), דאבל-טאפ לדילוג, גרירה אנכית לבהירות/ווליום. */
 @Composable
-private fun VideoGestures(controller: MediaController, activity: Activity?, audioMode: Boolean) {
+private fun VideoGestures(
+    controller: MediaController,
+    activity: Activity?,
+    audioMode: Boolean,
+    onSingleTap: (() -> Unit)? = null,
+) {
     val context = LocalContext.current
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
@@ -411,14 +416,17 @@ private fun VideoGestures(controller: MediaController, activity: Activity?, audi
     Box(
         modifier = Modifier.fillMaxSize().onSizeChanged { boxSize = it }
             .pointerInput(Unit) {
-                detectTapGestures(onDoubleTap = { offset ->
-                    val w = boxSize.width.coerceAtLeast(1)
-                    if (offset.x < w / 2f) {
-                        controller.seekTo((controller.currentPosition - 10_000).coerceAtLeast(0)); feedback = "⏪ 10 ש׳"
-                    } else {
-                        controller.seekTo(controller.currentPosition + 10_000); feedback = "10 ש׳ ⏩"
-                    }
-                })
+                detectTapGestures(
+                    onTap = { onSingleTap?.invoke() },
+                    onDoubleTap = { offset ->
+                        val w = boxSize.width.coerceAtLeast(1)
+                        if (offset.x < w / 2f) {
+                            controller.seekTo((controller.currentPosition - 10_000).coerceAtLeast(0)); feedback = "⏪ 10 ש׳"
+                        } else {
+                            controller.seekTo(controller.currentPosition + 10_000); feedback = "10 ש׳ ⏩"
+                        }
+                    },
+                )
             }
             .pointerInput(Unit) {
                 detectVerticalDragGestures { change, dragAmount ->
@@ -463,10 +471,7 @@ private fun FullscreenVideo(
     }
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         VideoSurface(controller)
-        VideoGestures(controller, activity, audioMode = false)
-        Box(modifier = Modifier.fillMaxSize().pointerInput(Unit) {
-            detectTapGestures(onTap = { controlsVisible = !controlsVisible })
-        })
+        VideoGestures(controller, activity, audioMode = false, onSingleTap = { controlsVisible = !controlsVisible })
         if (ui.buffering) CircularProgressIndicator(color = ThemeState.accent, modifier = Modifier.align(Alignment.Center))
         if (controlsVisible) {
             Box(modifier = Modifier.fillMaxSize().background(Color(0x66000000))) {
@@ -656,10 +661,7 @@ private fun OnVideoPlayerScreen(
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
             VideoSurface(controller)
-            VideoGestures(controller, activity, audioMode = false)
-            Box(modifier = Modifier.fillMaxSize().pointerInput(Unit) {
-                detectTapGestures(onTap = { controlsVisible = !controlsVisible })
-            })
+            VideoGestures(controller, activity, audioMode = false, onSingleTap = { controlsVisible = !controlsVisible })
             if (ui.buffering) CircularProgressIndicator(color = ThemeState.accent, modifier = Modifier.align(Alignment.Center))
             if (controlsVisible) {
                 Box(modifier = Modifier.fillMaxSize().background(Color(0x66000000))) {
