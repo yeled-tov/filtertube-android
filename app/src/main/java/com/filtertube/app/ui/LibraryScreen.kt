@@ -16,7 +16,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Recommend
 import androidx.compose.material.icons.filled.Subscriptions
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,8 +33,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.filtertube.app.data.AccountStore
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.GoogleAuth
+import com.filtertube.app.data.InnerTube
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.YouTubeAccountRepository
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -44,10 +49,12 @@ fun LibraryScreen(
     onOpenCollection: (String) -> Unit,
     onOpenSubscriptions: () -> Unit,
     onOpenPlaylist: (String) -> Unit,
+    onOpenLogin: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val store = remember { LibraryStore(context) }
+    val accountStore = remember { AccountStore(context) }
 
     var version by remember { mutableStateOf(0) }
     val likes = remember(version) { store.likes() }
@@ -55,6 +62,9 @@ fun LibraryScreen(
     val playlists = remember(version) { store.playlists() }
     var ytLikes by remember { mutableStateOf(store.youtubeLikes()) }
     var subs by remember { mutableStateOf(store.subscriptions()) }
+    var history by remember { mutableStateOf(store.history()) }
+    var recs by remember { mutableStateOf(store.recommendations()) }
+    val loggedIn = accountStore.isLoggedIn   // מחושב מחדש בכל composition (מתעדכן בחזרה מהתחברות)
 
     var account by remember { mutableStateOf<GoogleSignInAccount?>(GoogleAuth.lastAccount(context)) }
     var status by remember { mutableStateOf("") }
@@ -79,6 +89,29 @@ fun LibraryScreen(
                 status = "שגיאה בסנכרון: ${e.message}"
             } finally { syncing = false }
         }
+    }
+
+    // סנכרון מלא דרך InnerTube — היסטוריה והמלצות מותאמות
+    fun syncInnerTube() {
+        if (!accountStore.isLoggedIn) return
+        syncing = true; status = "מסנכרן היסטוריה והמלצות..."
+        scope.launch {
+            try {
+                val approved = ChannelsRepository.getChannels(context).map { it.youtubeChannelId }.toHashSet()
+                val hist = InnerTube.history(accountStore.cookies).filter { it.channelId.isEmpty() || it.channelId in approved }
+                store.setHistory(hist); history = hist
+                val rec = InnerTube.recommendations(accountStore.cookies).filter { it.channelId.isEmpty() || it.channelId in approved }
+                store.setRecommendations(rec); recs = rec
+                status = "סונכרנו ${hist.size} בהיסטוריה ו-${rec.size} המלצות ✓"
+            } catch (e: Exception) {
+                status = "שגיאה בסנכרון מלא: ${e.message}"
+            } finally { syncing = false }
+        }
+    }
+
+    // סנכרון אוטומטי כשמתחברים (loggedIn עובר ל-true בחזרה ממסך ההתחברות)
+    LaunchedEffect(loggedIn) {
+        if (loggedIn && store.history().isEmpty()) syncInnerTube()
     }
 
     val signInLauncher = rememberLauncherForActivityResult(
@@ -152,6 +185,40 @@ fun LibraryScreen(
             }
         }
 
+        // כרטיס סנכרון מלא (InnerTube — היסטוריה והמלצות)
+        item {
+            Column(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
+                .clip(RoundedCornerShape(12.dp)).background(ThemeState.card).padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Sync, null, tint = ThemeState.accent, modifier = Modifier.size(26.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(if (loggedIn) "סנכרון מלא פעיל" else "סנכרון מלא עם יוטיוב",
+                            color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text("היסטוריה והמלצות מותאמות אישית", color = ThemeState.subtext, fontSize = 12.sp)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Row {
+                    Button(
+                        onClick = { if (loggedIn) syncInnerTube() else onOpenLogin() },
+                        enabled = !syncing,
+                        colors = ButtonDefaults.buttonColors(containerColor = ThemeState.accent),
+                    ) { Text(if (loggedIn) "סנכרן עכשיו" else "התחבר (סנכרון מלא)") }
+                    if (loggedIn) {
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedButton(onClick = {
+                            accountStore.logout()
+                            history = emptyList(); recs = emptyList()
+                            store.setHistory(emptyList()); store.setRecommendations(emptyList())
+                            version++
+                            status = "התנתקת מהסנכרון המלא"
+                        }) { Text("התנתק") }
+                    }
+                }
+            }
+        }
+
         // קוביות אוספים — לחיצה פותחת את התוכן
         item {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -162,6 +229,11 @@ fun LibraryScreen(
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 LibTile("המנויים שלי", subs.size, Icons.Default.Subscriptions, Color(0xFFA855F7)) { onOpenSubscriptions() }
                 LibTile("הורדות", downloads.size, Icons.Default.Download, Color(0xFF10B981)) { onOpenCollection("downloads") }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                LibTile("היסטוריה", history.size, Icons.Default.History, Color(0xFFFF6D00)) { onOpenCollection("history") }
+                LibTile("מומלצים", recs.size, Icons.Default.Recommend, Color(0xFF00BFA5)) { onOpenCollection("recs") }
             }
         }
 

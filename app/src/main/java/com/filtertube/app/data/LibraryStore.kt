@@ -79,11 +79,19 @@ class LibraryStore(context: Context) {
     fun setSubscriptions(list: List<SubChannel>) =
         prefs.edit().putString(KEY_SUBS, json.encodeToString(list)).apply()
 
+    // ── היסטוריה והמלצות (InnerTube — סנכרון מלא) ────────────────────────
+    fun history(): List<Video> = videos(KEY_HISTORY)
+    fun setHistory(list: List<Video>) = saveVideos(KEY_HISTORY, list)
+    fun recommendations(): List<Video> = videos(KEY_RECS)
+    fun setRecommendations(list: List<Video>) = saveVideos(KEY_RECS, list)
+
     companion object {
         private const val KEY_LIKES = "likes"
         private const val KEY_DOWNLOADS = "downloads"
         private const val KEY_PLAYLISTS = "playlists"
         private const val KEY_YT_LIKES = "youtube_likes"
         private const val KEY_SUBS = "youtube_subscriptions"
+        private const val KEY_HISTORY = "youtube_history"
+        private const val KEY_RECS = "youtube_recommendations"
     }
 }

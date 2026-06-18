@@ -728,12 +728,19 @@ private fun OnVideoPlayerScreen(
 }
 
 private fun syncLikeToYoutube(context: Context, scope: CoroutineScope, videoId: String, like: Boolean) {
-    val acct = GoogleAuth.lastAccount(context)?.account ?: return
     if (videoId.isEmpty()) return
+    val accountStore = com.filtertube.app.data.AccountStore(context)
     scope.launch {
         runCatching {
-            val token = GoogleAuth.accessToken(context, acct)
-            YouTubeAccountRepository.rate(token, videoId, like)
+            if (accountStore.isLoggedIn) {
+                // סנכרון מלא דרך InnerTube (cookies)
+                com.filtertube.app.data.InnerTube.rate(accountStore.cookies, videoId, like)
+            } else {
+                // נפילה ל-OAuth הרשמי
+                val acct = GoogleAuth.lastAccount(context)?.account ?: return@runCatching
+                val token = GoogleAuth.accessToken(context, acct)
+                YouTubeAccountRepository.rate(token, videoId, like)
+            }
         }
     }
 }

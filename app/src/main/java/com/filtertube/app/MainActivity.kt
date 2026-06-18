@@ -178,8 +178,10 @@ fun AppRoot() {
                     onOpenCollection = { type -> navController.navigate("collection/$type") },
                     onOpenSubscriptions = { navController.navigate("subscriptions") },
                     onOpenPlaylist = { name -> navController.navigate("playlist/${Uri.encode(name)}") },
+                    onOpenLogin = { navController.navigate("ytlogin") },
                 )
             }
+            composable("ytlogin") { AccountLoginScreen(onDone = { navController.popBackStack() }) }
             composable("collection/{type}") { entry ->
                 CollectionScreen(
                     type = entry.arguments?.getString("type").orEmpty(),

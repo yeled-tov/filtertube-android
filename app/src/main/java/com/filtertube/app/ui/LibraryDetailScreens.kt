@@ -67,6 +67,8 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
             "likes" -> "אהבתי" to store.likes()
             "ytlikes" -> "אהבתי ביוטיוב" to store.youtubeLikes()
             "downloads" -> "הורדות" to store.downloads()
+            "history" -> "היסטוריה" to store.history()
+            "recs" -> "מומלצים" to store.recommendations()
             else -> "אוסף" to emptyList()
         }
     }
