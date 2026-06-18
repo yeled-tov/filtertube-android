@@ -130,7 +130,7 @@ fun AppRoot() {
     // החיפוש עבר לכפתור למעלה במסך הבית — לא בסרגל התחתון
     val navItems = buildList {
         add(GlassNavItem("home", "בית", Icons.Default.Home))
-        if (shortsEnabled) add(NavItem("shorts", "Shorts", Icons.Default.PlayArrow))
+        if (shortsEnabled) add(GlassNavItem("shorts", "Shorts", Icons.Default.PlayArrow))
         add(GlassNavItem("library", "ספריה", Icons.Default.LibraryMusic))
         add(GlassNavItem("settings", "הגדרות", Icons.Default.Settings))
     }
