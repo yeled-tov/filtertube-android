@@ -3,6 +3,10 @@ name: Build APK
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'flutter_app/**'
+      - '.github/workflows/flutter.yml'
+      - '**/*.md'
   workflow_dispatch:  # מאפשר הרצה ידנית
 
 # הרשאה ליצור Releases (אחרת מקבלים 403)

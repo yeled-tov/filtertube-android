@@ -1,0 +1,94 @@
+name: Build Flutter APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/flutter.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter_app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Accept Android SDK licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Build debug APK
+        run: |
+          set -o pipefail
+          flutter build apk --debug \
+            --build-number=${{ github.run_number }} \
+            --build-name=0.1.${{ github.run_number }} 2>&1 | tee build-output.txt
+
+      - name: Commit error log back to repo on failure
+        if: failure()
+        run: |
+          {
+            echo "# Flutter Build Error Log"
+            echo ""
+            echo "Commit: ${{ github.sha }}"
+            echo ""
+            echo '```'
+            grep -E "Error|error:|FAILURE|Exception|Unresolved|Could not|FAILED|Target |lib/" build-output.txt | head -80
+            echo '```'
+          } > ../BUILD_ERROR_FLUTTER.md
+          cd ..
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add BUILD_ERROR_FLUTTER.md
+          git commit -m "ci: flutter build error log [skip ci]" || true
+          git push || true
+
+      - name: Rename APK
+        run: |
+          mkdir -p ../artifacts
+          cp build/app/outputs/flutter-apk/app-debug.apk ../artifacts/FilterTube-Flutter-debug.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FilterTube-Flutter-APK
+          path: artifacts/FilterTube-Flutter-debug.apk
+          retention-days: 30
+
+      - name: Create Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: flutter-${{ github.run_number }}
+          name: Flutter Build ${{ github.run_number }}
+          body: |
+            גרסת Flutter (API רשמי + נגן IFrame) — לחנויות.
+            בנייה אוטומטית מקומיט ${{ github.sha }}.
+
+            **הורד את `FilterTube-Flutter-debug.apk` והעבר לטלפון.**
+          files: artifacts/FilterTube-Flutter-debug.apk
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

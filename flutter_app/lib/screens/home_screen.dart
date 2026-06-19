@@ -1,0 +1,103 @@
+import 'package:flutter/material.dart';
+import '../models.dart';
+import '../theme.dart';
+import '../youtube_api.dart';
+import '../channels_repo.dart';
+import '../widgets/video_card.dart';
+import 'player_screen.dart';
+
+/// פיד הבית — סרטונים אחרונים מהערוצים המאושרים, ממוינים לפי תאריך.
+/// כדי לחסוך במכסת ה-API מושכים מ-N הערוצים הראשונים בכל רענון.
+class HomeScreen extends StatefulWidget {
+  final YoutubeApi api;
+  final ChannelsRepo channels;
+
+  const HomeScreen({super.key, required this.api, required this.channels});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late Future<List<Video>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _loadFeed();
+  }
+
+  Future<List<Video>> _loadFeed() async {
+    final chs = widget.channels.channels.take(24).toList();
+    final results = await Future.wait(
+      chs.map((c) => widget.api.channelUploads(c, max: 6)),
+    );
+    final all = <Video>[];
+    for (final r in results) {
+      all.addAll(r);
+    }
+    all.sort((a, b) => (b.publishedAt ?? DateTime(2000))
+        .compareTo(a.publishedAt ?? DateTime(2000)));
+    return all;
+  }
+
+  Future<void> _refresh() async {
+    final f = _loadFeed();
+    setState(() => _future = f);
+    await f;
+  }
+
+  void _open(Video v) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => PlayerScreen(
+        video: v,
+        api: widget.api,
+        channels: widget.channels,
+      ),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('FilterTube',
+            style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.accent)),
+      ),
+      body: RefreshIndicator(
+        color: AppTheme.accent,
+        onRefresh: _refresh,
+        child: FutureBuilder<List<Video>>(
+          future: _future,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Center(
+                  child: CircularProgressIndicator(color: AppTheme.accent));
+            }
+            final vids = snap.data ?? [];
+            if (vids.isEmpty) {
+              return ListView(children: const [
+                SizedBox(height: 200),
+                Center(
+                    child: Text('אין סרטונים להצגה',
+                        style: TextStyle(color: AppTheme.subtext))),
+              ]);
+            }
+            return GridView.builder(
+              padding: const EdgeInsets.all(10),
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 360,
+                childAspectRatio: 0.78,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 14,
+              ),
+              itemCount: vids.length,
+              itemBuilder: (context, i) =>
+                  VideoCard(video: vids[i], onTap: () => _open(vids[i])),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}

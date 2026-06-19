@@ -1,0 +1,21 @@
+name: filtertube
+description: "FilterTube — סינון יוטיוב כשר, לגוגל פליי ואפל סטור (API רשמי + נגן IFrame)."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  youtube_player_iframe: ^5.2.0
+  http: ^1.2.0
+  cached_network_image: ^3.3.1
+  shared_preferences: ^2.2.2
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
