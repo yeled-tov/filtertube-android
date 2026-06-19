@@ -4,6 +4,7 @@ import 'youtube_api.dart';
 import 'channels_repo.dart';
 import 'screens/home_screen.dart';
 import 'screens/search_screen.dart';
+import 'screens/channels_screen.dart';
 
 /// המפתח הרשמי של YouTube Data API v3.
 /// לפני פרסום בחנות יש להגביל אותו ב-Google Cloud Console (חבילה/חתימה).
@@ -62,6 +63,7 @@ class _RootState extends State<_Root> {
         }
         final screens = [
           HomeScreen(api: _api, channels: _channels),
+          ChannelsScreen(api: _api, channels: _channels),
           SearchScreen(api: _api, channels: _channels),
         ];
         return Scaffold(
@@ -76,6 +78,10 @@ class _RootState extends State<_Root> {
                   icon: Icon(Icons.home_outlined),
                   selectedIcon: Icon(Icons.home),
                   label: 'בית'),
+              NavigationDestination(
+                  icon: Icon(Icons.subscriptions_outlined),
+                  selectedIcon: Icon(Icons.subscriptions),
+                  label: 'ערוצים'),
               NavigationDestination(
                   icon: Icon(Icons.search_outlined),
                   selectedIcon: Icon(Icons.search),

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 import '../models.dart';
 import '../theme.dart';
@@ -8,8 +9,10 @@ import '../channels_repo.dart';
 import '../widgets/video_card.dart';
 
 /// נגן וידאו מבוסס IFrame רשמי — השלט המקורי של יוטיוב מוסתר (showControls: false)
-/// ומעליו שלט מותאם משלנו (פליי/פעוז, פס התקדמות, דילוג). מתחת — "הבא בתור"
-/// מאותו ערוץ (מובטח ברשימה הלבנה).
+/// ומעליו שלט מותאם משלנו (פליי/פעוז, פס התקדמות, דילוג). מתחת — "הבא בתור".
+///
+/// הערה: סרטונים שבעליהם אסרו הטמעה (קוד 101/150/152 — נפוץ במוזיקה/ערוצי Topic)
+/// אינם ניתנים לניגון בשום נגן מוטמע חוקי; מציגים להם כפתור "פתח ביוטיוב" ומעבר הלאה.
 class PlayerScreen extends StatefulWidget {
   final Video video;
   final YoutubeApi api;
@@ -42,6 +45,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         showControls: false, // מסתירים את השלט המקורי של יוטיוב
         showFullscreenButton: false,
         enableCaption: false,
+        interfaceLanguage: 'he',
         strictRelatedVideos: true,
       ),
     );
@@ -77,9 +81,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
     setState(() {
       _current = v;
       _upNext = [];
+      _controlsVisible = true;
     });
     _controller.loadVideoById(videoId: v.id);
     _loadUpNext();
+    _scheduleHide();
+  }
+
+  Future<void> _openInYoutube() async {
+    final uri = Uri.parse('https://www.youtube.com/watch?v=${_current.id}');
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   String _fmt(Duration d) {
@@ -148,28 +159,85 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Widget _playerWithControls() {
     return AspectRatio(
       aspectRatio: 16 / 9,
-      child: Stack(
-        fit: StackFit.expand,
+      child: YoutubeValueBuilder(
+        controller: _controller,
+        builder: (context, value) {
+          // שגיאת הטמעה / סרטון לא זמין — מציגים מסך ידידותי במקום השלט
+          if (value.error != YoutubeError.none) {
+            return _errorOverlay(value.error);
+          }
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              YoutubePlayer(controller: _controller, aspectRatio: 16 / 9),
+              GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _toggleControls,
+              ),
+              if (_controlsVisible) _controlsOverlay(value),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _errorOverlay(YoutubeError error) {
+    final embedBlocked = error == YoutubeError.notEmbeddable ||
+        error == YoutubeError.sameAsNotEmbeddable ||
+        error == YoutubeError.unknown;
+    final msg = embedBlocked
+        ? 'הסרטון הזה לא ניתן לניגון בתוך אפליקציה (בעל הערוץ אסר הטמעה).'
+        : 'הסרטון אינו זמין.';
+    return Container(
+      color: Colors.black,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          YoutubePlayer(controller: _controller, aspectRatio: 16 / 9),
-          // שכבת מגע שמציגה/מסתירה את השלט
-          GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: _toggleControls,
+          const Icon(Icons.error_outline, color: Colors.white54, size: 40),
+          const SizedBox(height: 10),
+          Text(msg,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white, fontSize: 13)),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _openInYoutube,
+                icon: const Icon(Icons.open_in_new, size: 18),
+                label: const Text('פתח ביוטיוב'),
+                style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
+              ),
+              const SizedBox(width: 10),
+              if (_upNext.isNotEmpty)
+                FilledButton.icon(
+                  onPressed: () => _playVideo(_upNext.first),
+                  icon: const Icon(Icons.skip_next, size: 18),
+                  label: const Text('הבא בתור'),
+                  style: FilledButton.styleFrom(backgroundColor: AppTheme.accent),
+                ),
+            ],
           ),
-          if (_controlsVisible) _controlsOverlay(),
+          Align(
+            alignment: Alignment.topLeft,
+            child: IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _controlsOverlay() {
+  Widget _controlsOverlay(YoutubePlayerValue value) {
     return Positioned.fill(
       child: Container(
         color: Colors.black26,
         child: Column(
           children: [
-            // שורה עליונה — חזרה
             Align(
               alignment: Alignment.topLeft,
               child: IconButton(
@@ -178,10 +246,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
               ),
             ),
             const Spacer(),
-            // פליי/פעוז + דילוגים
-            YoutubeValueBuilder(
-              controller: _controller,
-              builder: (context, value) {
+            Builder(
+              builder: (context) {
                 final playing = value.playerState == PlayerState.playing;
                 return Row(
                   mainAxisAlignment: MainAxisAlignment.center,
