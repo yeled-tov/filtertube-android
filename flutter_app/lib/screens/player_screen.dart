@@ -34,7 +34,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   late Video _current;
   List<Video> _upNext = [];
   bool _controlsVisible = true;
+  bool _advancing = false;
   Timer? _hideTimer;
+  StreamSubscription<YoutubePlayerValue>? _sub;
 
   @override
   void initState() {
@@ -42,14 +44,23 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _current = widget.video;
     _controller = YoutubePlayerController(
       params: const YoutubePlayerParams(
-        showControls: false, // מסתירים את השלט המקורי של יוטיוב
+        showControls: false,          // מסתירים את השלט המקורי של יוטיוב
         showFullscreenButton: false,
         enableCaption: false,
         interfaceLanguage: 'he',
         strictRelatedVideos: true,
+        // מנטרל לחיצות על ה-UI של יוטיוב (לוגו/כותרת/שיתוף) — שולטים רק דרך השלט שלנו
+        pointerEvents: PointerEvents.none,
       ),
     );
     _controller.loadVideoById(videoId: _current.id);
+    // ניגון רציף — כשסרטון נגמר, עוברים אוטומטית לבא בתור
+    _sub = _controller.listen((value) {
+      if (value.playerState == PlayerState.ended && !_advancing && _upNext.isNotEmpty) {
+        _advancing = true;
+        _playVideo(_upNext.first);
+      }
+    });
     _loadUpNext();
     _scheduleHide();
   }
@@ -82,6 +93,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _current = v;
       _upNext = [];
       _controlsVisible = true;
+      _advancing = false;
     });
     _controller.loadVideoById(videoId: v.id);
     _loadUpNext();
@@ -103,6 +115,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void dispose() {
     _hideTimer?.cancel();
+    _sub?.cancel();
     _controller.close();
     super.dispose();
   }
@@ -170,6 +183,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
             fit: StackFit.expand,
             children: [
               YoutubePlayer(controller: _controller, aspectRatio: 16 / 9),
+              // שכבת מסך עליונה קבועה — מכסה כותרת/שיתוף/לוגו של יוטיוב שעלולים להופיע
+              Align(
+                alignment: Alignment.topCenter,
+                child: Container(
+                  height: 44,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.black54, Colors.transparent],
+                    ),
+                  ),
+                ),
+              ),
               GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onTap: _toggleControls,
