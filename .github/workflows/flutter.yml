@@ -39,10 +39,10 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      - name: Build debug APK
+      - name: Build release APK (split per ABI — קל בהרבה מ-debug)
         run: |
           set -o pipefail
-          flutter build apk --debug \
+          flutter build apk --release --split-per-abi \
             --build-number=${{ github.run_number }} \
             --build-name=0.1.${{ github.run_number }} 2>&1 | tee build-output.txt
 
@@ -65,16 +65,18 @@ jobs:
           git commit -m "ci: flutter build error log [skip ci]" || true
           git push || true
 
-      - name: Rename APK
+      - name: Collect APKs
         run: |
           mkdir -p ../artifacts
-          cp build/app/outputs/flutter-apk/app-debug.apk ../artifacts/FilterTube-Flutter-debug.apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk ../artifacts/FilterTube-Flutter-arm64.apk
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk ../artifacts/FilterTube-Flutter-arm32.apk || true
+          ls -lh ../artifacts
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: FilterTube-Flutter-APK
-          path: artifacts/FilterTube-Flutter-debug.apk
+          path: artifacts/*.apk
           retention-days: 30
 
       - name: Create Release
@@ -88,8 +90,11 @@ jobs:
             גרסת Flutter (API רשמי + נגן IFrame) — לחנויות.
             בנייה אוטומטית מקומיט ${{ github.sha }}.
 
-            **הורד את `FilterTube-Flutter-debug.apk` והעבר לטלפון.**
-          files: artifacts/FilterTube-Flutter-debug.apk
+            **הורד את `FilterTube-Flutter-arm64.apk` (לרוב הטלפונים) והעבר לטלפון.**
+            אם לא מתקין — נסה את `FilterTube-Flutter-arm32.apk`.
+          files: |
+            artifacts/FilterTube-Flutter-arm64.apk
+            artifacts/FilterTube-Flutter-arm32.apk
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
