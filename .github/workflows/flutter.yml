@@ -83,6 +83,7 @@ jobs:
         with:
           tag_name: flutter-${{ github.run_number }}
           name: Flutter Build ${{ github.run_number }}
+          prerelease: true
           body: |
             גרסת Flutter (API רשמי + נגן IFrame) — לחנויות.
             בנייה אוטומטית מקומיט ${{ github.sha }}.

@@ -25,6 +25,41 @@ class YoutubeApi {
 
   DateTime? _date(String? s) => s == null ? null : DateTime.tryParse(s);
 
+  /// מסנן לרשימה שמכילה רק סרטונים שמותר להטמיע (status.embeddable) — דרך
+  /// videos.list הרשמי (1 יחידת מכסה לכל 50 מזהים). כך המשתמש רואה רק סרטונים
+  /// שיתנגנו בנגן ה-IFrame, בלי להיתקל ב"סרטון אינו זמין" (קוד 152).
+  /// אם הבדיקה נכשלת — לא מסננים (עדיף להציג מאשר להחזיר ריק).
+  Future<List<Video>> filterEmbeddable(List<Video> videos) async {
+    if (videos.isEmpty) return videos;
+    final embeddable = <String>{};
+    for (var i = 0; i < videos.length; i += 50) {
+      final end = (i + 50) < videos.length ? i + 50 : videos.length;
+      final batch = videos.sublist(i, end);
+      final ids = batch.map((v) => v.id).join(',');
+      final uri = Uri.parse('$_base/videos').replace(queryParameters: {
+        'part': 'status',
+        'id': ids,
+        'key': apiKey,
+      });
+      try {
+        final resp = await http.get(uri).timeout(const Duration(seconds: 15));
+        if (resp.statusCode != 200) {
+          embeddable.addAll(batch.map((v) => v.id));
+          continue;
+        }
+        final items = (jsonDecode(resp.body)['items'] as List?) ?? [];
+        for (final it in items) {
+          final id = it['id'] as String?;
+          final emb = (it['status'] as Map<String, dynamic>?)?['embeddable'] as bool?;
+          if (id != null && emb == true) embeddable.add(id);
+        }
+      } catch (_) {
+        embeddable.addAll(batch.map((v) => v.id));
+      }
+    }
+    return videos.where((v) => embeddable.contains(v.id)).toList();
+  }
+
   /// סרטונים אחרונים מערוץ (דרך פלייליסט ההעלאות — זול במכסה).
   Future<List<Video>> channelUploads(Channel channel, {int max = 15}) async {
     final uri = Uri.parse('$_base/playlistItems').replace(queryParameters: {

@@ -19,7 +19,9 @@ import java.util.concurrent.TimeUnit
  */
 object UpdateChecker {
 
-    private const val LATEST_URL = "https://api.github.com/repos/yeled-tov/filtertube-android/releases/latest"
+    // רשימת ה-Releases (לא /latest) — כי ב-repo יש גם Releases של גרסת Flutter (flutter-N),
+    // ואנחנו צריכים את האחרון מסוג build-N דווקא.
+    private const val LIST_URL = "https://api.github.com/repos/yeled-tov/filtertube-android/releases?per_page=20"
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -36,31 +38,38 @@ object UpdateChecker {
     }
 
     suspend fun check(): Update? = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(LATEST_URL)
+        val request = Request.Builder().url(LIST_URL)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "FilterTube")
             .build()
         runCatching {
             http.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) return@use null
-                val json = JSONObject(resp.body?.string() ?: return@use null)
-                val tag = json.optString("tag_name")                 // build-N
-                val build = tag.substringAfterLast("build-", "").toIntOrNull() ?: return@use null
-                var apkUrl: String? = null
-                json.optJSONArray("assets")?.let { assets ->
-                    for (i in 0 until assets.length()) {
-                        val a = assets.optJSONObject(i) ?: continue
-                        if (a.optString("name").endsWith(".apk", true)) {
-                            apkUrl = a.optString("browser_download_url"); break
+                val arr = org.json.JSONArray(resp.body?.string() ?: return@use null)
+                // הרשימה ממוינת מהחדש לישן — מוצאים את הראשון עם תג build-N
+                for (i in 0 until arr.length()) {
+                    val json = arr.optJSONObject(i) ?: continue
+                    if (json.optBoolean("draft")) continue
+                    val tag = json.optString("tag_name")              // build-N / flutter-N
+                    if (!tag.startsWith("build-")) continue           // מתעלמים מגרסת Flutter
+                    val build = tag.removePrefix("build-").toIntOrNull() ?: continue
+                    var apkUrl: String? = null
+                    json.optJSONArray("assets")?.let { assets ->
+                        for (j in 0 until assets.length()) {
+                            val a = assets.optJSONObject(j) ?: continue
+                            if (a.optString("name").endsWith(".apk", true)) {
+                                apkUrl = a.optString("browser_download_url"); break
+                            }
                         }
                     }
+                    return@use Update(
+                        build = build,
+                        name = json.optString("name", tag),
+                        changelog = json.optString("body", "").trim(),
+                        apkUrl = apkUrl,
+                    )
                 }
-                Update(
-                    build = build,
-                    name = json.optString("name", tag),
-                    changelog = json.optString("body", "").trim(),
-                    apkUrl = apkUrl,
-                )
+                null
             }
         }.getOrNull()
     }

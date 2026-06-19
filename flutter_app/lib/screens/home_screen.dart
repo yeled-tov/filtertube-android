@@ -38,7 +38,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     all.sort((a, b) => (b.publishedAt ?? DateTime(2000))
         .compareTo(a.publishedAt ?? DateTime(2000)));
-    return all;
+    // מציגים רק סרטונים שמותר להטמיע (כדי שלא ייתקל ב"סרטון אינו זמין")
+    return widget.api.filterEmbeddable(all);
   }
 
   Future<void> _refresh() async {

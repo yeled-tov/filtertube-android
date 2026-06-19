@@ -31,9 +31,10 @@ class _SearchScreenState extends State<SearchScreen> {
       _searched = true;
     });
     final res = await widget.api.search(q, widget.channels.isApproved);
+    final playable = await widget.api.filterEmbeddable(res);
     if (!mounted) return;
     setState(() {
-      _results = res;
+      _results = playable;
       _loading = false;
     });
   }

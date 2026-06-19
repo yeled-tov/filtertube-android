@@ -91,7 +91,9 @@ class _ChannelVideosScreenState extends State<ChannelVideosScreen> {
   @override
   void initState() {
     super.initState();
-    _future = widget.api.channelUploads(widget.channel, max: 30);
+    _future = widget.api
+        .channelUploads(widget.channel, max: 30)
+        .then((v) => widget.api.filterEmbeddable(v));
   }
 
   void _open(Video v) {
