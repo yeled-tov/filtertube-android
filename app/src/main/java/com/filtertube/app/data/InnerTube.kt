@@ -99,26 +99,47 @@ object InnerTube {
         return resp != null
     }
 
-    // ── נגן מהיר (לקוח IOS — כתובות ישירות, בלי פענוח חתימות, ללא התחברות) ──
-    suspend fun player(videoId: String): StreamData? = withContext(Dispatchers.IO) {
+    // ── נגן מהיר (כתובות ישירות, בלי פענוח חתימות, ללא התחברות) ──
+    // מנסים לקוח IOS, ואם נכשל/חסום — ANDROID_VR (שניהם בד"כ מחזירים כתובות ישירות
+    // ללא PoToken). אם שניהם נכשלים מחזירים null ו-StreamRepository נופל ל-NewPipe.
+    suspend fun player(videoId: String): StreamData? =
+        playerWithClient(videoId, iosClient(), IOS_UA) ?: playerWithClient(videoId, vrClient(), VR_UA)
+
+    private const val IOS_UA = "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X;)"
+    private const val VR_UA = "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip"
+
+    private fun iosClient(): JSONObject = JSONObject().apply {
+        put("clientName", "IOS")
+        put("clientVersion", "19.45.4")
+        put("deviceMake", "Apple")
+        put("deviceModel", "iPhone16,2")
+        put("osName", "iPhone")
+        put("osVersion", "18.1.0.22B83")
+        put("hl", "he"); put("gl", "IL")
+    }
+
+    private fun vrClient(): JSONObject = JSONObject().apply {
+        put("clientName", "ANDROID_VR")
+        put("clientVersion", "1.60.19")
+        put("deviceMake", "Oculus")
+        put("deviceModel", "Quest 3")
+        put("osName", "Android")
+        put("osVersion", "12")
+        put("androidSdkVersion", 32)
+        put("hl", "he"); put("gl", "IL")
+    }
+
+    private suspend fun playerWithClient(videoId: String, client: JSONObject, userAgent: String): StreamData? = withContext(Dispatchers.IO) {
         val body = JSONObject().apply {
             put("videoId", videoId)
             put("contentCheckOk", true)
             put("racyCheckOk", true)
-            put("context", JSONObject().put("client", JSONObject().apply {
-                put("clientName", "IOS")
-                put("clientVersion", "19.45.4")
-                put("deviceMake", "Apple")
-                put("deviceModel", "iPhone16,2")
-                put("osName", "iPhone")
-                put("osVersion", "18.1.0.22B83")
-                put("hl", "he"); put("gl", "IL")
-            }))
+            put("context", JSONObject().put("client", client))
         }
         val req = Request.Builder()
             .url("${BASE}player?prettyPrint=false")
             .header("Content-Type", "application/json")
-            .header("User-Agent", "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X;)")
+            .header("User-Agent", userAgent)
             .post(body.toString().toRequestBody(jsonMedia))
             .build()
         val json = runCatching {
@@ -179,7 +200,7 @@ object InnerTube {
     }
 
     /** סרטונים קשורים (לתור הרדיו) — אנונימי, לקוח WEB. */
-    private suspend fun related(videoId: String): List<Video> = withContext(Dispatchers.IO) {
+    suspend fun related(videoId: String): List<Video> = withContext(Dispatchers.IO) {
         val body = JSONObject().apply {
             put("videoId", videoId)
             put("context", context())

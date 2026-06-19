@@ -41,15 +41,22 @@ object StreamRepository {
         // נתיב מהיר דרך InnerTube (לקוח IOS) — מהיר בהרבה. אם נכשל, נופלים ל-NewPipe.
         runCatching { InnerTube.player(videoId) }.getOrNull()?.let { return@withContext it }
 
-        // NewPipe עם fromId — עוקף את decodeUrlUtf8 שקורס באנדרואיד < 13 (NoSuchMethodError)
+        // נתיב נסיגה ל-NewPipe — קוראים ישירות מה-extractor ועוטפים כל שדה ב-runCatching.
+        // קריטי: NoSuchMethodError הוא Error (לא Exception), לכן הטיפול הפנימי של NewPipe
+        // (שתופס Exception בלבד) לא מונע אותו. בנוסף מדלגים לגמרי על getDescription() — הוא
+        // קורא ל-URLDecoder.decode(String,Charset) שלא קיים ב-API<33 ומפיל את האפליקציה.
         val linkHandler = org.schabi.newpipe.extractor.services.youtube.linkHandler
             .YoutubeStreamLinkHandlerFactory.getInstance().fromId(videoId)
-        val info = StreamInfo.getInfo(ServiceList.YouTube.getStreamExtractor(linkHandler))
+        val extractor = ServiceList.YouTube.getStreamExtractor(linkHandler)
+        extractor.fetchPage()
 
-        val muxed = info.videoStreams.orEmpty().filter { !it.isVideoOnly && it.height > 0 }
-        val videoOnly = info.videoStreams.orEmpty().filter { it.isVideoOnly && it.height > 0 }
+        val allVideo = runCatching { extractor.videoStreams }.getOrNull().orEmpty()
+        val videoOnlyList = runCatching { extractor.videoOnlyStreams }.getOrNull().orEmpty()
+        val audioStreams = runCatching { extractor.audioStreams }.getOrNull().orEmpty()
 
-        val audioBest = info.audioStreams.orEmpty().maxByOrNull { it.bitrate }
+        val muxed = allVideo.filter { !it.isVideoOnly && it.height > 0 }
+        val videoOnly = (allVideo.filter { it.isVideoOnly } + videoOnlyList).filter { it.height > 0 }
+        val audioBest = audioStreams.maxByOrNull { it.bitrate }
 
         // בונים רשימת איכויות: muxed (כוללים קול) קודם, אחר כך video-only (ממוזגים עם אודיו)
         val muxedTracks = muxed.map { StreamTrack(it.height, "${it.height}p", it.content, null) }
@@ -67,21 +74,19 @@ object StreamRepository {
         val bestMuxed = muxed.maxByOrNull { it.height }?.content
             ?: tracks.first().videoUrl
 
-        val channelId = extractChannelId(info.uploaderUrl) ?: ""
+        val channelId = extractChannelId(runCatching { extractor.uploaderUrl }.getOrNull()) ?: ""
 
-        // סרטונים קשורים
-        val related = info.relatedItems
-            .filterIsInstance<StreamInfoItem>()
-            .mapNotNull { item -> relatedToVideo(item) }
+        // סרטונים קשורים — דרך InnerTube האנונימי (עטוף; גם NewPipe related עלול לקרוס ב-API<33)
+        val related = runCatching { InnerTube.related(videoId) }.getOrNull().orEmpty()
 
         StreamData(
-            title = info.name.orEmpty(),
-            uploaderName = info.uploaderName.orEmpty(),
+            title = runCatching { extractor.name }.getOrNull().orEmpty(),
+            uploaderName = runCatching { extractor.uploaderName }.getOrNull().orEmpty(),
             channelId = channelId,
-            durationSec = info.duration,
-            viewCount = info.viewCount,
-            description = info.description?.content,
-            thumbnailUrl = info.thumbnails?.maxByOrNull { it.height }?.url,
+            durationSec = runCatching { extractor.length }.getOrNull() ?: 0L,
+            viewCount = runCatching { extractor.viewCount }.getOrNull() ?: 0L,
+            description = null,   // מדלגים — זה מקור הקריסה ב-API<33
+            thumbnailUrl = runCatching { extractor.thumbnails?.maxByOrNull { it.height }?.url }.getOrNull(),
             tracks = tracks,
             bestAudioUrl = audioBest?.content,
             bestVideoUrl = bestMuxed,

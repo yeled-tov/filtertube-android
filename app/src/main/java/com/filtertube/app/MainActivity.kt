@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -272,22 +273,50 @@ fun AppRoot() {
 @Composable
 private fun CrashReportDialog(report: String, onDismiss: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    val settings = remember { SettingsStore(context) }
+    var sending by remember { mutableStateOf(false) }
+
+    fun copy() {
+        val clip = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clip.setPrimaryClip(android.content.ClipData.newPlainText("crash", report))
+        android.widget.Toast.makeText(context, "הועתק", android.widget.Toast.LENGTH_SHORT).show()
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("דוח קריסה אחרון") },
+        title = { Text("נמצא באג") },
         text = {
             Column(modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
-                Text(report, color = Color(0xFFCCCCCC), fontSize = 11.sp)
+                Text("אפשר לשלוח את הדוח ישירות אליי (דורש טוקן אדמין בהגדרות).",
+                    color = ThemeState.subtext2, fontSize = 12.sp)
+                Spacer(Modifier.height(8.dp))
+                Text(report, color = Color(0xFF999999), fontSize = 11.sp)
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                val clip = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                clip.setPrimaryClip(android.content.ClipData.newPlainText("crash", report))
-                android.widget.Toast.makeText(context, "הועתק — שלח לי את זה", android.widget.Toast.LENGTH_SHORT).show()
-            }) { Text("העתק") }
+            Row {
+                TextButton(
+                    enabled = !sending,
+                    onClick = {
+                        val token = settings.githubToken
+                        if (token.isBlank()) { copy(); return@TextButton }
+                        sending = true
+                        scope.launch {
+                            val ok = com.filtertube.app.data.BugReport.submit(token, report)
+                            sending = false
+                            android.widget.Toast.makeText(
+                                context, if (ok) "הדוח נשלח ✓" else "השליחה נכשלה",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                            if (ok) onDismiss()
+                        }
+                    }
+                ) { Text(if (sending) "שולח…" else "שלח דוח") }
+                TextButton(onClick = { copy() }) { Text("העתק") }
+            }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("מחק וסגור") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("מחק") } },
         containerColor = Color(0xFF1F1F1F),
         titleContentColor = Color.White,
         textContentColor = Color.White,
