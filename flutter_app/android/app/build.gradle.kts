@@ -25,11 +25,25 @@ android {
         versionName = flutter.versionName
     }
 
+    // חתימה קבועה (אותו keystore כמו אפליקציית האנדרואיד) → אותה חתימה בכל בנייה,
+    // כך שעדכון לא נכשל ב"מתנגש". הסיסמה מגיעה מ-secret של CI (לא נשמרת בקוד).
+    val ksPassword: String? = System.getenv("FT_KEYSTORE_PASSWORD")
+    signingConfigs {
+        create("shared") {
+            storeFile = file("../../../filtertube.keystore")
+            storePassword = ksPassword ?: ""
+            keyAlias = "filtertube"
+            keyPassword = ksPassword ?: ""
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // אם ה-secret קיים — חותמים בחתימה הקבועה; אחרת נופלים ל-debug (זמני)
+            signingConfig = if (ksPassword != null)
+                signingConfigs.getByName("shared")
+            else
+                signingConfigs.getByName("debug")
         }
     }
 }
