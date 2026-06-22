@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -467,6 +468,7 @@ private fun FullscreenVideo(
     onExit: () -> Unit,
 ) {
     var controlsVisible by remember { mutableStateOf(true) }
+    var queueOpen by remember { mutableStateOf(false) }
     LaunchedEffect(controlsVisible, ui.isPlaying) {
         if (controlsVisible && ui.isPlaying) { kotlinx.coroutines.delay(3500); controlsVisible = false }
     }
@@ -518,6 +520,70 @@ private fun FullscreenVideo(
                 }
             }
         }
+        // "הבא בתור" נשלף מלמטה — רמז כשהבקרים מוסתרים, גרירה למעלה פותחת
+        if (queueOpen) {
+            Box(modifier = Modifier.align(Alignment.BottomCenter)) {
+                FullscreenQueueSheet(controller, onClose = { queueOpen = false })
+            }
+        } else if (!controlsVisible) {
+            Column(
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    .pointerInput(Unit) { detectVerticalDragGestures { _, dy -> if (dy < -6f) queueOpen = true } }
+                    .clickable { queueOpen = true }
+                    .padding(bottom = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Icon(Icons.Default.KeyboardArrowUp, "הבא בתור", tint = Color.White)
+                Text("הבא בתור", color = Color.White, fontSize = 10.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FullscreenQueueSheet(controller: MediaController, onClose: () -> Unit) {
+    val items = remember {
+        val cur = controller.currentMediaItemIndex
+        ((cur + 1) until controller.mediaItemCount).map { i -> i to controller.getMediaItemAt(i) }
+    }
+    Column(
+        modifier = Modifier.fillMaxWidth().height(300.dp)
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .background(Color(0xF21A1A1A))
+            .pointerInput(Unit) { detectVerticalDragGestures { _, dy -> if (dy > 8f) onClose() } },
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.width(40.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0x88FFFFFF)))
+        }
+        Text("הבא בתור", color = ThemeState.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+            modifier = Modifier.padding(start = 16.dp, bottom = 6.dp))
+        if (items.isEmpty()) {
+            Text("אין סרטונים בתור", color = ThemeState.subtext, fontSize = 12.sp,
+                modifier = Modifier.padding(16.dp))
+        }
+        LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            itemsIndexed(items, key = { _, p -> p.first }) { _, (index, item) ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { controller.seekTo(index, 0L); onClose() }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(modifier = Modifier.size(44.dp).clip(RoundedCornerShape(6.dp)).background(ThemeState.divider),
+                        contentAlignment = Alignment.Center) {
+                        val art = item.mediaMetadata.artworkUri
+                        if (art != null) AsyncImage(model = art, contentDescription = null,
+                            modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(item.mediaMetadata.title?.toString() ?: "", color = ThemeState.text, fontSize = 13.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(item.mediaMetadata.artist?.toString() ?: "", color = ThemeState.subtext, fontSize = 11.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -527,14 +593,32 @@ private fun PlayerOverflowMenu(
     hasData: Boolean,
     artist: String,
     videoId: String,
+    tracks: List<StreamTrack> = emptyList(),
+    currentQuality: Int = 0,
+    audioMode: Boolean = false,
+    onSelectQuality: (Int) -> Unit = {},
+    onToggleAudio: () -> Unit = {},
     onAddToPlaylist: () -> Unit,
     onDownload: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
+    var qMenu by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "עוד", tint = ThemeState.text) }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             if (hasData) {
+                DropdownMenuItem(
+                    text = { Text(if (audioMode) "עבור לווידאו" else "אודיו בלבד") },
+                    leadingIcon = { Icon(if (audioMode) Icons.Default.Videocam else Icons.Default.MusicNote, null) },
+                    onClick = { menu = false; onToggleAudio() },
+                )
+                if (!audioMode && tracks.size > 1) {
+                    DropdownMenuItem(
+                        text = { Text("איכות: ${tracks.getOrNull(currentQuality)?.label ?: "אוטו"}") },
+                        leadingIcon = { Icon(Icons.Default.HighQuality, null) },
+                        onClick = { menu = false; qMenu = true },
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text("הורד") },
                     leadingIcon = { Icon(Icons.Default.Download, null) },
@@ -564,6 +648,15 @@ private fun PlayerOverflowMenu(
                     Toast.makeText(context, "הקישור הועתק", Toast.LENGTH_SHORT).show()
                 },
             )
+        }
+        // תת-תפריט בחירת איכות
+        DropdownMenu(expanded = qMenu, onDismissRequest = { qMenu = false }) {
+            tracks.forEachIndexed { i, t ->
+                DropdownMenuItem(
+                    text = { Text(t.label + if (i == currentQuality) "  ✓" else "") },
+                    onClick = { qMenu = false; onSelectQuality(i) },
+                )
+            }
         }
     }
 }
@@ -669,6 +762,20 @@ private fun OnVideoPlayerScreen(
     var showAddToPlaylist by remember { mutableStateOf(false) }
     var showDownload by remember { mutableStateOf(false) }
     var controlsVisible by remember { mutableStateOf(true) }
+    val audioMode = ui.isAudio
+    var qualityIndex by remember(ui.mediaId) {
+        mutableStateOf(currentData?.let { Playback.defaultQuality(it, SettingsStore(context).preferredQuality) } ?: 0)
+    }
+    fun replaceCurrent(audio: Boolean, qIdx: Int) {
+        val d = currentData ?: return
+        val id = ui.mediaId ?: return
+        val idx = controller.currentMediaItemIndex
+        val pos = controller.currentPosition
+        val pw = controller.playWhenReady
+        controller.replaceMediaItem(idx, Playback.buildItem(d, id, audio, qIdx))
+        controller.seekTo(idx, pos)
+        controller.playWhenReady = pw
+    }
 
     LaunchedEffect(controlsVisible, ui.isPlaying) {
         if (controlsVisible && ui.isPlaying) { kotlinx.coroutines.delay(3000); controlsVisible = false }
@@ -732,7 +839,13 @@ private fun OnVideoPlayerScreen(
                     tint = if (liked) ThemeState.accent else ThemeState.text)
             }
             PlayerOverflowMenu(context = context, hasData = currentData != null, artist = ui.artist,
-                videoId = ui.mediaId ?: "", onAddToPlaylist = { showAddToPlaylist = true }, onDownload = { showDownload = true })
+                videoId = ui.mediaId ?: "",
+                tracks = currentData?.tracks ?: emptyList(),
+                currentQuality = qualityIndex,
+                audioMode = audioMode,
+                onSelectQuality = { qualityIndex = it; replaceCurrent(audioMode, it) },
+                onToggleAudio = { replaceCurrent(!audioMode, qualityIndex) },
+                onAddToPlaylist = { showAddToPlaylist = true }, onDownload = { showDownload = true })
         }
         QueueList(controller, ui, Modifier.weight(1f).fillMaxWidth())
     }
