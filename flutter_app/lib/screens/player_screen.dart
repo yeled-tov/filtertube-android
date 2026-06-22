@@ -9,8 +9,8 @@ import '../channels_repo.dart';
 import '../widgets/video_card.dart';
 
 /// נגן וידאו מבוסס IFrame רשמי. ה-UI של יוטיוב מוסתר/נעול (showControls:false +
-/// pointerEvents:none), והשלט שלנו יושב **מתחת** לווידאו כך שהוא תמיד אמין
-/// (בלי קונפליקט גסטורות מול ה-WebView). מתחת — "הבא בתור" + ניגון רציף.
+/// pointerEvents:none), והשלט שלנו **צף על הווידאו** (מופיע/נעלם בלחיצה).
+/// מתחת — "הבא בתור" + ניגון רציף אוטומטי.
 class PlayerScreen extends StatefulWidget {
   final Video video;
   final YoutubeApi api;
@@ -31,7 +31,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   late YoutubePlayerController _controller;
   late Video _current;
   List<Video> _upNext = [];
+  bool _controlsVisible = true;
   bool _advancing = false;
+  Timer? _hideTimer;
   StreamSubscription<YoutubePlayerValue>? _sub;
 
   @override
@@ -58,6 +60,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     });
     _loadUpNext();
+    _scheduleHide();
   }
 
   Future<void> _loadUpNext() async {
@@ -71,19 +74,34 @@ class _PlayerScreenState extends State<PlayerScreen> {
     setState(() => _upNext = vids.where((v) => v.id != _current.id).toList());
   }
 
+  void _scheduleHide() {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _controlsVisible = false);
+    });
+  }
+
+  void _toggleControls() {
+    setState(() => _controlsVisible = !_controlsVisible);
+    if (_controlsVisible) _scheduleHide();
+  }
+
   void _playVideo(Video v) {
     setState(() {
       _current = v;
       _upNext = [];
       _advancing = false;
+      _controlsVisible = true;
     });
     _controller.loadVideoById(videoId: v.id);
     _loadUpNext();
+    _scheduleHide();
   }
 
   Future<void> _seekRelative(int seconds) async {
     final pos = await _controller.currentTime;
     _controller.seekTo(seconds: pos + seconds, allowSeekAhead: true);
+    _scheduleHide();
   }
 
   Future<void> _openInYoutube() async {
@@ -100,6 +118,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    _hideTimer?.cancel();
     _sub?.cancel();
     _controller.close();
     super.dispose();
@@ -114,9 +133,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _videoArea(),
-            _controlBar(),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 2),
               child: Text(_current.title,
                   style: const TextStyle(
                       color: AppTheme.text,
@@ -128,7 +146,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               child: Text(_current.channelTitle,
                   style: const TextStyle(color: AppTheme.subtext, fontSize: 13)),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             const Divider(color: Color(0xFF272727), height: 1),
             Expanded(
               child: ListView(
@@ -155,144 +173,160 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Widget _videoArea() {
     return GestureDetector(
-      // החלקה למטה על הווידאו = מזעור/חזרה
       onVerticalDragEnd: (d) {
         if ((d.primaryVelocity ?? 0) > 250) Navigator.of(context).maybePop();
       },
       child: AspectRatio(
         aspectRatio: 16 / 9,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            YoutubePlayer(controller: _controller, aspectRatio: 16 / 9),
-            // שכבת הסתרה עליונה — מכסה כותרת/לוגו/שיתוף של יוטיוב
-            const IgnorePointer(
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: SizedBox(
-                  height: 42,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Colors.black87, Colors.transparent],
-                      ),
+        child: ColoredBox(
+          color: Colors.black,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              YoutubePlayer(controller: _controller, aspectRatio: 16 / 9),
+              // שגיאת ניגון נדירה (אסור להטמעה / לא זמין)
+              YoutubeValueBuilder(
+                controller: _controller,
+                builder: (context, value) => value.error != YoutubeError.none
+                    ? _errorOverlay(value.error)
+                    : const SizedBox.shrink(),
+              ),
+              // שלט צף — לחיצה מציגה/מסתירה
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _toggleControls,
+                  child: AnimatedOpacity(
+                    opacity: _controlsVisible ? 1 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: IgnorePointer(
+                      ignoring: !_controlsVisible,
+                      child: _floatingControls(),
                     ),
-                    child: SizedBox.expand(),
                   ),
                 ),
               ),
-            ),
-            Align(
-              alignment: Alignment.topLeft,
-              child: IconButton(
-                icon: const Icon(Icons.keyboard_arrow_down,
-                    color: Colors.white, size: 28),
-                onPressed: () => Navigator.of(context).maybePop(),
-              ),
-            ),
-            // שגיאת ניגון (סרטון נדיר שאסור להטמעה / לא זמין)
-            YoutubeValueBuilder(
-              controller: _controller,
-              builder: (context, value) => value.error != YoutubeError.none
-                  ? Positioned.fill(child: _errorOverlay(value.error))
-                  : const SizedBox.shrink(),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _controlBar() {
+  Widget _floatingControls() {
     return Container(
-      color: AppTheme.surface,
-      padding: const EdgeInsets.fromLTRB(6, 2, 6, 6),
+      color: Colors.black38,
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          // פס התקדמות + זמנים
-          StreamBuilder<YoutubeVideoState>(
-            stream: _controller.videoStateStream,
-            builder: (context, snapshot) {
-              final pos = snapshot.data?.position ?? Duration.zero;
-              final dur = _controller.metadata.duration;
-              final total = dur.inMilliseconds == 0 ? 1 : dur.inMilliseconds;
-              final value = (pos.inMilliseconds / total).clamp(0.0, 1.0);
-              return Row(
-                children: [
-                  Text(_fmt(pos),
-                      style:
-                          const TextStyle(color: AppTheme.subtext, fontSize: 11)),
-                  Expanded(
-                    child: SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 2.5,
-                        thumbShape:
-                            const RoundSliderThumbShape(enabledThumbRadius: 6),
-                        overlayShape:
-                            const RoundSliderOverlayShape(overlayRadius: 14),
-                        activeTrackColor: AppTheme.accent,
-                        inactiveTrackColor: Colors.white24,
-                        thumbColor: AppTheme.accent,
-                      ),
-                      child: Slider(
-                        value: value,
-                        onChanged: (v) => _controller.seekTo(
-                            seconds: v * total / 1000, allowSeekAhead: false),
-                        onChangeEnd: (v) => _controller.seekTo(
-                            seconds: v * total / 1000, allowSeekAhead: true),
-                      ),
-                    ),
-                  ),
-                  Text(_fmt(dur),
-                      style:
-                          const TextStyle(color: AppTheme.subtext, fontSize: 11)),
-                ],
-              );
-            },
-          ),
-          // כפתורי שליטה
+          // שורה עליונה
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _btn(Icons.replay_10, () => _seekRelative(-10)),
-              _btn(Icons.skip_previous,
-                  () => _controller.seekTo(seconds: 0, allowSeekAhead: true)),
-              YoutubeValueBuilder(
-                controller: _controller,
-                builder: (context, value) {
-                  final playing = value.playerState == PlayerState.playing;
-                  return Container(
+              IconButton(
+                icon: const Icon(Icons.keyboard_arrow_down,
+                    color: Colors.white, size: 28),
+                onPressed: () => Navigator.of(context).maybePop(),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.fullscreen, color: Colors.white),
+                onPressed: () => _controller.enterFullScreen(),
+              ),
+            ],
+          ),
+          const Spacer(),
+          // מרכז — ניגון ודילוג
+          YoutubeValueBuilder(
+            controller: _controller,
+            builder: (context, value) {
+              final playing = value.playerState == PlayerState.playing;
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _cBtn(Icons.skip_previous, 30,
+                      () => _controller.seekTo(seconds: 0, allowSeekAhead: true)),
+                  _cBtn(Icons.replay_10, 30, () => _seekRelative(-10)),
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 8),
                     decoration: const BoxDecoration(
                         color: AppTheme.accent, shape: BoxShape.circle),
                     child: IconButton(
                       icon: Icon(playing ? Icons.pause : Icons.play_arrow,
-                          color: Colors.white, size: 30),
-                      onPressed: () => playing
-                          ? _controller.pauseVideo()
-                          : _controller.playVideo(),
+                          color: Colors.white, size: 36),
+                      onPressed: () {
+                        playing
+                            ? _controller.pauseVideo()
+                            : _controller.playVideo();
+                        _scheduleHide();
+                      },
                     ),
-                  );
-                },
-              ),
-              _btn(Icons.skip_next,
-                  _upNext.isNotEmpty ? () => _playVideo(_upNext.first) : null),
-              _btn(Icons.forward_10, () => _seekRelative(10)),
-              _btn(Icons.fullscreen, () => _controller.enterFullScreen()),
-            ],
+                  ),
+                  _cBtn(Icons.forward_10, 30, () => _seekRelative(10)),
+                  _cBtn(Icons.skip_next, 30,
+                      _upNext.isNotEmpty ? () => _playVideo(_upNext.first) : null),
+                ],
+              );
+            },
           ),
+          const Spacer(),
+          // פס התקדמות תחתון
+          _seekRow(),
         ],
       ),
     );
   }
 
-  Widget _btn(IconData icon, VoidCallback? onTap) {
+  Widget _cBtn(IconData icon, double size, VoidCallback? onTap) {
     return IconButton(
       icon: Icon(icon,
-          color: onTap == null ? AppTheme.subtext : AppTheme.text, size: 26),
+          color: onTap == null ? Colors.white38 : Colors.white, size: size),
       onPressed: onTap,
+    );
+  }
+
+  Widget _seekRow() {
+    return StreamBuilder<YoutubeVideoState>(
+      stream: _controller.videoStateStream,
+      builder: (context, snapshot) {
+        final pos = snapshot.data?.position ?? Duration.zero;
+        final dur = _controller.metadata.duration;
+        final total = dur.inMilliseconds == 0 ? 1 : dur.inMilliseconds;
+        final value = (pos.inMilliseconds / total).clamp(0.0, 1.0);
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Row(
+            children: [
+              Text(_fmt(pos),
+                  style: const TextStyle(color: Colors.white, fontSize: 11)),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 2.5,
+                    thumbShape:
+                        const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    overlayShape:
+                        const RoundSliderOverlayShape(overlayRadius: 14),
+                    activeTrackColor: AppTheme.accent,
+                    inactiveTrackColor: Colors.white30,
+                    thumbColor: AppTheme.accent,
+                  ),
+                  child: Slider(
+                    value: value,
+                    onChanged: (v) => _controller.seekTo(
+                        seconds: v * total / 1000, allowSeekAhead: false),
+                    onChangeEnd: (v) {
+                      _controller.seekTo(
+                          seconds: v * total / 1000, allowSeekAhead: true);
+                      _scheduleHide();
+                    },
+                  ),
+                ),
+              ),
+              Text(_fmt(dur),
+                  style: const TextStyle(color: Colors.white, fontSize: 11)),
+            ],
+          ),
+        );
+      },
     );
   }
 
