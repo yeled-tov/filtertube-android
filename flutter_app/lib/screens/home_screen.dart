@@ -62,8 +62,29 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('FilterTube',
-            style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.accent)),
+        titleSpacing: 16,
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                gradient: AppTheme.accentGradient,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: const Icon(Icons.play_arrow_rounded,
+                  color: Colors.white, size: 22),
+            ),
+            const SizedBox(width: 9),
+            const Text('FilterTube',
+                style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.text,
+                    fontSize: 19,
+                    letterSpacing: -0.5)),
+          ],
+        ),
       ),
       body: RefreshIndicator(
         color: AppTheme.accent,
@@ -85,12 +106,12 @@ class _HomeScreenState extends State<HomeScreen> {
               ]);
             }
             return GridView.builder(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 90),
               gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 360,
-                childAspectRatio: 0.78,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 14,
+                maxCrossAxisExtent: 380,
+                childAspectRatio: 0.72,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 18,
               ),
               itemCount: vids.length,
               itemBuilder: (context, i) =>

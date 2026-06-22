@@ -67,29 +67,83 @@ class _RootState extends State<_Root> {
           SearchScreen(api: _api, channels: _channels),
         ];
         return Scaffold(
+          extendBody: true,
           body: IndexedStack(index: _index, children: screens),
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: _index,
-            onDestinationSelected: (i) => setState(() => _index = i),
-            backgroundColor: AppTheme.surface,
-            indicatorColor: AppTheme.accent.withValues(alpha: 0.25),
-            destinations: const [
-              NavigationDestination(
-                  icon: Icon(Icons.home_outlined),
-                  selectedIcon: Icon(Icons.home),
-                  label: 'בית'),
-              NavigationDestination(
-                  icon: Icon(Icons.subscriptions_outlined),
-                  selectedIcon: Icon(Icons.subscriptions),
-                  label: 'ערוצים'),
-              NavigationDestination(
-                  icon: Icon(Icons.search_outlined),
-                  selectedIcon: Icon(Icons.search),
-                  label: 'חיפוש'),
-            ],
+          bottomNavigationBar: _FloatingNav(
+            index: _index,
+            onTap: (i) => setState(() => _index = i),
           ),
         );
       },
+    );
+  }
+}
+
+/// נאב בר צף יוקרתי — גלולה עם גרדיאנט לפריט הנבחר.
+class _FloatingNav extends StatelessWidget {
+  final int index;
+  final ValueChanged<int> onTap;
+  const _FloatingNav({required this.index, required this.onTap});
+
+  static const List<(IconData, String)> _items = [
+    (Icons.home_rounded, 'בית'),
+    (Icons.subscriptions_rounded, 'ערוצים'),
+    (Icons.search_rounded, 'חיפוש'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(26, 0, 26, 16),
+      child: Container(
+        height: 62,
+        decoration: BoxDecoration(
+          color: AppTheme.surface.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: AppTheme.stroke),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.45),
+                blurRadius: 22,
+                offset: const Offset(0, 8)),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: List.generate(_items.length, (i) {
+            final selected = i == index;
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onTap(i),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOut,
+                padding: EdgeInsets.symmetric(
+                    horizontal: selected ? 16 : 12, vertical: 9),
+                decoration: BoxDecoration(
+                  gradient: selected ? AppTheme.accentGradient : null,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Icon(_items[i].$1,
+                        color: selected ? Colors.white : AppTheme.subtext,
+                        size: 22),
+                    if (selected) ...[
+                      const SizedBox(width: 7),
+                      Text(_items[i].$2,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13)),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
     );
   }
 }
