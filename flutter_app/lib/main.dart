@@ -50,7 +50,6 @@ class _Root extends StatefulWidget {
 class _RootState extends State<_Root> {
   final _api = YoutubeApi(kApiKey);
   final _channels = ChannelsRepo();
-  final _settings = AppSettings();
   final _appLinks = AppLinks();
   StreamSubscription<Uri>? _linkSub;
   late Future<void> _ready;
@@ -65,8 +64,8 @@ class _RootState extends State<_Root> {
   }
 
   Future<void> _init() async {
-    await _settings.load();
-    await _channels.load(level: _settings.filterLevel);
+    await appSettings.load();
+    await _channels.load(level: appSettings.filterLevel);
   }
 
   Future<void> _setupDeepLinks() async {
@@ -115,7 +114,7 @@ class _RootState extends State<_Root> {
   }
 
   Future<void> _onLevelChanged(int level) async {
-    await _settings.setFilterLevel(level);
+    await appSettings.setFilterLevel(level);
     await _channels.load(level: level);
     if (mounted) setState(() => _feedKey++);
   }
@@ -136,7 +135,6 @@ class _RootState extends State<_Root> {
               key: ValueKey(_feedKey),
               api: _api,
               channels: _channels,
-              settings: _settings,
               onFilterLevelChanged: _onLevelChanged),
           ChannelsScreen(api: _api, channels: _channels),
           SearchScreen(api: _api, channels: _channels),

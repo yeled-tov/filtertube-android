@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 import '../models.dart';
 import '../theme.dart';
+import '../settings.dart';
 import '../youtube_api.dart';
 import '../channels_repo.dart';
 import '../widgets/video_card.dart';
@@ -32,12 +35,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
   late Video _current;
   List<Video> _upNext = [];
   bool _advancing = false;
+  bool _audioOnly = false;
   StreamSubscription<YoutubePlayerValue>? _sub;
 
   @override
   void initState() {
     super.initState();
     _current = widget.video;
+    _audioOnly =
+        widget.channels.isAudioOnly(_current.channelId, appSettings.filterLevel);
     _controller = YoutubePlayerController(
       params: const YoutubePlayerParams(
         showControls: false,
@@ -76,9 +82,65 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _current = v;
       _upNext = [];
       _advancing = false;
+      _audioOnly = widget.channels.isAudioOnly(v.channelId, appSettings.filterLevel);
     });
     _controller.loadVideoById(videoId: v.id);
     _loadUpNext();
+  }
+
+  void _copyLink() {
+    Clipboard.setData(ClipboardData(text: 'https://youtu.be/${_current.id}'));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('הקישור הועתק'), duration: Duration(seconds: 1)),
+    );
+  }
+
+  Widget _overflowMenu() {
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert, color: AppTheme.text),
+      color: AppTheme.card,
+      onSelected: (v) {
+        switch (v) {
+          case 'audio':
+            setState(() => _audioOnly = !_audioOnly);
+            break;
+          case 'copy':
+            _copyLink();
+            break;
+          case 'youtube':
+            _openInYoutube();
+            break;
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'audio',
+          child: Row(children: [
+            Icon(_audioOnly ? Icons.videocam : Icons.headphones,
+                color: AppTheme.text, size: 20),
+            const SizedBox(width: 10),
+            Text(_audioOnly ? 'הצג וידאו' : 'אודיו בלבד',
+                style: const TextStyle(color: AppTheme.text)),
+          ]),
+        ),
+        const PopupMenuItem(
+          value: 'copy',
+          child: Row(children: [
+            Icon(Icons.link, color: AppTheme.text, size: 20),
+            SizedBox(width: 10),
+            Text('העתק קישור', style: TextStyle(color: AppTheme.text)),
+          ]),
+        ),
+        const PopupMenuItem(
+          value: 'youtube',
+          child: Row(children: [
+            Icon(Icons.open_in_new, color: AppTheme.text, size: 20),
+            SizedBox(width: 10),
+            Text('פתח ביוטיוב', style: TextStyle(color: AppTheme.text)),
+          ]),
+        ),
+      ],
+    );
   }
 
   Future<void> _seekRelative(int seconds) async {
@@ -116,12 +178,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
             _videoArea(),
             _controlBar(),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
-              child: Text(_current.title,
-                  style: const TextStyle(
-                      color: AppTheme.text,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold)),
+              padding: const EdgeInsets.fromLTRB(12, 8, 2, 2),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(_current.title,
+                        style: const TextStyle(
+                            color: AppTheme.text,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold)),
+                  ),
+                  _overflowMenu(),
+                ],
+              ),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -164,26 +234,37 @@ class _PlayerScreenState extends State<PlayerScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            YoutubePlayer(controller: _controller, aspectRatio: 16 / 9),
-            // שכבת הסתרה עליונה — מכסה כותרת/לוגו/שיתוף של יוטיוב
-            const IgnorePointer(
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: SizedBox(
-                  height: 42,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Colors.black87, Colors.transparent],
+            // הנגן: מלא במצב וידאו; 1x1 במצב אודיו (ממשיך לנגן קול בלי להציג וידאו)
+            Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: _audioOnly ? 1 : double.infinity,
+                height: _audioOnly ? 1 : double.infinity,
+                child: YoutubePlayer(controller: _controller, aspectRatio: 16 / 9),
+              ),
+            ),
+            // מצב אודיו — אלבום-ארט במקום הווידאו
+            if (_audioOnly) Positioned.fill(child: _albumArt()),
+            // שכבת הסתרה עליונה — מכסה כותרת/לוגו/שיתוף של יוטיוב (רק במצב וידאו)
+            if (!_audioOnly)
+              const IgnorePointer(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: SizedBox(
+                    height: 42,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.black87, Colors.transparent],
+                        ),
                       ),
+                      child: SizedBox.expand(),
                     ),
-                    child: SizedBox.expand(),
                   ),
                 ),
               ),
-            ),
             Align(
               alignment: Alignment.topLeft,
               child: IconButton(
@@ -201,6 +282,50 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _albumArt() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF1A1A1F), Color(0xFF0B0B0D)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 110,
+            height: 110,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 18)],
+            ),
+            child: CachedNetworkImage(
+              imageUrl: _current.thumbnail,
+              fit: BoxFit.cover,
+              errorWidget: (c, _, __) => Container(
+                  color: AppTheme.card,
+                  child: const Icon(Icons.music_note, color: AppTheme.accent)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.headphones, color: AppTheme.accent, size: 16),
+              SizedBox(width: 6),
+              Text('מצב אודיו',
+                  style: TextStyle(color: AppTheme.subtext2, fontSize: 12)),
+            ],
+          ),
+        ],
       ),
     );
   }

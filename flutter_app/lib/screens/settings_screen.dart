@@ -4,12 +4,10 @@ import '../settings.dart';
 
 /// מסך הגדרות — סינון תוכן, תצוגה וחשבון. נפתח מהאווטאר בפינה הימנית-עליונה.
 class SettingsScreen extends StatefulWidget {
-  final AppSettings settings;
   final Future<void> Function(int level) onFilterLevelChanged;
 
   const SettingsScreen({
     super.key,
-    required this.settings,
     required this.onFilterLevelChanged,
   });
 
@@ -26,7 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final s = widget.settings;
+    final s = appSettings;
     return Scaffold(
       appBar: AppBar(title: const Text('הגדרות')),
       body: ListView(

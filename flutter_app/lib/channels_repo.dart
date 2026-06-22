@@ -22,6 +22,20 @@ class ChannelsRepo {
   /// האם הערוץ מאושר ברמת הסינון הנוכחית.
   bool isApproved(String channelId) => _approvedIds.contains(channelId);
 
+  /// הקטגוריה של ערוץ (general אם לא ידוע).
+  String categoryOf(String channelId) => _channels
+      .firstWhere((c) => c.id == channelId,
+          orElse: () => const Channel(id: '', name: '', category: 'general'))
+      .category;
+
+  /// האם להציג כאודיו-בלבד: "דתי לייט" תמיד, ומוזיקה ברמה מחמירה (1).
+  bool isAudioOnly(String channelId, int level) {
+    final cat = categoryOf(channelId);
+    if (cat == 'dati_light') return true;
+    if (level == 1 && cat == 'music') return true;
+    return false;
+  }
+
   /// טוען מהמטמון מיידית, ואז מרענן מהרשת ברקע.
   Future<void> load({int level = 2}) async {
     final prefs = await SharedPreferences.getInstance();

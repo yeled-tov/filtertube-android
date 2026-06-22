@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// מופע גלובלי — נגיש מכל מקום (נגן, מסכים) בלי לחווט דרך כל הווידג'טים.
+final appSettings = AppSettings();
+
 /// הגדרות מקומיות (shared_preferences) — נטענות פעם אחת בהפעלה ומוחזקות בזיכרון.
 class AppSettings extends ChangeNotifier {
   static const _kLevel = 'filter_level';

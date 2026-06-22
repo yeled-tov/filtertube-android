@@ -3,7 +3,6 @@ import '../models.dart';
 import '../theme.dart';
 import '../youtube_api.dart';
 import '../channels_repo.dart';
-import '../settings.dart';
 import '../widgets/video_card.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
@@ -13,14 +12,12 @@ import 'settings_screen.dart';
 class HomeScreen extends StatefulWidget {
   final YoutubeApi api;
   final ChannelsRepo channels;
-  final AppSettings settings;
   final Future<void> Function(int level) onFilterLevelChanged;
 
   const HomeScreen({
     super.key,
     required this.api,
     required this.channels,
-    required this.settings,
     required this.onFilterLevelChanged,
   });
 
@@ -71,7 +68,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openSettings() {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => SettingsScreen(
-        settings: widget.settings,
         onFilterLevelChanged: widget.onFilterLevelChanged,
       ),
     ));
