@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'theme.dart';
+import 'settings.dart';
 import 'youtube_api.dart';
 import 'channels_repo.dart';
 import 'screens/home_screen.dart';
@@ -41,13 +42,26 @@ class _Root extends StatefulWidget {
 class _RootState extends State<_Root> {
   final _api = YoutubeApi(kApiKey);
   final _channels = ChannelsRepo();
+  final _settings = AppSettings();
   late Future<void> _ready;
   int _index = 0;
+  int _feedKey = 0;
 
   @override
   void initState() {
     super.initState();
-    _ready = _channels.load();
+    _ready = _init();
+  }
+
+  Future<void> _init() async {
+    await _settings.load();
+    await _channels.load(level: _settings.filterLevel);
+  }
+
+  Future<void> _onLevelChanged(int level) async {
+    await _settings.setFilterLevel(level);
+    await _channels.load(level: level);
+    if (mounted) setState(() => _feedKey++);
   }
 
   @override
@@ -62,7 +76,12 @@ class _RootState extends State<_Root> {
           );
         }
         final screens = [
-          HomeScreen(api: _api, channels: _channels),
+          HomeScreen(
+              key: ValueKey(_feedKey),
+              api: _api,
+              channels: _channels,
+              settings: _settings,
+              onFilterLevelChanged: _onLevelChanged),
           ChannelsScreen(api: _api, channels: _channels),
           SearchScreen(api: _api, channels: _channels),
         ];

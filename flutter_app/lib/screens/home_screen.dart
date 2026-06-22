@@ -3,16 +3,26 @@ import '../models.dart';
 import '../theme.dart';
 import '../youtube_api.dart';
 import '../channels_repo.dart';
+import '../settings.dart';
 import '../widgets/video_card.dart';
 import 'player_screen.dart';
+import 'settings_screen.dart';
 
 /// פיד הבית — סרטונים אחרונים מהערוצים המאושרים, ממוינים לפי תאריך.
 /// כדי לחסוך במכסת ה-API מושכים מ-N הערוצים הראשונים בכל רענון.
 class HomeScreen extends StatefulWidget {
   final YoutubeApi api;
   final ChannelsRepo channels;
+  final AppSettings settings;
+  final Future<void> Function(int level) onFilterLevelChanged;
 
-  const HomeScreen({super.key, required this.api, required this.channels});
+  const HomeScreen({
+    super.key,
+    required this.api,
+    required this.channels,
+    required this.settings,
+    required this.onFilterLevelChanged,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -58,11 +68,37 @@ class _HomeScreenState extends State<HomeScreen> {
     ));
   }
 
+  void _openSettings() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => SettingsScreen(
+        settings: widget.settings,
+        onFilterLevelChanged: widget.onFilterLevelChanged,
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: 16,
+        titleSpacing: 4,
+        leadingWidth: 60,
+        leading: Center(
+          child: GestureDetector(
+            onTap: _openSettings,
+            child: Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppTheme.stroke),
+              ),
+              child: const Icon(Icons.person_outline,
+                  color: AppTheme.text, size: 21),
+            ),
+          ),
+        ),
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
