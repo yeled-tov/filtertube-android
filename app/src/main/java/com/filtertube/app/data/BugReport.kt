@@ -37,7 +37,7 @@ object BugReport {
      * @param note הערה חופשית של המשתמש (מה הוא עשה כשזה קרה) — אופציונלי.
      */
     suspend fun submit(token: String, report: String, note: String = ""): Boolean = withContext(Dispatchers.IO) {
-        // טוקן ה-CI שהוזרק בזמן בנייה (כל לקוח) קודם; אחרת טוקן האדמין שהוזן ידנית
+        // טוקן שהוזרק בזמן בנייה מה-secret (קיים בכל לקוח) קודם; אחרת הטוקן שהוזן ידנית
         val effective = com.filtertube.app.BuildConfig.BUG_REPORT_TOKEN.ifBlank { token }
         if (effective.isBlank()) return@withContext false
         val ts = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())

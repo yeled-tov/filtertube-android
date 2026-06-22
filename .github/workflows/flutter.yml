@@ -40,8 +40,6 @@ jobs:
         run: flutter pub get
 
       - name: Build release APK (split per ABI — קל בהרבה מ-debug)
-        env:
-          FT_KEYSTORE_PASSWORD: ${{ secrets.FT_KEYSTORE_PASSWORD }}
         run: |
           set -o pipefail
           flutter build apk --release --split-per-abi \

@@ -1,11 +1,18 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:app_links/app_links.dart';
 import 'theme.dart';
 import 'settings.dart';
+import 'models.dart';
 import 'youtube_api.dart';
 import 'channels_repo.dart';
 import 'screens/home_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/channels_screen.dart';
+import 'screens/player_screen.dart';
+
+/// מפתח ניווט גלובלי — לפתיחת קישורים חיצוניים מחוץ לעץ הווידג'טים.
+final navigatorKey = GlobalKey<NavigatorState>();
 
 /// המפתח הרשמי של YouTube Data API v3.
 /// לפני פרסום בחנות יש להגביל אותו ב-Google Cloud Console (חבילה/חתימה).
@@ -22,6 +29,7 @@ class FilterTubeApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'FilterTube',
+      navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark(),
       // האפליקציה בעברית — ברירת מחדל מימין לשמאל
@@ -43,6 +51,8 @@ class _RootState extends State<_Root> {
   final _api = YoutubeApi(kApiKey);
   final _channels = ChannelsRepo();
   final _settings = AppSettings();
+  final _appLinks = AppLinks();
+  StreamSubscription<Uri>? _linkSub;
   late Future<void> _ready;
   int _index = 0;
   int _feedKey = 0;
@@ -51,11 +61,57 @@ class _RootState extends State<_Root> {
   void initState() {
     super.initState();
     _ready = _init();
+    _setupDeepLinks();
   }
 
   Future<void> _init() async {
     await _settings.load();
     await _channels.load(level: _settings.filterLevel);
+  }
+
+  Future<void> _setupDeepLinks() async {
+    final initial = await _appLinks.getInitialLink();
+    if (initial != null) _handleLink(initial);
+    _linkSub = _appLinks.uriLinkStream.listen(_handleLink);
+  }
+
+  /// פותח קישור יוטיוב חיצוני בנגן שלנו במקום באפליקציית יוטיוב.
+  void _handleLink(Uri uri) {
+    final id = _extractYouTubeId(uri.toString());
+    if (id == null) return;
+    navigatorKey.currentState?.push(MaterialPageRoute(
+      builder: (_) => PlayerScreen(
+        video: Video(
+          id: id,
+          title: '',
+          channelTitle: '',
+          channelId: '',
+          thumbnail: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+        ),
+        api: _api,
+        channels: _channels,
+      ),
+    ));
+  }
+
+  String? _extractYouTubeId(String url) {
+    for (final p in [
+      r'[?&]v=([A-Za-z0-9_-]{11})',
+      r'youtu\.be/([A-Za-z0-9_-]{11})',
+      r'/shorts/([A-Za-z0-9_-]{11})',
+      r'/live/([A-Za-z0-9_-]{11})',
+      r'/embed/([A-Za-z0-9_-]{11})',
+    ]) {
+      final m = RegExp(p).firstMatch(url);
+      if (m != null) return m.group(1);
+    }
+    return null;
+  }
+
+  @override
+  void dispose() {
+    _linkSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _onLevelChanged(int level) async {

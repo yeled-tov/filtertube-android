@@ -37,7 +37,8 @@ fun AdminScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val settings = remember { SettingsStore(context) }
 
-    var token by remember { mutableStateOf(settings.githubToken) }
+    // ברירת מחדל: הטוקן שהוזרק מה-secret (BuildConfig) — כך אין צורך להזין ידנית
+    var token by remember { mutableStateOf(settings.githubToken.ifBlank { com.filtertube.app.BuildConfig.BUG_REPORT_TOKEN }) }
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var sha by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }

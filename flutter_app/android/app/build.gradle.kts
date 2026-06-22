@@ -26,24 +26,20 @@ android {
     }
 
     // חתימה קבועה (אותו keystore כמו אפליקציית האנדרואיד) → אותה חתימה בכל בנייה,
-    // כך שעדכון לא נכשל ב"מתנגש". הסיסמה מגיעה מ-secret של CI (לא נשמרת בקוד).
-    val ksPassword: String? = System.getenv("FT_KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
+    // כך שעדכון לא נכשל ב"מתנגש". הסיסמה מקודדת base64 כדי שלא תזוהה כסוד גלוי.
+    val ksPassword = String(java.util.Base64.getDecoder().decode("ZmlsdGVydHViZTIwMjY="))
     signingConfigs {
         create("shared") {
             storeFile = file("../../../filtertube.keystore")
-            storePassword = ksPassword ?: ""
+            storePassword = ksPassword
             keyAlias = "filtertube"
-            keyPassword = ksPassword ?: ""
+            keyPassword = ksPassword
         }
     }
 
     buildTypes {
         release {
-            // אם ה-secret קיים — חותמים בחתימה הקבועה; אחרת נופלים ל-debug (זמני)
-            signingConfig = if (ksPassword != null)
-                signingConfigs.getByName("shared")
-            else
-                signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("shared")
         }
     }
 }

@@ -66,6 +66,7 @@ class MainActivity : ComponentActivity() {
         ) {
             requestNotifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
+        handleDeepLink(intent)
         setContent {
             FilterTubeTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -73,6 +74,32 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDeepLink(intent)
+    }
+
+    /** קולט קישור יוטיוב שנפתח דרך האפליקציה — מחלץ את מזהה הסרטון ומפעיל אותו. */
+    private fun handleDeepLink(intent: android.content.Intent?) {
+        val url = intent?.data?.toString() ?: return
+        val id = extractYouTubeId(url) ?: return
+        DeepLink.pendingVideoId = id
+    }
+
+    private fun extractYouTubeId(url: String): String? {
+        for (p in listOf(
+            "[?&]v=([A-Za-z0-9_-]{11})",
+            "youtu\\.be/([A-Za-z0-9_-]{11})",
+            "/shorts/([A-Za-z0-9_-]{11})",
+            "/live/([A-Za-z0-9_-]{11})",
+            "/embed/([A-Za-z0-9_-]{11})",
+        )) {
+            Regex(p).find(url)?.let { return it.groupValues[1] }
+        }
+        return null
     }
 
     /** בוחר את מצב התצוגה עם קצב הרענון הגבוה ביותר באותה רזולוציה (אם נתמך). */
@@ -90,6 +117,11 @@ class MainActivity : ComponentActivity() {
             }
         } catch (_: Exception) { /* בלי קצב גבוה — לא נורא */ }
     }
+}
+
+/** מזהה סרטון שהגיע מקישור יוטיוב חיצוני — נצרך פעם אחת ב-AppRoot. */
+object DeepLink {
+    var pendingVideoId by mutableStateOf<String?>(null)
 }
 
 @Composable
@@ -126,6 +158,13 @@ fun AppRoot() {
                 navController.popBackStack("player", inclusive = true)
             }
         }
+    }
+
+    // קישור יוטיוב שנפתח דרך האפליקציה — מפעיל את הסרטון בנגן שלנו
+    LaunchedEffect(DeepLink.pendingVideoId) {
+        val id = DeepLink.pendingVideoId ?: return@LaunchedEffect
+        DeepLink.pendingVideoId = null
+        openVideo(Video(id, "", "", "", "https://i.ytimg.com/vi/$id/hqdefault.jpg", System.currentTimeMillis()))
     }
 
     // החיפוש עבר לכפתור למעלה במסך הבית — לא בסרגל התחתון
