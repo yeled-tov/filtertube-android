@@ -37,7 +37,9 @@ object BugReport {
      * @param note הערה חופשית של המשתמש (מה הוא עשה כשזה קרה) — אופציונלי.
      */
     suspend fun submit(token: String, report: String, note: String = ""): Boolean = withContext(Dispatchers.IO) {
-        if (token.isBlank()) return@withContext false
+        // טוקן ה-CI שהוזרק בזמן בנייה (כל לקוח) קודם; אחרת טוקן האדמין שהוזן ידנית
+        val effective = com.filtertube.app.BuildConfig.BUG_REPORT_TOKEN.ifBlank { token }
+        if (effective.isBlank()) return@withContext false
         val ts = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
         val device = android.os.Build.MODEL.replace(Regex("[^A-Za-z0-9]"), "")
         val name = "$ts-$device-${(1000..9999).random()}.txt"
@@ -52,7 +54,7 @@ object BugReport {
         }.toString()
         val req = Request.Builder()
             .url("$API/$name")
-            .header("Authorization", "Bearer $token")
+            .header("Authorization", "Bearer $effective")
             .header("Accept", "application/vnd.github+json")
             .put(payload.toRequestBody("application/json".toMediaType()))
             .build()

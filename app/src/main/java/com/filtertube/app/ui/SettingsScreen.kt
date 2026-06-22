@@ -60,6 +60,7 @@ fun SettingsScreen(
     var showPlayerAudio by remember { mutableStateOf(false) }
     var showUpdate by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
+    var adminUnlocked by remember { mutableStateOf(settings.adminUnlocked) }
 
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         Text(
@@ -81,6 +82,12 @@ fun SettingsScreen(
             "בדוק והורד גרסה חדשה") { showUpdate = true }
         SettingsRow(Icons.Default.Info, ThemeState.subtext2, "אודות",
             "FilterTube — רק ערוצים מאושרים") { showAbout = true }
+
+        // מופיע רק אחרי 7 לחיצות על "אודות" → גרסה (חשיפת מצב ניהול)
+        if (adminUnlocked) {
+            SettingsRow(Icons.Default.AdminPanelSettings, Color(0xFFFFAA00), "ניהול ערוצים",
+                "הוספה/הסרה של ערוצים מהרשימה הלבנה") { onOpenAdmin() }
+        }
     }
 
     if (showAccount) AccountDialog(onDismiss = { showAccount = false })
@@ -113,7 +120,10 @@ fun SettingsScreen(
 
     if (showUpdate) UpdateDialog(onDismiss = { showUpdate = false })
 
-    if (showAbout) AboutDialog(onDismiss = { showAbout = false })
+    if (showAbout) AboutDialog(
+        onUnlock = { settings.adminUnlocked = true; adminUnlocked = true },
+        onDismiss = { showAbout = false },
+    )
 }
 
 // ── שורת הגדרה ───────────────────────────────────────────────────────────
@@ -408,14 +418,29 @@ private fun DisplayDialog(settings: SettingsStore, onDismiss: () -> Unit) {
 
 // ── אודות ────────────────────────────────────────────────────────────────
 @Composable
-private fun AboutDialog(onDismiss: () -> Unit) {
+private fun AboutDialog(onUnlock: () -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var taps by remember { mutableStateOf(0) }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Info, null, tint = Color(0xFFFF0000)) },
         title = { Text("FilterTube") },
         text = {
-            Text("פלטפורמת וידאו מסוננת — מציגה אך ורק ערוצים מאושרים. כל התוכן מסונן לפי רמת הסינון שנבחרה.\n\nגרסה ${BuildConfig.VERSION_NAME}",
-                color = ThemeState.subtext2, fontSize = 13.sp, lineHeight = 18.sp)
+            Column {
+                Text("פלטפורמת וידאו מסוננת — מציגה אך ורק ערוצים מאושרים. כל התוכן מסונן לפי רמת הסינון שנבחרה.",
+                    color = ThemeState.subtext2, fontSize = 13.sp, lineHeight = 18.sp)
+                Spacer(Modifier.height(10.dp))
+                // לחיצה 7 פעמים על שורת הגרסה חושפת את ניהול הערוצים (כמו "אפשרויות מפתח")
+                Text("גרסה ${BuildConfig.VERSION_NAME}",
+                    color = ThemeState.subtext, fontSize = 13.sp,
+                    modifier = Modifier.clickable {
+                        taps++
+                        if (taps >= 7) {
+                            onUnlock()
+                            android.widget.Toast.makeText(context, "מצב ניהול הופעל ✓", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    })
+            }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("סגור") } },
         containerColor = ThemeState.surface,

@@ -29,6 +29,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_GH_TOKEN, "") ?: ""
         set(value) = prefs.edit().putString(KEY_GH_TOKEN, value).apply()
 
+    /** מצב ניהול נחשף (7 לחיצות על "אודות") — מסתיר את ניהול הערוצים מלקוחות רגילים. */
+    var adminUnlocked: Boolean
+        get() = prefs.getBoolean(KEY_ADMIN_UNLOCKED, false)
+        set(value) = prefs.edit().putBoolean(KEY_ADMIN_UNLOCKED, value).apply()
+
     /**
      * סיסמת הורים על הגדרות הסינון (כולל הצגת Shorts).
      * ריק = עדיין לא נקבעה סיסמה. כל שינוי ברמת הסינון דורש קודם אימות.
@@ -103,5 +108,6 @@ class SettingsStore(context: Context) {
         private const val KEY_QUALITY = "preferred_quality"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_THEME_MODE = "theme_mode"
+        private const val KEY_ADMIN_UNLOCKED = "admin_unlocked"
     }
 }

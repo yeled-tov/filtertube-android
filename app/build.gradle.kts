@@ -20,6 +20,11 @@ android {
         versionCode = buildNum
         versionName = "0.2.$buildNum"
 
+        // טוקן דיווח-באגים — מוזרק מ-secret של CI בזמן בנייה (לא נשמר בקוד, לכן לא
+        // מבוטל ע"י סריקת הסודות של GitHub). מאפשר לכל לקוח לשלוח דוח באג אוטומטית.
+        val bugToken = (project.findProperty("bugToken") as String?) ?: ""
+        buildConfigField("String", "BUG_REPORT_TOKEN", "\"$bugToken\"")
+
         // RTL support
         resourceConfigurations += listOf("en", "iw")
     }
