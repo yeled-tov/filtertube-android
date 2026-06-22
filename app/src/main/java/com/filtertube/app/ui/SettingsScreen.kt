@@ -105,7 +105,6 @@ fun SettingsScreen(
         shortsEnabled = shortsEnabled,
         onShortsToggle = onShortsToggle,
         onChangePassword = { showFilter = false; showChangePw = true },
-        onOpenAdmin = { showFilter = false; onOpenAdmin() },
         onDismiss = { showFilter = false },
     )
 
@@ -288,7 +287,6 @@ private fun FilterSettingsDialog(
     shortsEnabled: Boolean,
     onShortsToggle: (Boolean) -> Unit,
     onChangePassword: () -> Unit,
-    onOpenAdmin: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var level by remember { mutableStateOf(filterLevel) }
@@ -320,7 +318,6 @@ private fun FilterSettingsDialog(
                 }
 
                 HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
-                TextButton(onClick = onOpenAdmin) { Text("פאנל ניהול ערוצים ›", color = Color(0xFFFFAA00)) }
                 TextButton(onClick = onChangePassword) { Text("שנה סיסמה", color = ThemeState.subtext) }
             }
         },

@@ -476,14 +476,29 @@ private fun FullscreenVideo(
         if (ui.buffering) CircularProgressIndicator(color = ThemeState.accent, modifier = Modifier.align(Alignment.Center))
         if (controlsVisible) {
             Box(modifier = Modifier.fillMaxSize().background(Color(0x66000000))) {
-                Box(
-                    modifier = Modifier.size(72.dp).align(Alignment.Center).clip(RoundedCornerShape(50))
-                        .background(ThemeState.accent)
-                        .clickable { if (ui.isPlaying) controller.pause() else controller.play() },
-                    contentAlignment = Alignment.Center,
+                Row(
+                    modifier = Modifier.align(Alignment.Center),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(if (ui.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null,
-                        tint = ThemeState.text, modifier = Modifier.size(44.dp))
+                    IconButton(onClick = { controller.seekToPrevious() }, modifier = Modifier.size(56.dp)) {
+                        Icon(Icons.Default.SkipPrevious, "הקודם", tint = ThemeState.text,
+                            modifier = Modifier.size(38.dp))
+                    }
+                    Spacer(Modifier.width(18.dp))
+                    Box(
+                        modifier = Modifier.size(72.dp).clip(RoundedCornerShape(50))
+                            .background(ThemeState.accent)
+                            .clickable { if (ui.isPlaying) controller.pause() else controller.play() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(if (ui.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null,
+                            tint = ThemeState.text, modifier = Modifier.size(44.dp))
+                    }
+                    Spacer(Modifier.width(18.dp))
+                    IconButton(onClick = { controller.seekToNext() }, modifier = Modifier.size(56.dp)) {
+                        Icon(Icons.Default.SkipNext, "הבא", tint = ThemeState.text,
+                            modifier = Modifier.size(38.dp))
+                    }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(12.dp),

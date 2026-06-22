@@ -108,10 +108,21 @@ object Playback {
         // כדי שתור הרדיו לא יגזול רוחב פס מהניגון הנוכחי.
         kotlinx.coroutines.delay(1200)
 
-        // תור רדיו אוטומטי מהקשורים המאושרים — נפתר במקביל (מהיר בהרבה מרצוף)
-        val related = data.related.filter { it.channelId in allowed && it.id != video.id }.take(RADIO_SIZE)
+        // תור רדיו אוטומטי. הקשורים של יוטיוב לרוב גלובליים ולא ברשימה הלבנה, ולכן
+        // היו משאירים תור ריק — אז ממלאים גם מסרטונים נוספים מאותו ערוץ (מובטח מאושר).
+        val relatedApproved = data.related.filter { it.channelId in allowed && it.id != video.id }
+        val sameChannel = if (data.channelId in allowed) {
+            runCatching {
+                com.filtertube.app.data.YouTubeRepository
+                    .fetchChannelVideos(data.channelId, data.uploaderName)
+            }.getOrNull().orEmpty()
+        } else emptyList()
+        val queue = (relatedApproved + sameChannel)
+            .distinctBy { it.id }
+            .filter { it.id != video.id }
+            .take(RADIO_SIZE)
         val resolved = coroutineScope {
-            related.map { v ->
+            queue.map { v ->
                 async(Dispatchers.IO) {
                     runCatching { StreamRepository.getStream(v.id) }.getOrNull()?.let { v to it }
                 }
