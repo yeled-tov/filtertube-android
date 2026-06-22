@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -27,7 +29,7 @@ android {
 
     // חתימה קבועה (אותו keystore כמו אפליקציית האנדרואיד) → אותה חתימה בכל בנייה,
     // כך שעדכון לא נכשל ב"מתנגש". הסיסמה מקודדת base64 כדי שלא תזוהה כסוד גלוי.
-    val ksPassword = String(java.util.Base64.getDecoder().decode("ZmlsdGVydHViZTIwMjY="))
+    val ksPassword = String(Base64.getDecoder().decode("ZmlsdGVydHViZTIwMjY="))
     signingConfigs {
         create("shared") {
             storeFile = file("../../../filtertube.keystore")
