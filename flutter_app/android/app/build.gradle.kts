@@ -27,7 +27,7 @@ android {
 
     // חתימה קבועה (אותו keystore כמו אפליקציית האנדרואיד) → אותה חתימה בכל בנייה,
     // כך שעדכון לא נכשל ב"מתנגש". הסיסמה מגיעה מ-secret של CI (לא נשמרת בקוד).
-    val ksPassword: String? = System.getenv("FT_KEYSTORE_PASSWORD")
+    val ksPassword: String? = System.getenv("FT_KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
     signingConfigs {
         create("shared") {
             storeFile = file("../../../filtertube.keystore")
