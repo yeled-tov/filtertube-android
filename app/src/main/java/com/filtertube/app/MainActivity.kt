@@ -338,7 +338,9 @@ private fun CrashReportDialog(report: String, onDismiss: () -> Unit) {
                 TextButton(
                     enabled = !sending,
                     onClick = {
-                        val token = settings.githubToken
+                        // אם לא הוזן טוקן ידנית באדמין — נופלים לטוקן המוטמע מה-CI (BuildConfig),
+                        // כך שדיווח באגים עובד מיד בלי שצריך להזין שום דבר.
+                        val token = settings.githubToken.ifBlank { com.filtertube.app.BuildConfig.BUG_REPORT_TOKEN }
                         if (token.isBlank()) { copy(); return@TextButton }
                         sending = true
                         scope.launch {

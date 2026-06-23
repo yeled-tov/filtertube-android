@@ -83,7 +83,7 @@ fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit, onSettings: 
         Column(modifier = Modifier.fillMaxSize().blur(if (showMenu) 18.dp else 0.dp)) {
             // טופ-בר נקי — שורה גבוהה וכפתור פרופיל גדול בפינה הימנית (קל ללחיצה)
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, top = 18.dp, bottom = 6.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 18.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Spacer(Modifier.weight(1f))
