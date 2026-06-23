@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -45,6 +46,25 @@ fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit, onSettings: 
     val settings = remember { SettingsStore(context) }
     var state by remember { mutableStateOf<HomeState>(HomeState.Loading) }
     var refreshing by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+
+    if (showMenu) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { showMenu = false }) {
+            Column(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp))
+                    .background(ThemeState.surface).padding(vertical = 8.dp),
+            ) {
+                Text("FilterTube", color = ThemeState.subtext, fontSize = 12.sp,
+                    modifier = Modifier.padding(start = 20.dp, top = 6.dp, bottom = 4.dp))
+                listOf("הגדרות", "חיבור חשבון Google", "אודות").forEach { label ->
+                    Text(label, color = ThemeState.text, fontSize = 16.sp,
+                        modifier = Modifier.fillMaxWidth()
+                            .clickable { showMenu = false; onSettings() }
+                            .padding(horizontal = 20.dp, vertical = 14.dp))
+                }
+            }
+        }
+    }
 
     fun refresh(showSpinner: Boolean) {
         if (showSpinner) state = HomeState.Loading
@@ -82,7 +102,7 @@ fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit, onSettings: 
         ) {
             Box(
                 modifier = Modifier.size(38.dp).clip(RoundedCornerShape(50))
-                    .background(ThemeState.surface).clickable { onSettings() },
+                    .background(ThemeState.surface).clickable { showMenu = true },
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Default.Settings, "הגדרות", tint = ThemeState.text, modifier = Modifier.size(20.dp)) }
             Spacer(Modifier.weight(1f))
@@ -139,26 +159,32 @@ fun CenteredError(message: String, onRetry: () -> Unit) {
 
 @Composable
 fun VideoRow(video: Video, onClick: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(bottom = 16.dp)) {
+    Column(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+            .padding(horizontal = 12.dp).padding(bottom = 18.dp),
+    ) {
         AsyncImage(
             model = video.thumbnailUrl,
             contentDescription = video.title,
-            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(ThemeState.divider),
+            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(14.dp)).background(ThemeState.card),
             contentScale = ContentScale.Crop,
         )
-        Row(modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp)) {
+        Spacer(Modifier.height(10.dp))
+        Row(modifier = Modifier.fillMaxWidth()) {
             Box(
-                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(50)).background(channelColor(video.channelName)),
+                modifier = Modifier.size(34.dp).clip(RoundedCornerShape(50))
+                    .background(Brush.linearGradient(listOf(ThemeState.accent, Color(0xFFFF6A5C)))),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(video.channelName.firstOrNull()?.uppercase() ?: "?", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text(video.channelName.firstOrNull()?.uppercase() ?: "?", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(video.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = ThemeState.text,
                     maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 18.sp)
-                Spacer(Modifier.height(4.dp))
-                Text("${video.channelName} · ${video.timeAgoHe()}", fontSize = 12.sp, color = ThemeState.subtext2,
+                Spacer(Modifier.height(3.dp))
+                Text("${video.channelName} · ${video.timeAgoHe()}", fontSize = 12.sp, color = ThemeState.subtext,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }

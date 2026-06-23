@@ -1,7 +1,10 @@
 package com.filtertube.app.data
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
@@ -37,14 +40,19 @@ data class StreamData(
 
 object StreamRepository {
 
-    suspend fun getStream(videoId: String): StreamData = withContext(Dispatchers.IO) {
-        // נתיב מהיר דרך InnerTube (לקוח IOS) — מהיר בהרבה. אם נכשל, נופלים ל-NewPipe.
-        runCatching { InnerTube.player(videoId) }.getOrNull()?.let { return@withContext it }
+    suspend fun getStream(videoId: String): StreamData = coroutineScope {
+        // שני הנתיבים רצים במקביל — מי שמחזיר מהר מנצח. NewPipe מתחיל מיד; ל-InnerTube
+        // תקרת זמן, ואם חזר ראשון מבטלים את NewPipe. כך אין יותר המתנה לנתיב האיטי.
+        val newpipe = async(Dispatchers.IO) { runCatching { extractViaNewPipe(videoId) }.getOrNull() }
+        val inner = withTimeoutOrNull(4500) { runCatching { InnerTube.player(videoId) }.getOrNull() }
+        if (inner != null) { newpipe.cancel(); return@coroutineScope inner }
+        newpipe.await() ?: throw IllegalStateException("לא נמצא video stream")
+    }
 
-        // נתיב נסיגה ל-NewPipe — קוראים ישירות מה-extractor ועוטפים כל שדה ב-runCatching.
-        // קריטי: NoSuchMethodError הוא Error (לא Exception), לכן הטיפול הפנימי של NewPipe
-        // (שתופס Exception בלבד) לא מונע אותו. בנוסף מדלגים לגמרי על getDescription() — הוא
-        // קורא ל-URLDecoder.decode(String,Charset) שלא קיים ב-API<33 ומפיל את האפליקציה.
+    // חילוץ דרך NewPipe — קוראים ישירות מה-extractor ועוטפים כל שדה ב-runCatching.
+    // מדלגים על getDescription() — הוא קורא ל-URLDecoder.decode(String,Charset) שלא קיים
+    // ב-API<33 ומפיל את האפליקציה (NoSuchMethodError הוא Error, לא Exception).
+    private suspend fun extractViaNewPipe(videoId: String): StreamData = withContext(Dispatchers.IO) {
         val linkHandler = org.schabi.newpipe.extractor.services.youtube.linkHandler
             .YoutubeStreamLinkHandlerFactory.getInstance().fromId(videoId)
         val extractor = ServiceList.YouTube.getStreamExtractor(linkHandler)
