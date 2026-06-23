@@ -1,6 +1,8 @@
 package com.filtertube.app.data
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -102,10 +104,10 @@ object InnerTube {
     // ── נגן מהיר (כתובות ישירות, בלי פענוח חתימות, ללא התחברות) ──
     // מנסים לקוח IOS, ואם נכשל/חסום — ANDROID_VR (שניהם בד"כ מחזירים כתובות ישירות
     // ללא PoToken). אם שניהם נכשלים מחזירים null ו-StreamRepository נופל ל-NewPipe.
-    suspend fun player(videoId: String): StreamData? = kotlinx.coroutines.coroutineScope {
+    suspend fun player(videoId: String): StreamData? = coroutineScope {
         // מריצים את שני הלקוחות במקביל (מרוץ) במקום בטור — חוסך עד ~15ש' בטעינת סרטון
-        val ios = kotlinx.coroutines.async { playerWithClient(videoId, iosClient(), IOS_UA) }
-        val vr = kotlinx.coroutines.async { playerWithClient(videoId, vrClient(), VR_UA) }
+        val ios = async { playerWithClient(videoId, iosClient(), IOS_UA) }
+        val vr = async { playerWithClient(videoId, vrClient(), VR_UA) }
         val first = ios.await()
         if (first != null) { vr.cancel(); first } else vr.await()
     }
