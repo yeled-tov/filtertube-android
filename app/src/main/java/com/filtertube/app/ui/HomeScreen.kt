@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,7 +39,7 @@ sealed class HomeState {
 }
 
 @Composable
-fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit) {
+fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit, onSettings: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settings = remember { SettingsStore(context) }
@@ -74,16 +75,17 @@ fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit) {
     }
 
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
+        // טופ-בר מינימלי ונקי — הגדרות (עיגול) בפינה הימנית, חיפוש בשמאלית
         Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 18.dp, bottom = 6.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                modifier = Modifier.size(28.dp).clip(RoundedCornerShape(7.dp)).background(ThemeState.accent),
+                modifier = Modifier.size(38.dp).clip(RoundedCornerShape(50))
+                    .background(ThemeState.surface).clickable { onSettings() },
                 contentAlignment = Alignment.Center,
-            ) { Text("FT", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
-            Spacer(Modifier.width(8.dp))
-            Text("FilterTube", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ThemeState.text, modifier = Modifier.weight(1f))
+            ) { Icon(Icons.Default.Settings, "הגדרות", tint = ThemeState.text, modifier = Modifier.size(20.dp)) }
+            Spacer(Modifier.weight(1f))
             IconButton(onClick = onSearch) {
                 Icon(Icons.Default.Search, contentDescription = "חיפוש", tint = ThemeState.text)
             }
@@ -91,7 +93,6 @@ fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit) {
         if (refreshing && state is HomeState.Success) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = ThemeState.accent, trackColor = ThemeState.divider)
         }
-        HorizontalDivider(color = ThemeState.divider)
 
         when (val s = state) {
             is HomeState.Loading -> CenteredLoading("טוען סרטונים...")

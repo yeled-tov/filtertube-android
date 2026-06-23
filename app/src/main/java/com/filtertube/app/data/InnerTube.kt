@@ -28,8 +28,8 @@ object InnerTube {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 
     private val http = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(6, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
         .build()
 
     private val jsonMedia = "application/json".toMediaType()
@@ -102,8 +102,13 @@ object InnerTube {
     // ── נגן מהיר (כתובות ישירות, בלי פענוח חתימות, ללא התחברות) ──
     // מנסים לקוח IOS, ואם נכשל/חסום — ANDROID_VR (שניהם בד"כ מחזירים כתובות ישירות
     // ללא PoToken). אם שניהם נכשלים מחזירים null ו-StreamRepository נופל ל-NewPipe.
-    suspend fun player(videoId: String): StreamData? =
-        playerWithClient(videoId, iosClient(), IOS_UA) ?: playerWithClient(videoId, vrClient(), VR_UA)
+    suspend fun player(videoId: String): StreamData? = kotlinx.coroutines.coroutineScope {
+        // מריצים את שני הלקוחות במקביל (מרוץ) במקום בטור — חוסך עד ~15ש' בטעינת סרטון
+        val ios = kotlinx.coroutines.async { playerWithClient(videoId, iosClient(), IOS_UA) }
+        val vr = kotlinx.coroutines.async { playerWithClient(videoId, vrClient(), VR_UA) }
+        val first = ios.await()
+        if (first != null) { vr.cancel(); first } else vr.await()
+    }
 
     private const val IOS_UA = "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X;)"
     private const val VR_UA = "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip"

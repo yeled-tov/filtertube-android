@@ -191,7 +191,7 @@ fun AppRoot() {
             startDestination = "home",
             modifier = Modifier.fillMaxSize(),
         ) {
-            composable("home") { HomeScreen(onVideoClick = ::openVideo, onSearch = { navController.navigate("search") }) }
+            composable("home") { HomeScreen(onVideoClick = ::openVideo, onSearch = { navController.navigate("search") }, onSettings = { navController.navigate("settings") }) }
             composable("shorts") { ShortsScreen(onOpenShort = { navController.navigate("shortsPlayer") }, onSearch = { navController.navigate("search") }) }
             composable("shortsPlayer") { ShortsPlayerScreen(onBack = { navController.popBackStack() }) }
             composable("search") { SearchScreen(onVideoClick = ::openVideo) }
@@ -370,14 +370,15 @@ object ThemeState {
     var accent by mutableStateOf(Color(0xFFFF0000))
     var dark by mutableStateOf(true)
 
-    val bg: Color get() = if (dark) Color(0xFF0F0F0F) else Color(0xFFFAFAFA)
-    val bg2: Color get() = if (dark) Color(0xFF0A0A0A) else Color(0xFFEDEDED)   // נאב/נגן כהה יותר
-    val surface: Color get() = if (dark) Color(0xFF1F1F1F) else Color(0xFFFFFFFF)
-    val card: Color get() = if (dark) Color(0xFF1A1A1A) else Color(0xFFF1F1F1)
-    val divider: Color get() = if (dark) Color(0xFF272727) else Color(0xFFE2E2E2)
-    val text: Color get() = if (dark) Color.White else Color(0xFF111111)
-    val subtext: Color get() = if (dark) Color(0xFF888888) else Color(0xFF6B6B6B)
-    val subtext2: Color get() = if (dark) Color(0xFFAAAAAA) else Color(0xFF555555)
+    // פלטה יוקרתית — תואמת לאפליקציית החנות (כהה עמוק עם נגיעה קרירה)
+    val bg: Color get() = if (dark) Color(0xFF0B0B0D) else Color(0xFFFAFAFA)
+    val bg2: Color get() = if (dark) Color(0xFF111114) else Color(0xFFEDEDED)   // נאב/נגן כהה יותר
+    val surface: Color get() = if (dark) Color(0xFF18181B) else Color(0xFFFFFFFF)
+    val card: Color get() = if (dark) Color(0xFF1E1E22) else Color(0xFFF1F1F1)
+    val divider: Color get() = if (dark) Color(0xFF2A2A30) else Color(0xFFE2E2E2)
+    val text: Color get() = if (dark) Color(0xFFF5F5F7) else Color(0xFF111111)
+    val subtext: Color get() = if (dark) Color(0xFF8E8E96) else Color(0xFF6B6B6B)
+    val subtext2: Color get() = if (dark) Color(0xFFC6C6CE) else Color(0xFF555555)
 }
 
 @Composable
