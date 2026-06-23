@@ -32,7 +32,9 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
@@ -596,8 +598,12 @@ private fun PlayerOverflowMenu(
     tracks: List<StreamTrack> = emptyList(),
     currentQuality: Int = 0,
     audioMode: Boolean = false,
+    speed: Float = 1f,
+    sleepMinutes: Int = 0,
     onSelectQuality: (Int) -> Unit = {},
     onToggleAudio: () -> Unit = {},
+    onCycleSpeed: () -> Unit = {},
+    onCycleSleep: () -> Unit = {},
     onAddToPlaylist: () -> Unit,
     onDownload: () -> Unit,
 ) {
@@ -625,6 +631,16 @@ private fun PlayerOverflowMenu(
                     onClick = { menu = false; onDownload() },
                 )
             }
+            DropdownMenuItem(
+                text = { Text("מהירות: ${speed}x") },
+                leadingIcon = { Icon(Icons.Default.Speed, null) },
+                onClick = { onCycleSpeed() },
+            )
+            DropdownMenuItem(
+                text = { Text(if (sleepMinutes > 0) "טיימר: $sleepMinutes דק׳" else "טיימר שינה") },
+                leadingIcon = { Icon(Icons.Default.Bedtime, null) },
+                onClick = { onCycleSleep() },
+            )
             DropdownMenuItem(
                 text = { Text("הוסף לאלבום") },
                 leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null) },
@@ -777,6 +793,27 @@ private fun OnVideoPlayerScreen(
         controller.playWhenReady = pw
     }
 
+    var speed by remember { mutableStateOf(controller.playbackParameters.speed) }
+    var sleepMin by remember { mutableStateOf(0) }
+    var sleepJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    fun cycleSpeed() {
+        val speeds = listOf(1f, 1.25f, 1.5f, 2f, 0.75f)
+        val cur = speeds.indexOf(speed).let { if (it < 0) 0 else it }
+        val next = speeds[(cur + 1) % speeds.size]
+        speed = next
+        controller.setPlaybackSpeed(next)
+    }
+    fun cycleSleep() {
+        val opts = listOf(0, 15, 30, 45, 60)
+        val cur = opts.indexOf(sleepMin).let { if (it < 0) 0 else it }
+        val next = opts[(cur + 1) % opts.size]
+        sleepMin = next
+        sleepJob?.cancel()
+        if (next > 0) sleepJob = scope.launch {
+            kotlinx.coroutines.delay(next * 60_000L); controller.pause()
+        }
+    }
+
     LaunchedEffect(controlsVisible, ui.isPlaying) {
         if (controlsVisible && ui.isPlaying) { kotlinx.coroutines.delay(3000); controlsVisible = false }
     }
@@ -843,8 +880,12 @@ private fun OnVideoPlayerScreen(
                 tracks = currentData?.tracks ?: emptyList(),
                 currentQuality = qualityIndex,
                 audioMode = audioMode,
+                speed = speed,
+                sleepMinutes = sleepMin,
                 onSelectQuality = { qualityIndex = it; replaceCurrent(audioMode, it) },
                 onToggleAudio = { replaceCurrent(!audioMode, qualityIndex) },
+                onCycleSpeed = { cycleSpeed() },
+                onCycleSleep = { cycleSleep() },
                 onAddToPlaylist = { showAddToPlaylist = true }, onDownload = { showDownload = true })
         }
         QueueList(controller, ui, Modifier.weight(1f).fillMaxWidth())
