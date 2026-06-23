@@ -36,6 +36,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   List<Video> _upNext = [];
   bool _advancing = false;
   bool _audioOnly = false;
+  double _speed = 1.0;
+  Timer? _sleepTimer;
+  int _sleepMinutes = 0;
   StreamSubscription<YoutubePlayerValue>? _sub;
 
   @override
@@ -104,6 +107,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
           case 'audio':
             setState(() => _audioOnly = !_audioOnly);
             break;
+          case 'speed':
+            _pickSpeed();
+            break;
+          case 'sleep':
+            _pickSleep();
+            break;
           case 'copy':
             _copyLink();
             break;
@@ -120,6 +129,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 color: AppTheme.text, size: 20),
             const SizedBox(width: 10),
             Text(_audioOnly ? 'הצג וידאו' : 'אודיו בלבד',
+                style: const TextStyle(color: AppTheme.text)),
+          ]),
+        ),
+        PopupMenuItem(
+          value: 'speed',
+          child: Row(children: [
+            const Icon(Icons.speed, color: AppTheme.text, size: 20),
+            const SizedBox(width: 10),
+            Text('מהירות (${_speed}x)',
+                style: const TextStyle(color: AppTheme.text)),
+          ]),
+        ),
+        PopupMenuItem(
+          value: 'sleep',
+          child: Row(children: [
+            const Icon(Icons.bedtime, color: AppTheme.text, size: 20),
+            const SizedBox(width: 10),
+            Text(_sleepMinutes > 0 ? 'טיימר ($_sleepMinutes דק׳)' : 'טיימר שינה',
                 style: const TextStyle(color: AppTheme.text)),
           ]),
         ),
@@ -160,9 +187,74 @@ class _PlayerScreenState extends State<PlayerScreen> {
     return h > 0 ? '$h:$m:$s' : '$m:$s';
   }
 
+  void _setSpeed(double rate) {
+    setState(() => _speed = rate);
+    _controller.setPlaybackRate(rate);
+  }
+
+  void _setSleep(int minutes) {
+    _sleepTimer?.cancel();
+    setState(() => _sleepMinutes = minutes);
+    if (minutes > 0) {
+      _sleepTimer = Timer(Duration(minutes: minutes), () {
+        _controller.pauseVideo();
+        if (mounted) setState(() => _sleepMinutes = 0);
+      });
+    }
+  }
+
+  void _pickSpeed() {
+    _showSheet('מהירות ניגון', const [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
+        (v) => '${v}x', _speed, (v) => _setSpeed(v as double));
+  }
+
+  void _pickSleep() {
+    _showSheet('טיימר שינה', const [0, 15, 30, 45, 60],
+        (v) => v == 0 ? 'כבוי' : '$v דקות', _sleepMinutes,
+        (v) => _setSleep(v as int));
+  }
+
+  void _showSheet(String title, List<Object> options, String Function(Object) label,
+      Object current, void Function(Object) onPick) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Text(title,
+                  style: const TextStyle(
+                      color: AppTheme.text,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold)),
+            ),
+            ...options.map((o) => ListTile(
+                  title: Text(label(o),
+                      style: const TextStyle(color: AppTheme.text)),
+                  trailing: o == current
+                      ? const Icon(Icons.check, color: AppTheme.accent)
+                      : null,
+                  onTap: () {
+                    Navigator.pop(context);
+                    onPick(o);
+                  },
+                )),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _sub?.cancel();
+    _sleepTimer?.cancel();
     _controller.close();
     super.dispose();
   }
