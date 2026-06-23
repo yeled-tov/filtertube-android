@@ -700,13 +700,20 @@ private fun DownloadDialog(context: Context, data: StreamData, videoId: String, 
                     Text("לא זמין", color = ThemeState.subtext, fontSize = 12.sp)
                 }
                 HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
-                Text("וידאו", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                data.tracks.forEach { t ->
-                    val silent = t.audioUrl != null   // זרם וידאו-בלבד (DASH) = ללא קול
-                    val label = t.label + if (silent) "  (ללא קול)" else ""
-                    DownloadRow(label) {
-                        record(); downloadStream(context, t.videoUrl, data.title, isAudio = false); onDismiss()
+                Text("וידאו (כולל קול)", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                // מציגים רק זרמים משולבים (muxed) שכוללים קול — בלי איכויות אילמות.
+                val withSound = data.tracks.filter { it.audioUrl == null }
+                if (withSound.isEmpty()) {
+                    Text("לא זמין להורדה עם קול", color = ThemeState.subtext, fontSize = 12.sp)
+                } else {
+                    withSound.forEach { t ->
+                        DownloadRow(t.label) {
+                            record(); downloadStream(context, t.videoUrl, data.title, isAudio = false); onDismiss()
+                        }
                     }
+                    Text("כל ההורדות כוללות קול (וידאו עד 720p).",
+                        color = ThemeState.subtext, fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 6.dp))
                 }
             }
         },

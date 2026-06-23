@@ -189,7 +189,9 @@ object InnerTube {
 
         val vd = json.optJSONObject("videoDetails")
         val bestMuxed = muxedTracks.maxByOrNull { it.height }?.videoUrl ?: tracks.first().videoUrl
-        val related = runCatching { related(videoId) }.getOrNull() ?: emptyList()
+        // הסרטונים הקשורים נטענים בנפרד ב-Playback אחרי שהניגון כבר התחיל — לא כאן.
+        // קריאת רשת ל-related כאן הייתה מעכבת את הופעת הסרטון על המסך ב-round-trip שלם.
+        val related = emptyList<Video>()
 
         StreamData(
             title = vd?.optString("title") ?: "",

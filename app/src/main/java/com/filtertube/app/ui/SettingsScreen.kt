@@ -63,7 +63,10 @@ fun SettingsScreen(
     var showAbout by remember { mutableStateOf(false) }
     var adminUnlocked by remember { mutableStateOf(settings.adminUnlocked) }
 
-    Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
+    Column(
+        modifier = Modifier.fillMaxSize().background(ThemeState.bg)
+            .verticalScroll(rememberScrollState()),
+    ) {
         Text(
             "הגדרות", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = ThemeState.text,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 12.dp),
@@ -89,6 +92,8 @@ fun SettingsScreen(
             SettingsRow(Icons.Default.AdminPanelSettings, Color(0xFFFFAA00), "ניהול ערוצים",
                 "הוספה/הסרה של ערוצים מהרשימה הלבנה") { onOpenAdmin() }
         }
+        // מרווח תחתון כדי שהפריט האחרון יהיה מעל סרגל הניווט הצף
+        Spacer(Modifier.height(110.dp))
     }
 
     if (showAccount) AccountDialog(onDismiss = { showAccount = false })

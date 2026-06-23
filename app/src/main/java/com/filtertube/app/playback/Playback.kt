@@ -108,9 +108,11 @@ object Playback {
         // כדי שתור הרדיו לא יגזול רוחב פס מהניגון הנוכחי.
         kotlinx.coroutines.delay(1200)
 
-        // תור רדיו אוטומטי. הקשורים של יוטיוב לרוב גלובליים ולא ברשימה הלבנה, ולכן
-        // היו משאירים תור ריק — אז ממלאים גם מסרטונים נוספים מאותו ערוץ (מובטח מאושר).
-        val relatedApproved = data.related.filter { it.channelId in allowed && it.id != video.id }
+        // תור רדיו אוטומטי. את הסרטונים הקשורים טוענים *כאן* (אחרי שהניגון כבר התחיל)
+        // ולא בתוך getStream — כך קריאת הרשת ל-related לא מעכבת את הופעת הסרטון על המסך.
+        // הקשורים של יוטיוב לרוב גלובליים ולא ברשימה הלבנה, ולכן ממלאים גם מאותו ערוץ.
+        val related = runCatching { com.filtertube.app.data.InnerTube.related(video.id) }.getOrNull().orEmpty()
+        val relatedApproved = related.filter { it.channelId in allowed && it.id != video.id }
         val sameChannel = if (data.channelId in allowed) {
             runCatching {
                 com.filtertube.app.data.YouTubeRepository

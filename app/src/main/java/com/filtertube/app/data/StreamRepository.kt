@@ -84,8 +84,9 @@ object StreamRepository {
 
         val channelId = extractChannelId(runCatching { extractor.uploaderUrl }.getOrNull()) ?: ""
 
-        // סרטונים קשורים — דרך InnerTube האנונימי (עטוף; גם NewPipe related עלול לקרוס ב-API<33)
-        val related = runCatching { InnerTube.related(videoId) }.getOrNull().orEmpty()
+        // הסרטונים הקשורים נטענים בנפרד ב-Playback אחרי תחילת הניגון — לא כאן.
+        // כך מוסרים round-trip שלם מהמסלול הקריטי של טעינת הסרטון.
+        val related = emptyList<Video>()
 
         StreamData(
             title = runCatching { extractor.name }.getOrNull().orEmpty(),

@@ -45,11 +45,12 @@ fun MiniPlayer(
             trackColor = Color(0xFF333333),
         )
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // תמונה ממוזערת מעוגלת — קטנה מעט מגובה הפאנל
             Box(
-                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(6.dp)).background(ThemeState.divider),
+                modifier = Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(ThemeState.divider),
                 contentAlignment = Alignment.Center,
             ) {
                 if (ui.artworkUri != null) {

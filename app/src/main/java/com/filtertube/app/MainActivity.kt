@@ -167,9 +167,10 @@ fun AppRoot() {
         openVideo(Video(id, "", "", "", "https://i.ytimg.com/vi/$id/hqdefault.jpg", System.currentTimeMillis()))
     }
 
-    // החיפוש עבר לכפתור למעלה במסך הבית — לא בסרגל התחתון
+    // סרגל ניווט תחתון — כולל חיפוש (לבקשת המשתמש: כפתור החיפוש למטה)
     val navItems = buildList {
         add(GlassNavItem("home", "בית", Icons.Default.Home))
+        add(GlassNavItem("search", "חיפוש", Icons.Default.Search))
         if (shortsEnabled) add(GlassNavItem("shorts", "Shorts", Icons.Default.PlayArrow))
         add(GlassNavItem("library", "ספריה", Icons.Default.LibraryMusic))
     }

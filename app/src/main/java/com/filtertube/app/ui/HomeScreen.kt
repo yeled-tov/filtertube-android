@@ -1,19 +1,21 @@
 package com.filtertube.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -48,24 +50,6 @@ fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit, onSettings: 
     var refreshing by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
 
-    if (showMenu) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = { showMenu = false }) {
-            Column(
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp))
-                    .background(ThemeState.surface).padding(vertical = 8.dp),
-            ) {
-                Text("FilterTube", color = ThemeState.subtext, fontSize = 12.sp,
-                    modifier = Modifier.padding(start = 20.dp, top = 6.dp, bottom = 4.dp))
-                listOf("הגדרות", "חיבור חשבון Google", "אודות").forEach { label ->
-                    Text(label, color = ThemeState.text, fontSize = 16.sp,
-                        modifier = Modifier.fillMaxWidth()
-                            .clickable { showMenu = false; onSettings() }
-                            .padding(horizontal = 20.dp, vertical = 14.dp))
-                }
-            }
-        }
-    }
-
     fun refresh(showSpinner: Boolean) {
         if (showSpinner) state = HomeState.Loading
         refreshing = true
@@ -94,35 +78,63 @@ fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit, onSettings: 
         refresh(showSpinner = cached.isNullOrEmpty())
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
-        // טופ-בר מינימלי ונקי — הגדרות (עיגול) בפינה הימנית, חיפוש בשמאלית
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier.size(38.dp).clip(RoundedCornerShape(50))
-                    .background(ThemeState.surface).clickable { showMenu = true },
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Default.Settings, "הגדרות", tint = ThemeState.text, modifier = Modifier.size(20.dp)) }
-            Spacer(Modifier.weight(1f))
-            IconButton(onClick = onSearch) {
-                Icon(Icons.Default.Search, contentDescription = "חיפוש", tint = ThemeState.text)
+    Box(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
+        // התוכן הראשי — מטושטש כשהתפריט הצף פתוח (אפקט זכוכית)
+        Column(modifier = Modifier.fillMaxSize().blur(if (showMenu) 18.dp else 0.dp)) {
+            // טופ-בר נקי — שורה גבוהה וכפתור פרופיל גדול בפינה הימנית (קל ללחיצה)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, top = 18.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Spacer(Modifier.weight(1f))
+                Box(
+                    modifier = Modifier.size(46.dp).clip(RoundedCornerShape(50))
+                        .background(Brush.linearGradient(listOf(ThemeState.accent, Color(0xFFFF6A5C))))
+                        .clickable { showMenu = true },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Default.Person, "תפריט", tint = Color.White, modifier = Modifier.size(26.dp)) }
+            }
+            if (refreshing && state is HomeState.Success) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = ThemeState.accent, trackColor = ThemeState.divider)
+            }
+
+            when (val s = state) {
+                is HomeState.Loading -> CenteredLoading("טוען סרטונים...")
+                is HomeState.Error -> CenteredError(s.message) { refresh(showSpinner = true) }
+                is HomeState.Success -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
+                ) {
+                    items(s.videos, key = { it.id }) { video ->
+                        VideoRow(video, onClick = { onVideoClick(video) })
+                    }
+                }
             }
         }
-        if (refreshing && state is HomeState.Success) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = ThemeState.accent, trackColor = ThemeState.divider)
-        }
 
-        when (val s = state) {
-            is HomeState.Loading -> CenteredLoading("טוען סרטונים...")
-            is HomeState.Error -> CenteredError(s.message) { refresh(showSpinner = true) }
-            is HomeState.Success -> LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
+        // תפריט צף בסגנון זכוכית — scrim כהה מעל הרקע המטושטש + כרטיס שקוף-למחצה
+        if (showMenu) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { showMenu = false },
+            )
+            Column(
+                modifier = Modifier.align(Alignment.Center).padding(horizontal = 28.dp).fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(ThemeState.surface.copy(alpha = 0.75f))
+                    .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(24.dp))
+                    .padding(vertical = 10.dp),
             ) {
-                items(s.videos, key = { it.id }) { video ->
-                    VideoRow(video, onClick = { onVideoClick(video) })
+                Text("FilterTube", color = ThemeState.subtext, fontSize = 12.sp,
+                    modifier = Modifier.padding(start = 22.dp, top = 8.dp, bottom = 6.dp))
+                listOf("הגדרות", "חיבור חשבון Google", "אודות").forEach { label ->
+                    Text(label, color = ThemeState.text, fontSize = 16.sp,
+                        modifier = Modifier.fillMaxWidth()
+                            .clickable { showMenu = false; onSettings() }
+                            .padding(horizontal = 22.dp, vertical = 15.dp))
                 }
             }
         }

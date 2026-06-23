@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,9 +38,13 @@ fun GlassNavBar(items: List<GlassNavItem>, currentRoute: String?, onClick: (Stri
         items.forEach { item ->
             val selected = currentRoute == item.route
             val tint = if (selected) ThemeState.accent else ThemeState.subtext
+            // הפריט הנבחר מודגש בכרית מעוגלת בצבע הראשי (כמו בגרסת החנות)
             Column(
-                modifier = Modifier.clip(RoundedCornerShape(14.dp)).clickable { onClick(item.route) }
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (selected) ThemeState.accent.copy(alpha = 0.16f) else Color.Transparent)
+                    .clickable { onClick(item.route) }
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Icon(item.icon, item.label, tint = tint, modifier = Modifier.size(22.dp))
