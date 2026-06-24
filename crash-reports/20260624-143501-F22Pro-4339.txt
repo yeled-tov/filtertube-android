@@ -1,0 +1,41 @@
+== אבחון ==
+14:34:42  InnerTube: VR+IOS נכשלו → NewPipe
+14:34:42  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+14:34:42  InnerTube IOS: HTTP 400
+14:34:42  InnerTube: VR+IOS נכשלו → NewPipe
+14:34:42  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+14:34:42  InnerTube IOS: HTTP 400
+14:34:42  InnerTube: VR+IOS נכשלו → NewPipe
+14:34:42  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+14:34:42  InnerTube IOS: HTTP 400
+14:34:35  טעינה ziVmUK6r6_Q: NewPipe 1824ms · 6 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+14:34:33  InnerTube: VR+IOS נכשלו → NewPipe
+14:34:33  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+14:34:33  InnerTube IOS: HTTP 400
+14:33:18  InnerTube: VR+IOS נכשלו → NewPipe
+14:33:18  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+14:33:18  InnerTube IOS: HTTP 400
+14:33:18  InnerTube: VR+IOS נכשלו → NewPipe
+14:33:18  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+14:33:18  InnerTube IOS: HTTP 400
+14:33:17  InnerTube: VR+IOS נכשלו → NewPipe
+14:33:17  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+14:33:17  InnerTube IOS: HTTP 400
+14:33:11  טעינה ma4GjSLyRXc: NewPipe 2006ms · 6 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+14:33:09  InnerTube: VR+IOS נכשלו → NewPipe
+14:33:09  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+14:33:09  InnerTube IOS: HTTP 400
+14:31:51  InnerTube: VR+IOS נכשלו → NewPipe
+14:31:51  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+14:31:51  InnerTube IOS: HTTP 400
+14:31:51  InnerTube: VR+IOS נכשלו → NewPipe
+14:31:51  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+14:31:51  InnerTube IOS: HTTP 400
+14:31:51  InnerTube: VR+IOS נכשלו → NewPipe
+14:31:51  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+14:31:51  InnerTube IOS: HTTP 400
+14:31:44  טעינה RUyFaY49RQo: NewPipe 2733ms · 7 איכויות (1 muxed), ברירת מחדל 288p [muxed]
+14:31:41  InnerTube: VR+IOS נכשלו → NewPipe
+14:31:41  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+14:31:41  InnerTube IOS: HTTP 400
+14:24:53  RemoteConfig נטען מהענן ✓
