@@ -166,12 +166,18 @@ object InnerTube {
             .header("User-Agent", userAgent)
             .post(body.toString().toRequestBody(jsonMedia))
             .build()
+        val cname = client.optString("clientName")
         val json = runCatching {
-            http.newCall(req).execute().use { if (!it.isSuccessful) null else it.body?.string()?.let(::JSONObject) }
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) { Diagnostics.log("InnerTube $cname: HTTP ${resp.code}"); null }
+                else resp.body?.string()?.let(::JSONObject)
+            }
         }.getOrNull() ?: return@withContext null
 
-        if (json.optJSONObject("playabilityStatus")?.optString("status") != "OK") return@withContext null
-        val sd = json.optJSONObject("streamingData") ?: return@withContext null
+        val status = json.optJSONObject("playabilityStatus")?.optString("status")
+        if (status != "OK") { Diagnostics.log("InnerTube $cname: status=$status"); return@withContext null }
+        val sd = json.optJSONObject("streamingData")
+            ?: run { Diagnostics.log("InnerTube $cname: אין streamingData"); return@withContext null }
 
         val muxedTracks = mutableListOf<StreamTrack>()
         val videoOnly = mutableListOf<Pair<Int, String>>()
@@ -209,7 +215,7 @@ object InnerTube {
         // שידור חי: אין זרמים מתקדמים — מנגנים את ה-HLS manifest (m3u8) ישירות
         val tracks = if (vodTracks.isEmpty() && hls.isNotEmpty())
             listOf(StreamTrack(0, "שידור חי", hls, null)) else vodTracks
-        if (tracks.isEmpty()) return@withContext null
+        if (tracks.isEmpty()) { Diagnostics.log("InnerTube $cname: כתובות מוצפנות (אין URL ישיר)"); return@withContext null }
 
         val bestMuxed = if (isLive && hls.isNotEmpty()) hls
             else muxedTracks.maxByOrNull { it.height }?.videoUrl ?: tracks.first().videoUrl

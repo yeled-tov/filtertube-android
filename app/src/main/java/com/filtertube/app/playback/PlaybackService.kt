@@ -26,13 +26,15 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        // buffer קצר להתחלת ניגון מהירה: מתחיל אחרי ~1 שניה במקום 2.5 (ברירת מחדל)
+        // באפר אגרסיבי נגד עצירות: זרמי יוטיוב נחנקים מדי פעם (CDN throttling), אז
+        // בונים מאגר גדול קדימה (עד 2 דקות) כדי לגשר על נפילות זמניות בהורדה. התחלה
+        // עדיין מהירה (~1.5ש'), ואחרי עצירה בונים כרית של 5ש' לפני שממשיכים שלא ייתקע שוב.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 15_000,
-                /* maxBufferMs = */ 50_000,
-                /* bufferForPlaybackMs = */ 1_000,
-                /* bufferForPlaybackAfterRebufferMs = */ 2_000,
+                /* minBufferMs = */ 30_000,
+                /* maxBufferMs = */ 120_000,
+                /* bufferForPlaybackMs = */ 1_500,
+                /* bufferForPlaybackAfterRebufferMs = */ 5_000,
             )
             .build()
         val player = ExoPlayer.Builder(this)
