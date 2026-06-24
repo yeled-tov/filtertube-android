@@ -64,6 +64,7 @@ fun LibraryScreen(
     var subs by remember { mutableStateOf(store.subscriptions()) }
     var history by remember { mutableStateOf(store.history()) }
     var recs by remember { mutableStateOf(store.recommendations()) }
+    val localHist = remember(version) { store.localHistory() }   // היסטוריית צפייה מקומית
     val loggedIn = accountStore.isLoggedIn   // מחושב מחדש בכל composition (מתעדכן בחזרה מהתחברות)
 
     var account by remember { mutableStateOf<GoogleSignInAccount?>(GoogleAuth.lastAccount(context)) }
@@ -232,7 +233,7 @@ fun LibraryScreen(
             }
             Spacer(Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                LibTile("היסטוריה", history.size, Icons.Default.History, Color(0xFFFF6D00)) { onOpenCollection("history") }
+                LibTile("היסטוריה", localHist.size, Icons.Default.History, Color(0xFFFF6D00)) { onOpenCollection("history") }
                 LibTile("מומלצים", recs.size, Icons.Default.Recommend, Color(0xFF00BFA5)) { onOpenCollection("recs") }
             }
         }

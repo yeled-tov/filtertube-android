@@ -29,10 +29,12 @@ import coil.compose.AsyncImage
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.FeedCache
+import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeRepository
 import com.filtertube.app.data.forLevel
+import com.filtertube.app.data.personalizeFeed
 import kotlinx.coroutines.launch
 
 sealed class HomeState {
@@ -51,6 +53,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settings = remember { SettingsStore(context) }
+    val store = remember { LibraryStore(context) }
     var state by remember { mutableStateOf<HomeState>(HomeState.Loading) }
     var refreshing by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
@@ -81,8 +84,8 @@ fun HomeScreen(
                 val channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
                 val videos = YouTubeRepository.fetchAllChannelsFeed(channels)
                 if (videos.isNotEmpty()) {
-                    FeedCache.saveFeed(context, videos)
-                    state = HomeState.Success(videos)
+                    FeedCache.saveFeed(context, videos)   // שומרים גולמי; מתאימים אישית בתצוגה
+                    state = HomeState.Success(personalizeFeed(videos, store.localHistory()))
                 } else if (state !is HomeState.Success) {
                     state = HomeState.Error("לא נמצאו סרטונים בערוצים המאושרים")
                 }
@@ -97,7 +100,7 @@ fun HomeScreen(
     // טעינה מיידית מהקאש (אם יש), ואז רענון ברקע
     LaunchedEffect(Unit) {
         val cached = FeedCache.loadFeed(context)
-        if (!cached.isNullOrEmpty()) state = HomeState.Success(cached)
+        if (!cached.isNullOrEmpty()) state = HomeState.Success(personalizeFeed(cached, store.localHistory()))
         refresh(showSpinner = cached.isNullOrEmpty())
     }
 

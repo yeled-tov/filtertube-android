@@ -100,6 +100,19 @@ object Playback {
         val preferred = settings.preferredQuality
         val data = StreamRepository.getStream(video.id)
         cache(video.id, data)
+        // היסטוריית צפייה מקומית — מזינה את מסך ההיסטוריה ואת התאמת מסך הבית
+        runCatching {
+            com.filtertube.app.data.LibraryStore(context).addToHistory(
+                Video(
+                    id = video.id,
+                    title = data.title.ifBlank { video.title },
+                    channelName = data.uploaderName.ifBlank { video.channelName },
+                    channelId = data.channelId.ifBlank { video.channelId },
+                    thumbnailUrl = data.thumbnailUrl ?: video.thumbnailUrl,
+                    publishedAt = System.currentTimeMillis(),
+                ),
+            )
+        }
         val audio = forcedAudio(catById[data.channelId], level)
         val firstItem = buildItem(data, video.id, audio, defaultQuality(data, preferred))
 

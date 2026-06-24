@@ -85,6 +85,19 @@ class LibraryStore(context: Context) {
     fun recommendations(): List<Video> = videos(KEY_RECS)
     fun setRecommendations(list: List<Video>) = saveVideos(KEY_RECS, list)
 
+    // ── היסטוריית צפייה מקומית (תמיד עובדת, בלי חשבון) ───────────────────
+    // נשמרת על המכשיר בלבד. מזינה גם את "המשך לצפות" וגם את התאמת מסך הבית.
+    fun localHistory(): List<Video> = videos(KEY_LOCAL_HISTORY)
+    fun addToHistory(video: Video) {
+        if (video.id.isBlank()) return
+        val current = videos(KEY_LOCAL_HISTORY).toMutableList()
+        current.removeAll { it.id == video.id }                 // הצפייה האחרונה עולה לראש
+        current.add(0, video.copy(publishedAt = System.currentTimeMillis()))
+        while (current.size > HISTORY_CAP) current.removeAt(current.lastIndex)
+        saveVideos(KEY_LOCAL_HISTORY, current)
+    }
+    fun clearLocalHistory() = saveVideos(KEY_LOCAL_HISTORY, emptyList())
+
     companion object {
         private const val KEY_LIKES = "likes"
         private const val KEY_DOWNLOADS = "downloads"
@@ -93,5 +106,7 @@ class LibraryStore(context: Context) {
         private const val KEY_SUBS = "youtube_subscriptions"
         private const val KEY_HISTORY = "youtube_history"
         private const val KEY_RECS = "youtube_recommendations"
+        private const val KEY_LOCAL_HISTORY = "local_history"
+        private const val HISTORY_CAP = 200
     }
 }

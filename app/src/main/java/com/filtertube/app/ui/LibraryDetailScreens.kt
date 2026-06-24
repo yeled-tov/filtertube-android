@@ -62,19 +62,27 @@ private fun EmptyHint(text: String) {
 fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     val store = remember { LibraryStore(context) }
-    val (title, videos) = remember(type) {
+    var refreshKey by remember { mutableStateOf(0) }
+    val (title, videos) = remember(type, refreshKey) {
         when (type) {
             "likes" -> "אהבתי" to store.likes()
             "ytlikes" -> "אהבתי ביוטיוב" to store.youtubeLikes()
             "downloads" -> "הורדות" to store.downloads()
-            "history" -> "היסטוריה" to store.history()
+            "history" -> "היסטוריה" to store.localHistory()   // היסטוריה מקומית — תמיד עובדת
             "recs" -> "מומלצים" to store.recommendations()
             else -> "אוסף" to emptyList()
         }
     }
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar("$title (${videos.size})", onBack)
-        if (videos.isEmpty()) EmptyHint("האוסף ריק")
+        if (type == "history" && videos.isNotEmpty()) {
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = { store.clearLocalHistory(); refreshKey++ }) {
+                    Text("נקה היסטוריה", color = Color(0xFFFF6A5C), fontSize = 13.sp)
+                }
+            }
+        }
+        if (videos.isEmpty()) EmptyHint(if (type == "history") "עדיין לא צפית בכלום" else "האוסף ריק")
         else LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)) {
             items(videos, key = { it.id }) { v -> VideoRow(v, onClick = { onVideoClick(v) }) }
         }
