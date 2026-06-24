@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
@@ -62,6 +63,7 @@ fun SettingsScreen(
     var showDisplay by remember { mutableStateOf(false) }
     var showPlayerAudio by remember { mutableStateOf(false) }
     var showUpdate by remember { mutableStateOf(false) }
+    var showNotify by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var adminUnlocked by remember { mutableStateOf(settings.adminUnlocked) }
 
@@ -84,6 +86,8 @@ fun SettingsScreen(
             "עיצוב הנגן ואיכות") { showPlayerAudio = true }
         SettingsRow(Icons.Default.Tune, Color(0xFF3B82F6), "הגדרות תצוגה",
             "צבע ראשי · מצב כהה/בהיר · 120 הרץ") { showDisplay = true }
+        SettingsRow(Icons.Default.Notifications, Color(0xFFEC407A), "התראות",
+            "התראה על סרטון חדש בערוץ מאושר") { showNotify = true }
         SettingsRow(Icons.Default.SystemUpdate, Color(0xFFA855F7), "עדכונים",
             "בדוק והורד גרסה חדשה") { showUpdate = true }
         SettingsRow(Icons.Default.Speed, Color(0xFF00BFA5), "אבחון מהירות/עצירות",
@@ -128,6 +132,8 @@ fun SettingsScreen(
     if (showPlayerAudio) PlayerAudioDialog(settings = settings, onDismiss = { showPlayerAudio = false })
 
     if (showUpdate) UpdateDialog(onDismiss = { showUpdate = false })
+
+    if (showNotify) NotificationsDialog(settings = settings, onDismiss = { showNotify = false })
 
     if (showAbout) AboutDialog(
         onUnlock = { settings.adminUnlocked = true; adminUnlocked = true },
@@ -518,6 +524,35 @@ private fun StyleRow(value: Int, title: String, desc: String, selected: Int, onC
             Text(desc, color = ThemeState.subtext, fontSize = 11.sp, lineHeight = 15.sp)
         }
     }
+}
+
+// ── התראות ───────────────────────────────────────────────────────────────
+@Composable
+private fun NotificationsDialog(settings: SettingsStore, onDismiss: () -> Unit) {
+    var enabled by remember { mutableStateOf(settings.newVideoNotifications) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("התראות") },
+        text = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("סרטון חדש בערוץ מאושר", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text("בדיקה ברקע כל כמה שעות ומציגה התראה", color = ThemeState.subtext, fontSize = 11.sp)
+                }
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = { enabled = it; settings.newVideoNotifications = it },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White, checkedTrackColor = ThemeState.accent,
+                        uncheckedThumbColor = ThemeState.subtext, uncheckedTrackColor = Color(0xFF333333),
+                    ),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("סגור") } },
+        containerColor = ThemeState.surface,
+        titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
+    )
 }
 
 // ── עדכונים ──────────────────────────────────────────────────────────────

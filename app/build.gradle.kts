@@ -112,4 +112,7 @@ implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
 
     // Google Sign-In — התחברות לחשבון יוטיוב לייבוא "אהבתי"
     implementation("com.google.android.gms:play-services-auth:21.2.0")
+
+    // WorkManager — בדיקת רקע תקופתית להתראות על סרטון חדש
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 }

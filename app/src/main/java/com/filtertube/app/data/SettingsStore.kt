@@ -71,6 +71,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getInt(KEY_THEME_MODE, 1)
         set(value) = prefs.edit().putInt(KEY_THEME_MODE, value).apply()
 
+    /** התראות על סרטון חדש בערוץ מאושר (בדיקת רקע תקופתית). */
+    var newVideoNotifications: Boolean
+        get() = prefs.getBoolean(KEY_NOTIFY, true)
+        set(value) = prefs.edit().putBoolean(KEY_NOTIFY, value).apply()
+
     // ── היסטוריית חיפוש ──────────────────────────────────────────────────
     fun getSearchHistory(): List<String> {
         val raw = prefs.getString(KEY_HISTORY, "") ?: ""
@@ -109,5 +114,6 @@ class SettingsStore(context: Context) {
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_ADMIN_UNLOCKED = "admin_unlocked"
+        private const val KEY_NOTIFY = "new_video_notifications"
     }
 }
