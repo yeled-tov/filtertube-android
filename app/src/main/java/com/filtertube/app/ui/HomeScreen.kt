@@ -3,10 +3,12 @@ package com.filtertube.app.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
@@ -27,14 +29,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.filtertube.app.ThemeState
+import com.filtertube.app.data.Channel
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.FeedCache
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeRepository
+import com.filtertube.app.data.categoryLabelHe
 import com.filtertube.app.data.forLevel
 import com.filtertube.app.data.personalizeFeed
+import com.filtertube.app.data.sortedCategories
 import kotlinx.coroutines.launch
 
 sealed class HomeState {
@@ -58,6 +63,8 @@ fun HomeScreen(
     var refreshing by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
+    var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
+    var selectedCategory by remember { mutableStateOf<String?>(null) }
 
     if (showAbout) {
         AlertDialog(
@@ -81,8 +88,9 @@ fun HomeScreen(
         refreshing = true
         scope.launch {
             try {
-                val channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
-                val videos = YouTubeRepository.fetchAllChannelsFeed(channels)
+                val chans = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
+                channels = chans
+                val videos = YouTubeRepository.fetchAllChannelsFeed(chans)
                 if (videos.isNotEmpty()) {
                     FeedCache.saveFeed(context, videos)   // שומרים גולמי; מתאימים אישית בתצוגה
                     state = HomeState.Success(personalizeFeed(videos, store.localHistory()))
@@ -99,6 +107,7 @@ fun HomeScreen(
 
     // טעינה מיידית מהקאש (אם יש), ואז רענון ברקע
     LaunchedEffect(Unit) {
+        runCatching { channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel) }
         val cached = FeedCache.loadFeed(context)
         if (!cached.isNullOrEmpty()) state = HomeState.Success(personalizeFeed(cached, store.localHistory()))
         refresh(showSpinner = cached.isNullOrEmpty())
@@ -120,6 +129,19 @@ fun HomeScreen(
                 ) { Icon(Icons.Default.Person, "תפריט", tint = Color.White, modifier = Modifier.size(20.dp)) }
                 Spacer(Modifier.weight(1f))
             }
+            // טאבים של קטגוריות (כמו ביוטיוב) — לחיצה מסננת את הפיד לפי תחום
+            if (channels.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                        .padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CategoryChip("הכל", selectedCategory == null) { selectedCategory = null }
+                    sortedCategories(channels.map { it.category }).forEach { cat ->
+                        CategoryChip(categoryLabelHe(cat), selectedCategory == cat) { selectedCategory = cat }
+                    }
+                }
+            }
             if (refreshing && state is HomeState.Success) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = ThemeState.accent, trackColor = ThemeState.divider)
             }
@@ -127,12 +149,23 @@ fun HomeScreen(
             when (val s = state) {
                 is HomeState.Loading -> CenteredLoading("טוען סרטונים...")
                 is HomeState.Error -> CenteredError(s.message) { refresh(showSpinner = true) }
-                is HomeState.Success -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
-                ) {
-                    items(s.videos, key = { it.id }) { video ->
-                        VideoRow(video, onClick = { onVideoClick(video) })
+                is HomeState.Success -> {
+                    val catByChannel = channels.associate { it.youtubeChannelId to it.category }
+                    val displayed = if (selectedCategory == null) s.videos
+                        else s.videos.filter { catByChannel[it.channelId] == selectedCategory }
+                    if (displayed.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("אין סרטונים בקטגוריה זו", color = ThemeState.subtext, fontSize = 14.sp)
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
+                        ) {
+                            items(displayed, key = { it.id }) { video ->
+                                VideoRow(video, onClick = { onVideoClick(video) })
+                            }
+                        }
                     }
                 }
             }
@@ -169,6 +202,28 @@ fun HomeScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .then(
+                if (selected) Modifier.background(
+                    Brush.horizontalGradient(listOf(ThemeState.accent, Color(0xFFFF6A5C))),
+                ) else Modifier.background(ThemeState.surface),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Text(
+            label,
+            color = if (selected) Color.White else ThemeState.subtext2,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+        )
     }
 }
 

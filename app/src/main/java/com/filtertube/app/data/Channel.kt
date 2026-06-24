@@ -21,6 +21,7 @@ val categoryLabels: Map<String, String> = mapOf(
     "dati_light" to "דתי לייט",
     "kids" to "ילדים",
     "diy" to "עשה זאת בעצמך",
+    "cooking" to "אפייה ובישול",
     "news" to "חדשות",
     "general" to "כללי",
 )
