@@ -50,7 +50,8 @@ fun NewVideosScreen(onVideoClick: (Video) -> Unit, onBack: () -> Unit) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
                     Text("אין סרטונים חדשים כרגע", color = ThemeState.subtext2, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(6.dp))
-                    Text("עקוב אחרי ערוצים (כפתור ״עקוב״ במסך הערוץ) ותקבל כאן את הסרטונים החדשים שלהם.",
+                    Text("פתח את התפריט (כפתור הפרופיל למעלה) → ״ערוצים״, ועקוב אחרי ערוצים — " +
+                        "הסרטונים החדשים שלהם יופיעו כאן ותקבל עליהם התראה.",
                         color = ThemeState.subtext, fontSize = 12.sp, lineHeight = 17.sp)
                 }
             }

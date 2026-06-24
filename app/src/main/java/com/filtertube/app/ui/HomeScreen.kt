@@ -56,6 +56,7 @@ fun HomeScreen(
     onSettings: () -> Unit = {},
     onAccount: () -> Unit = {},
     onInbox: () -> Unit = {},
+    onChannels: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -206,6 +207,7 @@ fun HomeScreen(
                 Text("FilterTube", color = ThemeState.subtext, fontSize = 12.sp,
                     modifier = Modifier.padding(start = 22.dp, top = 8.dp, bottom = 6.dp))
                 val menuItems = listOf<Pair<String, () -> Unit>>(
+                    "ערוצים — עקוב" to { showMenu = false; onChannels() },
                     "הגדרות" to { showMenu = false; onSettings() },
                     "חיבור חשבון Google" to { showMenu = false; onAccount() },
                     "אודות" to { showMenu = false; showAbout = true },
