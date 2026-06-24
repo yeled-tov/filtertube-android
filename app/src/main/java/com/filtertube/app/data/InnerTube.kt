@@ -23,6 +23,9 @@ object InnerTube {
 
     private const val BASE = "https://www.youtube.com/youtubei/v1/"
     private const val KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+    // לקוח IOS משתמש ב-host ומפתח API ייעודיים — שליחה ל-www.youtube.com מחזירה HTTP 400
+    private const val IOS_BASE = "https://youtubei.googleapis.com/youtubei/v1/"
+    private const val IOS_KEY = "AIzaSyB-63vPrdThhKuerbB2N_l7Kwwcxj6yUAc"
     private const val ORIGIN = "https://www.youtube.com"
     private const val CLIENT_NAME = "WEB"
     private const val CLIENT_VERSION = "2.20241125.01.00"
@@ -154,19 +157,25 @@ object InnerTube {
     }
 
     private suspend fun playerWithClient(videoId: String, client: JSONObject, userAgent: String): StreamData? = withContext(Dispatchers.IO) {
+        val cname = client.optString("clientName")
         val body = JSONObject().apply {
             put("videoId", videoId)
             put("contentCheckOk", true)
             put("racyCheckOk", true)
             put("context", JSONObject().put("client", client))
         }
+        // IOS ל-host+key הייעודיים; שאר הלקוחות ל-youtubei הרגיל של www.youtube.com
+        val url = if (cname == "IOS")
+            "${IOS_BASE}player?key=$IOS_KEY&prettyPrint=false"
+        else
+            "${BASE}player?prettyPrint=false"
         val req = Request.Builder()
-            .url("${BASE}player?prettyPrint=false")
+            .url(url)
             .header("Content-Type", "application/json")
             .header("User-Agent", userAgent)
+            .header("X-Goog-Api-Format-Version", "2")
             .post(body.toString().toRequestBody(jsonMedia))
             .build()
-        val cname = client.optString("clientName")
         val json = runCatching {
             http.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) { Diagnostics.log("InnerTube $cname: HTTP ${resp.code}"); null }
