@@ -6,10 +6,6 @@ import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.session.MediaController
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.StreamData
@@ -25,7 +21,7 @@ object Playback {
 
     const val EXTRA_IS_AUDIO = "filtertube_is_audio"
     private const val CACHE_CAP = 40
-    private const val RADIO_SIZE = 8
+    private const val RADIO_SIZE = 5
 
     private val dataCache = LinkedHashMap<String, StreamData>()
 
@@ -58,6 +54,8 @@ object Playback {
 
     fun buildItem(data: StreamData, videoId: String, audio: Boolean, qualityIndex: Int = defaultQuality(data)): MediaItem {
         val extras = Bundle().apply { putBoolean(EXTRA_IS_AUDIO, audio) }
+        // ה-UA שבו נחלצו כתובות הזרם — חובה לנגן באותו UA אחרת יוטיוב חותך אחרי כמה שניות
+        data.streamUserAgent?.let { extras.putString(FilterTubeMediaSourceFactory.EXTRA_USER_AGENT, it) }
         val uri: String = if (audio) {
             data.bestAudioUrl ?: data.bestVideoUrl
         } else {
@@ -104,9 +102,9 @@ object Playback {
         c.prepare()
         c.play()
 
-        // תן לסרטון הראשון "ראש" של ~1.2 שניות להתחיל להיטען לפני שבונים את התור,
-        // כדי שתור הרדיו לא יגזול רוחב פס מהניגון הנוכחי.
-        kotlinx.coroutines.delay(1200)
+        // תן לסרטון הנוכחי "ראש" משמעותי לבנות buffer לפני שמתחילים עבודת רקע כבדה,
+        // אחרת חילוץ התור גוזל רוחב פס והניגון נתקע אחרי כמה שניות.
+        kotlinx.coroutines.delay(2500)
 
         // תור רדיו אוטומטי. את הסרטונים הקשורים טוענים *כאן* (אחרי שהניגון כבר התחיל)
         // ולא בתוך getStream — כך קריאת הרשת ל-related לא מעכבת את הופעת הסרטון על המסך.
@@ -123,18 +121,14 @@ object Playback {
             .distinctBy { it.id }
             .filter { it.id != video.id }
             .take(RADIO_SIZE)
-        val resolved = coroutineScope {
-            queue.map { v ->
-                async(Dispatchers.IO) {
-                    runCatching { StreamRepository.getStream(v.id) }.getOrNull()?.let { v to it }
-                }
-            }.awaitAll()
-        }
-        for (pair in resolved) {
-            val (v, d) = pair ?: continue
+        // פותרים את פריטי התור *אחד-אחד* (לא 8 במקביל) — כך חילוץ הרקע לא חונק את
+        // רוחב הפס של הסרטון המתנגן. כל פריט שמתפענח מתווסף מיד לתור.
+        for (v in queue) {
+            val d = runCatching { StreamRepository.getStream(v.id) }.getOrNull() ?: continue
             cache(v.id, d)
             val a = forcedAudio(catById[d.channelId] ?: catById[v.channelId], level)
             c.addMediaItem(buildItem(d, v.id, a, defaultQuality(d, preferred)))
+            kotlinx.coroutines.delay(500)   // נשימה קצרה בין חילוצים, לשמור רוחב פס לניגון
         }
     }
 }

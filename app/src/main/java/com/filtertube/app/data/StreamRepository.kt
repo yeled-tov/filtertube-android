@@ -36,6 +36,12 @@ data class StreamData(
     val bestVideoUrl: String,
     /** סרטונים קשורים — להפעלה אוטומטית (לפני סינון לרשימה הלבנה) */
     val related: List<Video>,
+    /**
+     * ה-User-Agent שבו *חייבים* לנגן את כתובות הזרם. יוטיוב מאמת את ה-UA מול
+     * הלקוח שביקש את הזרם (IOS/VR/Web) — נגינה ב-UA שונה גורמת ל-CDN לחתוך את
+     * הזרם אחרי כמה שניות. null = אפשר UA ברירת מחדל.
+     */
+    val streamUserAgent: String? = null,
 )
 
 object StreamRepository {

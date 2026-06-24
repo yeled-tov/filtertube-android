@@ -19,19 +19,28 @@ import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 @UnstableApi
 class FilterTubeMediaSourceFactory(context: Context) : MediaSource.Factory {
 
-    private val httpFactory = DefaultHttpDataSource.Factory()
-        .setUserAgent("Mozilla/5.0 (Linux; Android) FilterTube")
-        .setAllowCrossProtocolRedirects(true)
+    // ברירת מחדל: UA של דפדפן אמיתי — מתאים לזרמי NewPipe (לקוח WEB, מפוענחים).
+    private val default = factoryFor(DEFAULT_UA)
 
-    private val default = DefaultMediaSourceFactory(httpFactory)
+    private fun factoryFor(userAgent: String): DefaultMediaSourceFactory {
+        val http = DefaultHttpDataSource.Factory()
+            .setUserAgent(userAgent)
+            .setAllowCrossProtocolRedirects(true)
+        return DefaultMediaSourceFactory(http)
+    }
 
     override fun getSupportedTypes(): IntArray = default.supportedTypes
 
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
-        val audioUrl = mediaItem.requestMetadata.extras?.getString(EXTRA_AUDIO_URL)
-        val video = default.createMediaSource(mediaItem)
+        val extras = mediaItem.requestMetadata.extras
+        val audioUrl = extras?.getString(EXTRA_AUDIO_URL)
+        // מנגנים את הזרם ב-UA שבו נחלץ (IOS/VR/Web). חוסר התאמה = יוטיוב חותך אחרי כמה שניות.
+        val ua = extras?.getString(EXTRA_USER_AGENT)
+        val srcFactory = if (ua.isNullOrEmpty()) default else factoryFor(ua)
+
+        val video = srcFactory.createMediaSource(mediaItem)
         return if (!audioUrl.isNullOrEmpty()) {
-            val audio = default.createMediaSource(MediaItem.fromUri(audioUrl))
+            val audio = srcFactory.createMediaSource(MediaItem.fromUri(audioUrl))
             MergingMediaSource(video, audio)
         } else {
             video
@@ -50,5 +59,8 @@ class FilterTubeMediaSourceFactory(context: Context) : MediaSource.Factory {
 
     companion object {
         const val EXTRA_AUDIO_URL = "filtertube_audio_url"
+        const val EXTRA_USER_AGENT = "filtertube_user_agent"
+        private const val DEFAULT_UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
     }
 }

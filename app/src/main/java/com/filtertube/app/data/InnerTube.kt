@@ -105,11 +105,13 @@ object InnerTube {
     // מנסים לקוח IOS, ואם נכשל/חסום — ANDROID_VR (שניהם בד"כ מחזירים כתובות ישירות
     // ללא PoToken). אם שניהם נכשלים מחזירים null ו-StreamRepository נופל ל-NewPipe.
     suspend fun player(videoId: String): StreamData? = coroutineScope {
-        // מריצים את שני הלקוחות במקביל (מרוץ) במקום בטור — חוסך עד ~15ש' בטעינת סרטון
-        val ios = async { playerWithClient(videoId, iosClient(), IOS_UA) }
+        // מריצים את שני הלקוחות במקביל (מרוץ) במקום בטור — חוסך עד ~15ש' בטעינת סרטון.
+        // מעדיפים ANDROID_VR: הזרמים שלו יציבים יותר ולרוב לא נחנקים/נחתכים אחרי כמה
+        // שניות (בניגוד ל-IOS שהחל להיחנק). IOS נשאר כגיבוי אם VR נכשל.
         val vr = async { playerWithClient(videoId, vrClient(), VR_UA) }
-        val first = ios.await()
-        if (first != null) { vr.cancel(); first } else vr.await()
+        val ios = async { playerWithClient(videoId, iosClient(), IOS_UA) }
+        val first = vr.await()
+        if (first != null) { ios.cancel(); first } else ios.await()
     }
 
     private const val IOS_UA = "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X;)"
@@ -205,6 +207,8 @@ object InnerTube {
             bestAudioUrl = au,
             bestVideoUrl = bestMuxed,
             related = related,
+            // חובה לנגן את הזרם ב-UA של אותו לקוח (IOS/VR) שביקש אותו, אחרת ה-CDN חותך.
+            streamUserAgent = userAgent,
         )
     }
 

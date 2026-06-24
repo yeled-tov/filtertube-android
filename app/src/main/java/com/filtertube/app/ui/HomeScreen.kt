@@ -81,18 +81,18 @@ fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit, onSettings: 
     Box(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         // התוכן הראשי — מטושטש כשהתפריט הצף פתוח (אפקט זכוכית)
         Column(modifier = Modifier.fillMaxSize().blur(if (showMenu) 18.dp else 0.dp)) {
-            // טופ-בר נקי — שורה גבוהה וכפתור פרופיל גדול בפינה הימנית (קל ללחיצה)
+            // טופ-בר נקי — כפתור פרופיל בפינה הימנית (RTL: הילד הראשון יושב מימין)
             Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 18.dp, bottom = 6.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 22.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Spacer(Modifier.weight(1f))
                 Box(
-                    modifier = Modifier.size(46.dp).clip(RoundedCornerShape(50))
+                    modifier = Modifier.size(40.dp).clip(RoundedCornerShape(50))
                         .background(Brush.linearGradient(listOf(ThemeState.accent, Color(0xFFFF6A5C))))
                         .clickable { showMenu = true },
                     contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Default.Person, "תפריט", tint = Color.White, modifier = Modifier.size(26.dp)) }
+                ) { Icon(Icons.Default.Person, "תפריט", tint = Color.White, modifier = Modifier.size(22.dp)) }
+                Spacer(Modifier.weight(1f))
             }
             if (refreshing && state is HomeState.Success) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = ThemeState.accent, trackColor = ThemeState.divider)
