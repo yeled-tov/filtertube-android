@@ -215,10 +215,14 @@ fun AppRoot() {
                         settings.filterLevel = level
                     },
                     onOpenAdmin = { navController.navigate("admin") },
+                    onOpenDiag = { navController.navigate("diag") },
                 )
             }
             composable("admin") {
                 AdminScreen(onBack = { navController.popBackStack() })
+            }
+            composable("diag") {
+                DiagnosticsScreen(onBack = { navController.popBackStack() })
             }
             composable("library") {
                 LibraryScreen(

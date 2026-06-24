@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
@@ -49,6 +50,7 @@ fun SettingsScreen(
     filterLevel: Int,
     onFilterLevelChange: (Int) -> Unit,
     onOpenAdmin: () -> Unit,
+    onOpenDiag: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val settings = remember { SettingsStore(context) }
@@ -84,6 +86,8 @@ fun SettingsScreen(
             "צבע ראשי · מצב כהה/בהיר · 120 הרץ") { showDisplay = true }
         SettingsRow(Icons.Default.SystemUpdate, Color(0xFFA855F7), "עדכונים",
             "בדוק והורד גרסה חדשה") { showUpdate = true }
+        SettingsRow(Icons.Default.Speed, Color(0xFF00BFA5), "אבחון מהירות/עצירות",
+            "מה איטי או נתקע בניגון — ושליחה אליי") { onOpenDiag() }
         SettingsRow(Icons.Default.Info, ThemeState.subtext2, "אודות",
             "FilterTube — רק ערוצים מאושרים") { showAbout = true }
 

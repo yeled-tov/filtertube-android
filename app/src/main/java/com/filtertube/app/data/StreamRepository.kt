@@ -49,10 +49,29 @@ object StreamRepository {
     suspend fun getStream(videoId: String): StreamData = coroutineScope {
         // שני הנתיבים רצים במקביל — מי שמחזיר מהר מנצח. NewPipe מתחיל מיד; ל-InnerTube
         // תקרת זמן, ואם חזר ראשון מבטלים את NewPipe. כך אין יותר המתנה לנתיב האיטי.
+        val t0 = System.currentTimeMillis()
         val newpipe = async(Dispatchers.IO) { runCatching { extractViaNewPipe(videoId) }.getOrNull() }
         val inner = withTimeoutOrNull(4500) { runCatching { InnerTube.player(videoId) }.getOrNull() }
-        if (inner != null) { newpipe.cancel(); return@coroutineScope inner }
-        newpipe.await() ?: throw IllegalStateException("לא נמצא video stream")
+        if (inner != null) {
+            newpipe.cancel()
+            Diagnostics.log("טעינה $videoId: InnerTube ${System.currentTimeMillis() - t0}ms · ${trackSummary(inner)}")
+            return@coroutineScope inner
+        }
+        val np = newpipe.await()
+        Diagnostics.log(
+            "טעינה $videoId: " +
+                if (np != null) "NewPipe ${System.currentTimeMillis() - t0}ms · ${trackSummary(np)}"
+                else "נכשל ${System.currentTimeMillis() - t0}ms ✖",
+        )
+        np ?: throw IllegalStateException("לא נמצא video stream")
+    }
+
+    /** תקציר האיכויות שנבחרו — האם ברירת המחדל משולבת (muxed) או DASH (מיזוג). */
+    private fun trackSummary(d: StreamData): String {
+        val muxed = d.tracks.count { it.audioUrl == null }
+        val def = d.tracks.firstOrNull { it.audioUrl == null } ?: d.tracks.firstOrNull()
+        val kind = if (def?.audioUrl == null) "muxed" else "DASH"
+        return "${d.tracks.size} איכויות ($muxed muxed), ברירת מחדל ${def?.label ?: "?"} [$kind]"
     }
 
     // חילוץ דרך NewPipe — קוראים ישירות מה-extractor ועוטפים כל שדה ב-runCatching.

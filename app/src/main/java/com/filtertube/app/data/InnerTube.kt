@@ -111,7 +111,13 @@ object InnerTube {
         val vr = async { playerWithClient(videoId, vrClient(), VR_UA) }
         val ios = async { playerWithClient(videoId, iosClient(), IOS_UA) }
         val first = vr.await()
-        if (first != null) { ios.cancel(); first } else ios.await()
+        if (first != null) {
+            ios.cancel(); Diagnostics.log("InnerTube: ANDROID_VR ניצח"); first
+        } else {
+            val i = ios.await()
+            Diagnostics.log("InnerTube: ${if (i != null) "IOS ניצח (VR נכשל)" else "VR+IOS נכשלו → NewPipe"}")
+            i
+        }
     }
 
     private const val IOS_UA = "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X;)"
