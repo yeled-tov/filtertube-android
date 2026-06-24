@@ -129,6 +129,19 @@ fun PlayerScreen(
 
     // המסך נשאר דלוק כל עוד מתנגן וידאו (לא אודיו). יוצאים מהמסך → נכבה כרגיל.
     KeepScreenOn(ui.isPlaying && !audioMode)
+
+    // PiP: מסמנים שאפשר חלון צף רק כשמוצג וידאו (לא אודיו)
+    DisposableEffect(audioMode) {
+        com.filtertube.app.PipState.canPip = !audioMode
+        onDispose { com.filtertube.app.PipState.canPip = false }
+    }
+    // בתוך חלון צף — מציגים רק את הוידאו, בלי בקרים
+    if (com.filtertube.app.PipState.inPip) {
+        Box(modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
+            VideoSurface(controller)
+        }
+        return
+    }
     fun currentVideo() = Video(
         id = ui.mediaId ?: "", title = ui.title, channelName = ui.artist,
         channelId = "", thumbnailUrl = ui.artworkUri?.toString() ?: "", publishedAt = System.currentTimeMillis(),

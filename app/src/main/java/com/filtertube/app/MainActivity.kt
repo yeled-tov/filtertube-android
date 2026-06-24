@@ -82,6 +82,28 @@ class MainActivity : ComponentActivity() {
         handleDeepLink(intent)
     }
 
+    /** יציאה מהאפליקציה בזמן צפייה בווידאו → חלון צף (PiP) שממשיך לנגן. */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && PipState.canPip) {
+            runCatching {
+                enterPictureInPictureMode(
+                    android.app.PictureInPictureParams.Builder()
+                        .setAspectRatio(android.util.Rational(16, 9))
+                        .build(),
+                )
+            }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: android.content.res.Configuration,
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        PipState.inPip = isInPictureInPictureMode
+    }
+
     /** קולט קישור יוטיוב שנפתח דרך האפליקציה — מחלץ את מזהה הסרטון ומפעיל אותו. */
     private fun handleDeepLink(intent: android.content.Intent?) {
         val url = intent?.data?.toString() ?: return
@@ -122,6 +144,12 @@ class MainActivity : ComponentActivity() {
 /** מזהה סרטון שהגיע מקישור יוטיוב חיצוני — נצרך פעם אחת ב-AppRoot. */
 object DeepLink {
     var pendingVideoId by mutableStateOf<String?>(null)
+}
+
+/** מצב חלון צף (Picture-in-Picture). canPip נקבע ע"י מסך הנגן כשמוצג וידאו. */
+object PipState {
+    var canPip = false
+    var inPip by mutableStateOf(false)
 }
 
 @Composable
