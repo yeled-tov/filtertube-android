@@ -97,15 +97,19 @@ object StreamRepository {
             videoOnly.map { StreamTrack(it.height, "${it.height}p", it.content, audioBest.content) }
         } else emptyList()
 
-        val tracks = (muxedTracks + dashTracks)
+        val vodTracks = (muxedTracks + dashTracks)
             .distinctBy { it.height }          // muxed מקבל עדיפות (מופיע ראשון)
             .sortedByDescending { it.height }
 
+        // שידור חי: NewPipe מספק HLS manifest (m3u8) במקום זרמים מתקדמים
+        val hls = runCatching { extractor.hlsUrl }.getOrNull()
+        val live = vodTracks.isEmpty() && !hls.isNullOrEmpty()
+        val tracks = if (live) listOf(StreamTrack(0, "שידור חי", hls!!, null)) else vodTracks
+
         if (tracks.isEmpty()) throw IllegalStateException("לא נמצא video stream")
 
-        // להורדה — זרם משולב הגבוה ביותר (כך הקובץ כולל קול)
-        val bestMuxed = muxed.maxByOrNull { it.height }?.content
-            ?: tracks.first().videoUrl
+        // להורדה — זרם משולב הגבוה ביותר (כך הקובץ כולל קול); בשידור חי — ה-HLS
+        val bestMuxed = if (live) hls!! else (muxed.maxByOrNull { it.height }?.content ?: tracks.first().videoUrl)
 
         val channelId = extractChannelId(runCatching { extractor.uploaderUrl }.getOrNull()) ?: ""
 

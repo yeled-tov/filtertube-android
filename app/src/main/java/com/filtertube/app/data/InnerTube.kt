@@ -201,11 +201,18 @@ object InnerTube {
 
         val au = bestAudioUrl
         val dashTracks = if (au != null) videoOnly.map { StreamTrack(it.first, "${it.first}p", it.second, au) } else emptyList()
-        val tracks = (muxedTracks + dashTracks).distinctBy { it.height }.sortedByDescending { it.height }
-        if (tracks.isEmpty()) return@withContext null
+        val vodTracks = (muxedTracks + dashTracks).distinctBy { it.height }.sortedByDescending { it.height }
 
         val vd = json.optJSONObject("videoDetails")
-        val bestMuxed = muxedTracks.maxByOrNull { it.height }?.videoUrl ?: tracks.first().videoUrl
+        val isLive = vd?.optBoolean("isLive") == true || vd?.optBoolean("isLiveContent") == true
+        val hls = sd.optString("hlsManifestUrl")
+        // שידור חי: אין זרמים מתקדמים — מנגנים את ה-HLS manifest (m3u8) ישירות
+        val tracks = if (vodTracks.isEmpty() && hls.isNotEmpty())
+            listOf(StreamTrack(0, "שידור חי", hls, null)) else vodTracks
+        if (tracks.isEmpty()) return@withContext null
+
+        val bestMuxed = if (isLive && hls.isNotEmpty()) hls
+            else muxedTracks.maxByOrNull { it.height }?.videoUrl ?: tracks.first().videoUrl
         // הסרטונים הקשורים נטענים בנפרד ב-Playback אחרי שהניגון כבר התחיל — לא כאן.
         // קריאת רשת ל-related כאן הייתה מעכבת את הופעת הסרטון על המסך ב-round-trip שלם.
         val related = emptyList<Video>()
@@ -219,7 +226,7 @@ object InnerTube {
             description = vd?.optString("shortDescription"),
             thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
             tracks = tracks,
-            bestAudioUrl = au,
+            bestAudioUrl = if (isLive) null else au,
             bestVideoUrl = bestMuxed,
             related = related,
             // חובה לנגן את הזרם ב-UA של אותו לקוח (IOS/VR) שביקש אותו, אחרת ה-CDN חותך.

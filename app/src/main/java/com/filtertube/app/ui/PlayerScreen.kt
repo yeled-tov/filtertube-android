@@ -701,8 +701,9 @@ private fun DownloadDialog(context: Context, data: StreamData, videoId: String, 
                 }
                 HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
                 Text("וידאו (כולל קול)", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                // מציגים רק זרמים משולבים (muxed) שכוללים קול — בלי איכויות אילמות.
-                val withSound = data.tracks.filter { it.audioUrl == null }
+                // מציגים רק זרמים משולבים (muxed) שכוללים קול — בלי איכויות אילמות
+                // ובלי שידור חי (height==0, לא ניתן להורדה).
+                val withSound = data.tracks.filter { it.audioUrl == null && it.height > 0 }
                 if (withSound.isEmpty()) {
                     Text("לא זמין להורדה עם קול", color = ThemeState.subtext, fontSize = 12.sp)
                 } else {
