@@ -1,0 +1,15 @@
+{
+  "_comment": "קונפיג ענן ל-FilterTube. כשיוטיוב משתנה והנגן מפסיק לעבוד — עדכן כאן את גרסאות הלקוח / ה-User-Agent ושמור. כל הטלפונים יתעדכנו בהפעלה הבאה, בלי בנייה חדשה ובלי עדכון אפליקציה.",
+  "innertube": {
+    "ios": {
+      "clientVersion": "19.45.4",
+      "userAgent": "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X;)",
+      "deviceModel": "iPhone16,2",
+      "osVersion": "18.1.0.22B83"
+    },
+    "vr": {
+      "clientVersion": "1.60.19",
+      "userAgent": "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip"
+    }
+  }
+}

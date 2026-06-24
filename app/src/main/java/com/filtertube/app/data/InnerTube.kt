@@ -120,22 +120,31 @@ object InnerTube {
         }
     }
 
-    private const val IOS_UA = "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X;)"
-    private const val VR_UA = "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip"
+    // ערכי ברירת מחדל מוטמעים — נעשה בהם שימוש אם RemoteConfig (הענן) לא נטען.
+    private const val DEF_IOS_UA = "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X;)"
+    private const val DEF_VR_UA = "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip"
+    private const val DEF_IOS_VER = "19.45.4"
+    private const val DEF_IOS_MODEL = "iPhone16,2"
+    private const val DEF_IOS_OS = "18.1.0.22B83"
+    private const val DEF_VR_VER = "1.60.19"
+
+    // ה-UA בפועל — מהענן אם קיים, אחרת ברירת המחדל. עדכון יוטיוב = עריכת JSON ב-GitHub.
+    private val IOS_UA get() = RemoteConfig.iosUserAgent(DEF_IOS_UA)
+    private val VR_UA get() = RemoteConfig.vrUserAgent(DEF_VR_UA)
 
     private fun iosClient(): JSONObject = JSONObject().apply {
         put("clientName", "IOS")
-        put("clientVersion", "19.45.4")
+        put("clientVersion", RemoteConfig.iosVersion(DEF_IOS_VER))
         put("deviceMake", "Apple")
-        put("deviceModel", "iPhone16,2")
+        put("deviceModel", RemoteConfig.iosDeviceModel(DEF_IOS_MODEL))
         put("osName", "iPhone")
-        put("osVersion", "18.1.0.22B83")
+        put("osVersion", RemoteConfig.iosOsVersion(DEF_IOS_OS))
         put("hl", "he"); put("gl", "IL")
     }
 
     private fun vrClient(): JSONObject = JSONObject().apply {
         put("clientName", "ANDROID_VR")
-        put("clientVersion", "1.60.19")
+        put("clientVersion", RemoteConfig.vrVersion(DEF_VR_VER))
         put("deviceMake", "Oculus")
         put("deviceModel", "Quest 3")
         put("osName", "Android")
