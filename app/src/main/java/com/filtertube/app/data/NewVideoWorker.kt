@@ -5,7 +5,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
@@ -22,9 +21,15 @@ class NewVideoWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         val settings = SettingsStore(ctx)
         if (!settings.newVideoNotifications) return Result.success()
 
-        val channels = runCatching {
+        val store = LibraryStore(ctx)
+        val all = runCatching {
             ChannelsRepository.getChannels(ctx).forLevel(settings.filterLevel)
         }.getOrNull().orEmpty()
+        if (all.isEmpty()) return Result.success()
+
+        // אם יש מנויים — מצמצמים אליהם בלבד; אחרת כל הערוצים המאושרים
+        val subs = store.localSubscriptions()
+        val channels = if (subs.isEmpty()) all else all.filter { it.youtubeChannelId in subs }
         if (channels.isEmpty()) return Result.success()
 
         val videos = runCatching { YouTubeRepository.fetchAllChannelsFeed(channels) }.getOrNull().orEmpty()
@@ -40,6 +45,7 @@ class NewVideoWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         prefs.edit().putStringSet(KEY_SEEN, capped).apply()
 
         if (firstRun || fresh.isEmpty()) return Result.success()   // אין התראות בריצה הראשונה
+        store.addNewVideos(fresh)   // מזין את מסך "סרטונים חדשים"
         notifyNew(ctx, fresh)
         return Result.success()
     }
@@ -50,18 +56,18 @@ class NewVideoWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
 
         val title: String
         val text: String
-        val deepLinkId: String?
         if (fresh.size == 1) {
             val v = fresh.first()
-            title = "סרטון חדש: ${v.channelName}"; text = v.title; deepLinkId = v.id
+            title = "סרטון חדש: ${v.channelName}"; text = v.title
         } else {
             title = "${fresh.size} סרטונים חדשים בערוצים שלך"
-            text = fresh.take(3).joinToString(" · ") { it.channelName }; deepLinkId = null
+            text = fresh.take(3).joinToString(" · ") { it.channelName }
         }
 
+        // לחיצה על ההתראה פותחת את מסך "סרטונים חדשים"
         val intent = Intent(ctx, com.filtertube.app.MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
-            if (deepLinkId != null) data = Uri.parse("https://www.youtube.com/watch?v=$deepLinkId")
+            putExtra("ft_open_inbox", true)
         }
         val pi = PendingIntent.getActivity(
             ctx, 0, intent,

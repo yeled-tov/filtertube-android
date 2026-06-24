@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -54,6 +55,7 @@ fun HomeScreen(
     onSearch: () -> Unit,
     onSettings: () -> Unit = {},
     onAccount: () -> Unit = {},
+    onInbox: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -65,6 +67,7 @@ fun HomeScreen(
     var showAbout by remember { mutableStateOf(false) }
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
+    val newCount = remember { store.newVideos().size }   // מספר הסרטונים החדשים לתג הפעמון
 
     if (showAbout) {
         AlertDialog(
@@ -127,6 +130,19 @@ fun HomeScreen(
                         .clickable { showMenu = true },
                     contentAlignment = Alignment.Center,
                 ) { Icon(Icons.Default.Person, "תפריט", tint = Color.White, modifier = Modifier.size(20.dp)) }
+                Spacer(Modifier.width(10.dp))
+                // פעמון "סרטונים חדשים" עם נקודה אדומה אם יש חדשים
+                Box(
+                    modifier = Modifier.size(36.dp).clip(RoundedCornerShape(50))
+                        .background(ThemeState.surface).clickable { onInbox() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Default.Notifications, "סרטונים חדשים", tint = ThemeState.text, modifier = Modifier.size(20.dp))
+                    if (newCount > 0) {
+                        Box(modifier = Modifier.align(Alignment.TopEnd).padding(2.dp).size(9.dp)
+                            .clip(RoundedCornerShape(50)).background(Color(0xFFFF3B30)))
+                    }
+                }
                 Spacer(Modifier.weight(1f))
             }
             // טאבים של קטגוריות (כמו ביוטיוב) — לחיצה מסננת את הפיד לפי תחום

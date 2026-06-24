@@ -106,6 +106,7 @@ class MainActivity : ComponentActivity() {
 
     /** קולט קישור יוטיוב שנפתח דרך האפליקציה — מחלץ את מזהה הסרטון ומפעיל אותו. */
     private fun handleDeepLink(intent: android.content.Intent?) {
+        if (intent?.getBooleanExtra("ft_open_inbox", false) == true) { InboxNav.pending = true; return }
         val url = intent?.data?.toString() ?: return
         val id = extractYouTubeId(url) ?: return
         DeepLink.pendingVideoId = id
@@ -152,6 +153,11 @@ object PipState {
     var inPip by mutableStateOf(false)
 }
 
+/** בקשה לפתוח את מסך "סרטונים חדשים" (מלחיצה על ההתראה). */
+object InboxNav {
+    var pending by mutableStateOf(false)
+}
+
 @Composable
 fun AppRoot() {
     val navController = rememberNavController()
@@ -195,6 +201,11 @@ fun AppRoot() {
         openVideo(Video(id, "", "", "", "https://i.ytimg.com/vi/$id/hqdefault.jpg", System.currentTimeMillis()))
     }
 
+    // לחיצה על התראת "סרטונים חדשים" — פותחת את מסך התיבה
+    LaunchedEffect(InboxNav.pending) {
+        if (InboxNav.pending) { InboxNav.pending = false; navController.navigate("newvideos") }
+    }
+
     // סרגל ניווט תחתון — כולל חיפוש (לבקשת המשתמש: כפתור החיפוש למטה)
     val navItems = buildList {
         add(GlassNavItem("home", "בית", Icons.Default.Home))
@@ -225,6 +236,7 @@ fun AppRoot() {
                     onSearch = { navController.navigate("search") },
                     onSettings = { navController.navigate("settings") },
                     onAccount = { navController.navigate("ytlogin") },
+                    onInbox = { navController.navigate("newvideos") },
                 )
             }
             composable("shorts") { ShortsScreen(onOpenShort = { navController.navigate("shortsPlayer") }, onSearch = { navController.navigate("search") }) }
@@ -251,6 +263,9 @@ fun AppRoot() {
             }
             composable("diag") {
                 DiagnosticsScreen(onBack = { navController.popBackStack() })
+            }
+            composable("newvideos") {
+                NewVideosScreen(onVideoClick = ::openVideo, onBack = { navController.popBackStack() })
             }
             composable("library") {
                 LibraryScreen(

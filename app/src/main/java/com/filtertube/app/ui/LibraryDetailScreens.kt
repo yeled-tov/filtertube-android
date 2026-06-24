@@ -148,8 +148,30 @@ fun ChannelVideosScreen(
             HomeState.Error(e.message ?: "שגיאה בטעינה")
         }
     }
+    val context = LocalContext.current
+    val store = remember { LibraryStore(context) }
+    var subscribed by remember { mutableStateOf(store.isSubscribed(channelId)) }
+
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar(channelName, onBack)
+        // עקוב — קובע אם תקבל התראות על סרטונים חדשים מהערוץ הזה
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Button(
+                onClick = { subscribed = store.toggleSubscription(channelId) },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (subscribed) ThemeState.surface else ThemeState.accent,
+                ),
+            ) { Text(if (subscribed) "עוקב ✓" else "עקוב", color = if (subscribed) ThemeState.text else Color.White) }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                if (subscribed) "תקבל התראות על סרטונים חדשים" else "עקוב כדי לקבל התראות וסרטונים חדשים",
+                color = ThemeState.subtext, fontSize = 12.sp,
+            )
+        }
+        HorizontalDivider(color = ThemeState.divider)
         when (val s = state) {
             is HomeState.Loading -> CenteredLoading("טוען סרטונים...")
             is HomeState.Error -> CenteredError(s.message) { retry++ }

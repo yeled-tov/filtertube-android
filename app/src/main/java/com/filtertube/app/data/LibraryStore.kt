@@ -98,6 +98,30 @@ class LibraryStore(context: Context) {
     }
     fun clearLocalHistory() = saveVideos(KEY_LOCAL_HISTORY, emptyList())
 
+    // ── מנויים מקומיים (עקוב אחרי ערוץ) ──────────────────────────────────
+    // קובע על מה מקבלים התראות ומה מופיע ב"סרטונים חדשים". ריק = כל הערוצים המאושרים.
+    fun localSubscriptions(): Set<String> =
+        prefs.getStringSet(KEY_LOCAL_SUBS, emptySet())?.toSet() ?: emptySet()
+    fun isSubscribed(channelId: String): Boolean = channelId in localSubscriptions()
+    fun toggleSubscription(channelId: String): Boolean {
+        if (channelId.isBlank()) return false
+        val cur = localSubscriptions().toMutableSet()
+        val added = if (channelId in cur) { cur.remove(channelId); false } else { cur.add(channelId); true }
+        prefs.edit().putStringSet(KEY_LOCAL_SUBS, cur).apply()
+        return added
+    }
+
+    // ── "סרטונים חדשים" (תיבת נכנס שמוזנת ע"י בדיקת הרקע) ─────────────────
+    fun newVideos(): List<Video> = videos(KEY_NEW_VIDEOS)
+    fun addNewVideos(list: List<Video>) {
+        if (list.isEmpty()) return
+        val cur = videos(KEY_NEW_VIDEOS).toMutableList()
+        list.asReversed().forEach { v -> cur.removeAll { it.id == v.id }; cur.add(0, v) }
+        while (cur.size > 50) cur.removeAt(cur.lastIndex)
+        saveVideos(KEY_NEW_VIDEOS, cur)
+    }
+    fun clearNewVideos() = saveVideos(KEY_NEW_VIDEOS, emptyList())
+
     companion object {
         private const val KEY_LIKES = "likes"
         private const val KEY_DOWNLOADS = "downloads"
@@ -108,5 +132,7 @@ class LibraryStore(context: Context) {
         private const val KEY_RECS = "youtube_recommendations"
         private const val KEY_LOCAL_HISTORY = "local_history"
         private const val HISTORY_CAP = 200
+        private const val KEY_LOCAL_SUBS = "local_subscriptions"
+        private const val KEY_NEW_VIDEOS = "new_videos_inbox"
     }
 }
