@@ -1,0 +1,24 @@
+== אבחון ==
+14:07:43  InnerTube: VR+IOS נכשלו → NewPipe
+14:07:42  InnerTube: VR+IOS נכשלו → NewPipe
+14:07:42  InnerTube: VR+IOS נכשלו → NewPipe
+14:07:35  טעינה 7mcxgsK4aX8: NewPipe 3498ms · 8 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+14:07:33  InnerTube: VR+IOS נכשלו → NewPipe
+14:06:00  ⚠ עצירה 4702ms בשנייה 43
+14:05:16  InnerTube: VR+IOS נכשלו → NewPipe
+14:05:16  InnerTube: VR+IOS נכשלו → NewPipe
+14:05:16  InnerTube: VR+IOS נכשלו → NewPipe
+14:05:08  טעינה E6KZSHVh3_g: NewPipe 3351ms · 4 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+14:05:05  InnerTube: VR+IOS נכשלו → NewPipe
+14:04:30  ⚠ עצירה 15127ms בשנייה 76
+14:04:00  ⚠ עצירה 4058ms בשנייה 61
+14:03:01  InnerTube: VR+IOS נכשלו → NewPipe
+14:03:01  InnerTube: VR+IOS נכשלו → NewPipe
+14:03:00  InnerTube: VR+IOS נכשלו → NewPipe
+14:02:53  טעינה RUyFaY49RQo: NewPipe 1984ms · 7 איכויות (1 muxed), ברירת מחדל 288p [muxed]
+14:02:51  InnerTube: VR+IOS נכשלו → NewPipe
+13:59:37  InnerTube: VR+IOS נכשלו → NewPipe
+13:59:36  InnerTube: VR+IOS נכשלו → NewPipe
+13:59:36  InnerTube: VR+IOS נכשלו → NewPipe
+13:59:29  טעינה k-l4lDw6O6A: NewPipe 3044ms · 6 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+13:59:26  InnerTube: VR+IOS נכשלו → NewPipe
