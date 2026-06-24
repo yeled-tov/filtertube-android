@@ -42,13 +42,36 @@ sealed class HomeState {
 }
 
 @Composable
-fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit, onSettings: () -> Unit = {}) {
+fun HomeScreen(
+    onVideoClick: (Video) -> Unit,
+    onSearch: () -> Unit,
+    onSettings: () -> Unit = {},
+    onAccount: () -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settings = remember { SettingsStore(context) }
     var state by remember { mutableStateOf<HomeState>(HomeState.Loading) }
     var refreshing by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
+
+    if (showAbout) {
+        AlertDialog(
+            onDismissRequest = { showAbout = false },
+            confirmButton = { TextButton(onClick = { showAbout = false }) { Text("סגור") } },
+            title = { Text("FilterTube") },
+            text = {
+                Text(
+                    "פלטפורמת וידאו מסוננת — מציגה אך ורק ערוצים מאושרים. " +
+                        "כל התוכן מסונן לפי רמת הסינון שנבחרה.\n\nגרסה ${com.filtertube.app.BuildConfig.VERSION_NAME}",
+                    color = ThemeState.subtext2, fontSize = 13.sp, lineHeight = 18.sp,
+                )
+            },
+            containerColor = ThemeState.surface,
+            titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
+        )
+    }
 
     fun refresh(showSpinner: Boolean) {
         if (showSpinner) state = HomeState.Loading
@@ -87,11 +110,11 @@ fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit, onSettings: 
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    modifier = Modifier.size(40.dp).clip(RoundedCornerShape(50))
+                    modifier = Modifier.size(36.dp).clip(RoundedCornerShape(50))
                         .background(Brush.linearGradient(listOf(ThemeState.accent, Color(0xFFFF6A5C))))
                         .clickable { showMenu = true },
                     contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Default.Person, "תפריט", tint = Color.White, modifier = Modifier.size(22.dp)) }
+                ) { Icon(Icons.Default.Person, "תפריט", tint = Color.White, modifier = Modifier.size(20.dp)) }
                 Spacer(Modifier.weight(1f))
             }
             if (refreshing && state is HomeState.Success) {
@@ -130,10 +153,15 @@ fun HomeScreen(onVideoClick: (Video) -> Unit, onSearch: () -> Unit, onSettings: 
             ) {
                 Text("FilterTube", color = ThemeState.subtext, fontSize = 12.sp,
                     modifier = Modifier.padding(start = 22.dp, top = 8.dp, bottom = 6.dp))
-                listOf("הגדרות", "חיבור חשבון Google", "אודות").forEach { label ->
+                val menuItems = listOf<Pair<String, () -> Unit>>(
+                    "הגדרות" to { showMenu = false; onSettings() },
+                    "חיבור חשבון Google" to { showMenu = false; onAccount() },
+                    "אודות" to { showMenu = false; showAbout = true },
+                )
+                menuItems.forEach { (label, action) ->
                     Text(label, color = ThemeState.text, fontSize = 16.sp,
                         modifier = Modifier.fillMaxWidth()
-                            .clickable { showMenu = false; onSettings() }
+                            .clickable { action() }
                             .padding(horizontal = 22.dp, vertical = 15.dp))
                 }
             }

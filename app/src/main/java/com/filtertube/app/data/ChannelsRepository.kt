@@ -47,7 +47,9 @@ object ChannelsRepository {
     }
 
     private suspend fun fetchFromGithub(): List<Channel> = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(GITHUB_RAW).build()
+        // חותמת-זמן עוקפת את מטמון ה-CDN של GitHub raw (~5 דק') כדי לקבל עדכוני ערוצים
+        // מפאנל הניהול כמעט מיד — בשתי האפליקציות (אותו URL בדיוק).
+        val request = Request.Builder().url("$GITHUB_RAW?t=${System.currentTimeMillis()}").build()
         httpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return@use emptyList()
             val body = response.body?.string() ?: return@use emptyList()

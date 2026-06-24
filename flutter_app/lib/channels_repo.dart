@@ -44,8 +44,10 @@ class ChannelsRepo {
       _parse(cached, level);
     }
     try {
+      // חותמת-זמן עוקפת את מטמון ה-CDN של GitHub raw (~5 דק') — כך עדכון ערוצים
+      // מפאנל הניהול מופיע כאן כמעט מיד, בדיוק כמו באפליקציה הרגילה (אותו URL).
       final resp = await http
-          .get(Uri.parse(_rawUrl))
+          .get(Uri.parse('$_rawUrl?t=${DateTime.now().millisecondsSinceEpoch}'))
           .timeout(const Duration(seconds: 15));
       if (resp.statusCode == 200) {
         await prefs.setString(_prefsKey, resp.body);

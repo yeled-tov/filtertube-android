@@ -21,7 +21,7 @@ object Playback {
 
     const val EXTRA_IS_AUDIO = "filtertube_is_audio"
     private const val CACHE_CAP = 40
-    private const val RADIO_SIZE = 5
+    private const val RADIO_SIZE = 3
 
     private val dataCache = LinkedHashMap<String, StreamData>()
 
@@ -44,7 +44,12 @@ object Playback {
         val idx = if (preferred > 0) {
             data.tracks.indexOfFirst { it.height in 1..preferred }.takeIf { it >= 0 } ?: data.tracks.lastIndex
         } else {
-            data.tracks.indexOfFirst { it.height in 1..720 }.takeIf { it >= 0 } ?: 0
+            // אוטומטי: מעדיפים זרם משולב (muxed, audioUrl==null) — קובץ יחיד שמתחיל מהר
+            // ויציב, בלי מיזוג DASH של וידאו+אודיו נפרדים שעלול להיתקע באמצע. אם אין
+            // muxed — הגבוה ביותר עד 720p. המשתמש יכול להעלות איכות ידנית בתפריט הנגן.
+            data.tracks.indexOfFirst { it.audioUrl == null }.takeIf { it >= 0 }
+                ?: data.tracks.indexOfFirst { it.height in 1..720 }.takeIf { it >= 0 }
+                ?: 0
         }
         return idx.coerceIn(0, data.tracks.lastIndex)
     }
@@ -102,9 +107,9 @@ object Playback {
         c.prepare()
         c.play()
 
-        // תן לסרטון הנוכחי "ראש" משמעותי לבנות buffer לפני שמתחילים עבודת רקע כבדה,
-        // אחרת חילוץ התור גוזל רוחב פס והניגון נתקע אחרי כמה שניות.
-        kotlinx.coroutines.delay(2500)
+        // תן לסרטון הנוכחי "ראש" גדול (6ש') לבנות buffer לפני שמתחילים עבודת רקע,
+        // אחרת חילוץ התור גוזל רוחב פס והניגון נתקע אחרי כמה שניות (התסמין שדווח).
+        kotlinx.coroutines.delay(6000)
 
         // תור רדיו אוטומטי. את הסרטונים הקשורים טוענים *כאן* (אחרי שהניגון כבר התחיל)
         // ולא בתוך getStream — כך קריאת הרשת ל-related לא מעכבת את הופעת הסרטון על המסך.
@@ -121,14 +126,14 @@ object Playback {
             .distinctBy { it.id }
             .filter { it.id != video.id }
             .take(RADIO_SIZE)
-        // פותרים את פריטי התור *אחד-אחד* (לא 8 במקביל) — כך חילוץ הרקע לא חונק את
-        // רוחב הפס של הסרטון המתנגן. כל פריט שמתפענח מתווסף מיד לתור.
+        // פותרים את פריטי התור *אחד-אחד* ובחילוץ *קל* (InnerTube בלבד, בלי NewPipe
+        // שכרוך בפענוח JS כבד) — כך עבודת הרקע כמעט ולא חונקת את רוחב הפס של הניגון.
         for (v in queue) {
-            val d = runCatching { StreamRepository.getStream(v.id) }.getOrNull() ?: continue
+            val d = runCatching { com.filtertube.app.data.InnerTube.player(v.id) }.getOrNull() ?: continue
             cache(v.id, d)
             val a = forcedAudio(catById[d.channelId] ?: catById[v.channelId], level)
             c.addMediaItem(buildItem(d, v.id, a, defaultQuality(d, preferred)))
-            kotlinx.coroutines.delay(500)   // נשימה קצרה בין חילוצים, לשמור רוחב פס לניגון
+            kotlinx.coroutines.delay(1500)   // נשימה בין חילוצים, לשמור רוחב פס לניגון
         }
     }
 }

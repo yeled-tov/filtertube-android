@@ -191,7 +191,14 @@ fun AppRoot() {
             startDestination = "home",
             modifier = Modifier.fillMaxSize(),
         ) {
-            composable("home") { HomeScreen(onVideoClick = ::openVideo, onSearch = { navController.navigate("search") }, onSettings = { navController.navigate("settings") }) }
+            composable("home") {
+                HomeScreen(
+                    onVideoClick = ::openVideo,
+                    onSearch = { navController.navigate("search") },
+                    onSettings = { navController.navigate("settings") },
+                    onAccount = { navController.navigate("ytlogin") },
+                )
+            }
             composable("shorts") { ShortsScreen(onOpenShort = { navController.navigate("shortsPlayer") }, onSearch = { navController.navigate("search") }) }
             composable("shortsPlayer") { ShortsPlayerScreen(onBack = { navController.popBackStack() }) }
             composable("search") { SearchScreen(onVideoClick = ::openVideo) }
