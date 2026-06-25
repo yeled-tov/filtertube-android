@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -183,8 +184,9 @@ fun PlayerScreen(
         controller.playWhenReady = pw
     }
 
-    // עיצוב 2 — בקרים על הוידאו + "הבא בתור" מתחת
-    if (!isFullscreen && settings.playerStyle == 2 && !audioMode) {
+    // עיצוב 2 — בקרים על הוידאו + "הבא בתור" מתחת. גם במצב אודיו נשארים כאן
+    // (מציגים תמונת הסרטון במקום הוידאו) — בלי לקפוץ למסך נגן נפרד.
+    if (!isFullscreen && settings.playerStyle == 2) {
         OnVideoPlayerScreen(
             controller = controller, ui = ui, activity = activity,
             onCollapse = onCollapse, onFullscreen = { isFullscreen = true },
@@ -818,6 +820,21 @@ private fun GlassCircle(size: Dp, onClick: () -> Unit, content: @Composable () -
     )
 }
 
+/** כפתור-גלולה לפעולות מתחת לסרטון (עקוב/הורדה/אודיו/חלון צף). */
+@Composable
+private fun ActionPill(label: String, icon: ImageVector, active: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Row(
+        modifier = modifier.clip(RoundedCornerShape(12.dp))
+            .then(if (active) Modifier.background(brandBrush()) else Modifier.background(ThemeState.card))
+            .clickable(onClick = onClick).padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = if (active) Color.White else ThemeState.text, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(5.dp))
+        Text(label, color = if (active) Color.White else ThemeState.text, fontSize = 11.5f.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+}
+
 // ---------------------------------------------------------------------------
 //  1) הנגן עם בקרים צפים מעל הוידאו
 // ---------------------------------------------------------------------------
@@ -870,11 +887,37 @@ private fun OnVideoPlayerScreen(
         if (controlsVisible && ui.isPlaying) { kotlinx.coroutines.delay(3000); controlsVisible = false }
     }
 
+    // קטגוריית הערוץ → האם חובה אודיו (דתי לייט תמיד אודיו; מוזיקה ברמה מחמירה).
+    // אם כן — אי-אפשר לעבור לוידאו גם אם לוחצים "הצג וידאו".
+    var forcedAudio by remember(ui.mediaId, currentData?.channelId) { mutableStateOf(false) }
+    LaunchedEffect(ui.mediaId, currentData?.channelId) {
+        val cid = currentData?.channelId
+        forcedAudio = if (cid.isNullOrBlank()) false else {
+            val cat = runCatching {
+                com.filtertube.app.data.ChannelsRepository.getChannels(context)
+                    .firstOrNull { it.youtubeChannelId == cid }?.category
+            }.getOrNull()
+            Playback.forcedAudio(cat, sb.filterLevel)
+        }
+    }
+    fun setAudio(audio: Boolean) = replaceCurrent(if (forcedAudio) true else audio, qualityIndex)
+    var subscribed by remember(currentData?.channelId) {
+        mutableStateOf(currentData?.channelId?.let { store.isSubscribed(it) } ?: false)
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
 
-        // ---- אזור הוידאו עם הבקרים הצפים ----
+        // ---- אזור הוידאו (או תמונת הסרטון במצב אודיו) עם הבקרים הצפים ----
         Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
-            VideoSurface(controller)
+            if (audioMode) {
+                ui.artworkUri?.let {
+                    AsyncImage(model = it, contentDescription = null,
+                        modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                }
+                Box(Modifier.fillMaxSize().background(Color(0x55000000)))
+            } else {
+                VideoSurface(controller)
+            }
             VideoGestures(controller, activity, audioMode = false,
                 onSingleTap = { controlsVisible = !controlsVisible }, onSwipeDown = onCollapse)
             if (ui.buffering) CircularProgressIndicator(color = ThemeState.accent, modifier = Modifier.align(Alignment.Center))
@@ -944,7 +987,10 @@ private fun OnVideoPlayerScreen(
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Row(modifier = Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(modifier = Modifier.clip(RoundedCornerShape(50)).clickable { replaceCurrent(!audioMode, qualityIndex) }.padding(4.dp)) {
+                            Box(modifier = Modifier.clip(RoundedCornerShape(50)).clickable {
+                                if (forcedAudio) Toast.makeText(context, "תוכן זה זמין באודיו בלבד", Toast.LENGTH_SHORT).show()
+                                else setAudio(!audioMode)
+                            }.padding(4.dp)) {
                                 Icon(Icons.Default.GraphicEq, "אודיו", tint = if (audioMode) ThemeState.accent else Color.White, modifier = Modifier.size(19.dp))
                             }
                             Spacer(Modifier.width(10.dp))
@@ -980,6 +1026,35 @@ private fun OnVideoPlayerScreen(
             IconButton(onClick = { showSheet = true }) { Icon(Icons.Default.Tune, "הגדרות נגן", tint = ThemeState.text) }
         }
 
+        // ---- פעולות מתחת לסרטון: עקוב · הורדה · אודיו/וידאו · חלון צף ----
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp).padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ActionPill(if (subscribed) "עוקב ✓" else "עקוב", Icons.Default.Person, subscribed, Modifier.weight(1f)) {
+                val cid = currentData?.channelId
+                if (!cid.isNullOrBlank()) subscribed = store.toggleSubscription(cid)
+                else Toast.makeText(context, "לא ניתן לזהות את הערוץ", Toast.LENGTH_SHORT).show()
+            }
+            ActionPill("הורדה", Icons.Default.Download, false, Modifier.weight(1f)) { showDownload = true }
+            ActionPill(if (audioMode) "וידאו" else "אודיו", Icons.Default.GraphicEq, audioMode, Modifier.weight(1f)) {
+                if (forcedAudio) Toast.makeText(context, "תוכן זה זמין באודיו בלבד", Toast.LENGTH_SHORT).show()
+                else setAudio(!audioMode)
+            }
+            if (!audioMode) {
+                ActionPill("חלון צף", Icons.Default.PictureInPictureAlt, false, Modifier.weight(1f)) {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && activity != null) {
+                        runCatching {
+                            activity.enterPictureInPictureMode(
+                                android.app.PictureInPictureParams.Builder()
+                                    .setAspectRatio(android.util.Rational(16, 9)).build(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         QueueList(controller, ui, Modifier.weight(1f).fillMaxWidth())
     }
 
@@ -990,7 +1065,7 @@ private fun OnVideoPlayerScreen(
         tracks = currentData?.tracks ?: emptyList(),
         currentQuality = qualityIndex, audioMode = audioMode, speed = speed, sleepMin = sleepMin,
         onSelectQuality = { qualityIndex = it; replaceCurrent(audioMode, it) },
-        onToggleAudio = { replaceCurrent(!audioMode, qualityIndex) },
+        onToggleAudio = { setAudio(!audioMode) },
         onSetSpeed = { speed = it; controller.setPlaybackSpeed(it) },
         onSetSleep = { setSleep(it) },
         onAddToPlaylist = { showSheet = false; showAddToPlaylist = true },

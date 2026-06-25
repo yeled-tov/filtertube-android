@@ -95,13 +95,13 @@ fun SettingsScreen(
             "התראה על סרטון חדש בערוץ מאושר") { showNotify = true }
         SettingsRow(Icons.Default.SystemUpdate, Color(0xFFA855F7), "עדכונים",
             "בדוק והורד גרסה חדשה") { showUpdate = true }
-        SettingsRow(Icons.Default.Speed, Color(0xFF00BFA5), "אבחון מהירות/עצירות",
-            "מה איטי או נתקע בניגון — ושליחה אליי") { onOpenDiag() }
         SettingsRow(Icons.Default.Info, ThemeState.subtext2, "אודות",
             "FilterTube — רק ערוצים מאושרים") { showAbout = true }
 
-        // מופיע רק אחרי 7 לחיצות על "אודות" → גרסה (חשיפת מצב ניהול)
+        // מופיעים רק אחרי 7 לחיצות על "אודות" → גרסה (חשיפת מצב ניהול)
         if (adminUnlocked) {
+            SettingsRow(Icons.Default.Speed, Color(0xFF00BFA5), "אבחון מהירות/עצירות",
+                "מה איטי או נתקע בניגון — ושליחה אליי") { onOpenDiag() }
             SettingsRow(Icons.Default.AdminPanelSettings, Color(0xFFFFAA00), "ניהול ערוצים",
                 "הוספה/הסרה של ערוצים מהרשימה הלבנה") { onOpenAdmin() }
         }
