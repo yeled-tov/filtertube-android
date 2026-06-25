@@ -81,6 +81,21 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_NOTIFY, true)
         set(value) = prefs.edit().putBoolean(KEY_NOTIFY, value).apply()
 
+    /** כמה הורדות לרוץ במקביל (1–4). */
+    var concurrentDownloads: Int
+        get() = prefs.getInt(KEY_DL_CONCURRENT, 3).coerceIn(1, 4)
+        set(value) = prefs.edit().putInt(KEY_DL_CONCURRENT, value.coerceIn(1, 4)).apply()
+
+    /** כמה חיבורים מקביליים לכל קובץ (1–8) — מאיץ הורדה שנחנקת ע"י ה-CDN. */
+    var connectionsPerDownload: Int
+        get() = prefs.getInt(KEY_DL_CONNECTIONS, 4).coerceIn(1, 8)
+        set(value) = prefs.edit().putInt(KEY_DL_CONNECTIONS, value.coerceIn(1, 8)).apply()
+
+    /** הורדה אוטומטית של כל סרטון ש"אהבתי". */
+    var autoDownloadLikes: Boolean
+        get() = prefs.getBoolean(KEY_DL_AUTO_LIKES, false)
+        set(value) = prefs.edit().putBoolean(KEY_DL_AUTO_LIKES, value).apply()
+
     // ── היסטוריית חיפוש ──────────────────────────────────────────────────
     fun getSearchHistory(): List<String> {
         val raw = prefs.getString(KEY_HISTORY, "") ?: ""
@@ -121,5 +136,8 @@ class SettingsStore(context: Context) {
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_ADMIN_UNLOCKED = "admin_unlocked"
         private const val KEY_NOTIFY = "new_video_notifications"
+        private const val KEY_DL_CONCURRENT = "dl_concurrent"
+        private const val KEY_DL_CONNECTIONS = "dl_connections"
+        private const val KEY_DL_AUTO_LIKES = "dl_auto_likes"
     }
 }

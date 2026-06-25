@@ -21,7 +21,7 @@ object Playback {
 
     const val EXTRA_IS_AUDIO = "filtertube_is_audio"
     private const val CACHE_CAP = 40
-    private const val RADIO_SIZE = 3
+    private const val RADIO_SIZE = 6
 
     private val dataCache = LinkedHashMap<String, StreamData>()
 
@@ -124,29 +124,33 @@ object Playback {
         // אחרת חילוץ התור גוזל רוחב פס והניגון נתקע אחרי כמה שניות (התסמין שדווח).
         kotlinx.coroutines.delay(6000)
 
-        // תור רדיו אוטומטי. את הסרטונים הקשורים טוענים *כאן* (אחרי שהניגון כבר התחיל)
-        // ולא בתוך getStream — כך קריאת הרשת ל-related לא מעכבת את הופעת הסרטון על המסך.
-        // הקשורים של יוטיוב לרוב גלובליים ולא ברשימה הלבנה, ולכן ממלאים גם מאותו ערוץ.
+        // ── בניית תור "רדיו" חכם ומגוון (בתוך הרשימה הלבנה בלבד) ──
+        // מועמדים, לפי עדיפות:
+        //   1) סרטונים *קשורים* אמיתיים של יוטיוב (מסוננים למאושרים)
+        //   2) סרטונים מאותה *קטגוריה* מערוצים אחרים — לא רק אותו ערוץ! (מהפיד שכבר בזיכרון)
+        //   3) עוד מאותו ערוץ (גיבוי)
+        // משתמשים בפיד המטמון כדי לא לעשות רשת נוספת לבניית רשימת המועמדים.
+        val feed = runCatching { com.filtertube.app.data.FeedCache.loadFeed(context) }.getOrNull().orEmpty()
+        val currentCat = catById[data.channelId]
         val related = runCatching { com.filtertube.app.data.InnerTube.related(video.id) }.getOrNull().orEmpty()
         val relatedApproved = related.filter { it.channelId in allowed && it.id != video.id }
-        val sameChannel = if (data.channelId in allowed) {
-            runCatching {
-                com.filtertube.app.data.YouTubeRepository
-                    .fetchChannelVideos(data.channelId, data.uploaderName)
-            }.getOrNull().orEmpty()
-        } else emptyList()
-        val queue = (relatedApproved + sameChannel)
+        val sameCategory = feed
+            .filter { currentCat != null && catById[it.channelId] == currentCat && it.channelId != data.channelId }
+            .shuffled()
+        val sameChannel = feed.filter { it.channelId == data.channelId }
+        val queue = (relatedApproved + sameCategory + sameChannel)
             .distinctBy { it.id }
             .filter { it.id != video.id }
             .take(RADIO_SIZE)
-        // פותרים את פריטי התור *אחד-אחד* ובחילוץ *קל* (InnerTube בלבד, בלי NewPipe
-        // שכרוך בפענוח JS כבד) — כך עבודת הרקע כמעט ולא חונקת את רוחב הפס של הניגון.
+
+        // פותרים *אחד-אחד* דרך getStream (הנתיב העובד — NewPipe). הראש הגדול (6ש') +
+        // הבאפר הענק מונעים עצירות. כל פריט מתווסף לתור ברגע שהתפענח.
         for (v in queue) {
-            val d = runCatching { com.filtertube.app.data.InnerTube.player(v.id) }.getOrNull() ?: continue
+            val d = runCatching { StreamRepository.getStream(v.id) }.getOrNull() ?: continue
             cache(v.id, d)
             val a = forcedAudio(catById[d.channelId] ?: catById[v.channelId], level)
             c.addMediaItem(buildItem(d, v.id, a, defaultQuality(d, preferred)))
-            kotlinx.coroutines.delay(1500)   // נשימה בין חילוצים, לשמור רוחב פס לניגון
+            kotlinx.coroutines.delay(1200)   // נשימה בין חילוצים, לשמור רוחב פס לניגון
         }
     }
 }
