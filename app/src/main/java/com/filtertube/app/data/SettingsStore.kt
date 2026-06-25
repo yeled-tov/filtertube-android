@@ -101,6 +101,47 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_BG_PLAY, true)
         set(value) = prefs.edit().putBoolean(KEY_BG_PLAY, value).apply()
 
+    // ── הרשמה / פרופיל ──────────────────────────────────────────────────
+    /** האם המשתמש סיים את מסך ההרשמה הראשוני. */
+    var onboardingDone: Boolean
+        get() = prefs.getBoolean(KEY_ONBOARDED, false)
+        set(value) = prefs.edit().putBoolean(KEY_ONBOARDED, value).apply()
+
+    var userName: String
+        get() = prefs.getString(KEY_USER_NAME, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_USER_NAME, value).apply()
+
+    var userEmail: String
+        get() = prefs.getString(KEY_USER_EMAIL, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_USER_EMAIL, value).apply()
+
+    /** "male" / "female". */
+    var userGender: String
+        get() = prefs.getString(KEY_USER_GENDER, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_USER_GENDER, value).apply()
+
+    /** תחילת תקופת הניסיון (מילישניות). 0 = לא התחיל. */
+    var trialStartMillis: Long
+        get() = prefs.getLong(KEY_TRIAL_START, 0L)
+        set(value) = prefs.edit().putLong(KEY_TRIAL_START, value).apply()
+
+    /** ניסיון חינם פעיל — 60 יום מתחילת הניסיון (פרימיום: הורדות, ניגון ברקע וכו'). */
+    val premiumActive: Boolean
+        get() {
+            val start = trialStartMillis
+            if (start == 0L) return true   // עוד לא נקבע — אל תחסום
+            return System.currentTimeMillis() - start < 60L * 24 * 60 * 60 * 1000
+        }
+
+    /** ימים שנותרו בניסיון (לתצוגה). */
+    val trialDaysLeft: Int
+        get() {
+            val start = trialStartMillis
+            if (start == 0L) return 60
+            val left = 60 - ((System.currentTimeMillis() - start) / (24L * 60 * 60 * 1000)).toInt()
+            return left.coerceAtLeast(0)
+        }
+
     /** צורת פס ההתקדמות בנגן: 0 = ישר, 1 = גלי, 2 = זיגזג. */
     var seekBarShape: Int
         get() = prefs.getInt(KEY_SEEK_SHAPE, 1)
@@ -160,6 +201,11 @@ class SettingsStore(context: Context) {
         private const val KEY_DL_CONNECTIONS = "dl_connections"
         private const val KEY_DL_AUTO_LIKES = "dl_auto_likes"
         private const val KEY_BG_PLAY = "background_play"
+        private const val KEY_ONBOARDED = "onboarding_done"
+        private const val KEY_USER_NAME = "user_name"
+        private const val KEY_USER_EMAIL = "user_email"
+        private const val KEY_USER_GENDER = "user_gender"
+        private const val KEY_TRIAL_START = "trial_start_millis"
         private const val KEY_SEEK_SHAPE = "seek_bar_shape"
         private const val KEY_SEEK_THICK = "seek_bar_thickness"
         private const val KEY_SEEK_GLOW = "seek_bar_glow"

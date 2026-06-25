@@ -165,6 +165,14 @@ fun AppRoot() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val settings = remember { SettingsStore(context) }
+
+    // ── הרשמה ראשונית — מוצגת לפני כל שאר האפליקציה בהפעלה הראשונה ──
+    var onboarded by remember { mutableStateOf(settings.onboardingDone) }
+    if (!onboarded) {
+        com.filtertube.app.ui.OnboardingScreen(onDone = { onboarded = true })
+        return
+    }
+
     var shortsEnabled by remember { mutableStateOf(settings.shortsEnabled) }
     var filterLevel by remember { mutableStateOf(settings.filterLevel) }
     var crashReport by remember { mutableStateOf(com.filtertube.app.data.CrashLog.lastCrash(context)) }
