@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
@@ -53,6 +54,7 @@ fun SettingsScreen(
     onFilterLevelChange: (Int) -> Unit,
     onOpenAdmin: () -> Unit,
     onOpenDiag: () -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val settings = remember { SettingsStore(context) }
@@ -85,6 +87,8 @@ fun SettingsScreen(
             "רמת סינון והצגת Shorts — מוגן בסיסמה") { showGate = true }
         SettingsRow(Icons.Default.MusicNote, Color(0xFF10B981), "נגן ושמע",
             "עיצוב הנגן ואיכות") { showPlayerAudio = true }
+        SettingsRow(Icons.Default.Download, Color(0xFF00BFA5), "מנהל הורדות",
+            "הורדת לייקים · מהירות · הורדות במקביל") { onOpenDownloads() }
         SettingsRow(Icons.Default.Tune, Color(0xFF3B82F6), "הגדרות תצוגה",
             "צבע ראשי · מצב כהה/בהיר · 120 הרץ") { showDisplay = true }
         SettingsRow(Icons.Default.Notifications, Color(0xFFEC407A), "התראות",

@@ -259,6 +259,7 @@ fun AppRoot() {
                     },
                     onOpenAdmin = { navController.navigate("admin") },
                     onOpenDiag = { navController.navigate("diag") },
+                    onOpenDownloads = { navController.navigate("downloads") },
                 )
             }
             composable("admin") {
@@ -275,6 +276,9 @@ fun AppRoot() {
             }
             composable("live") {
                 LiveScreen(onVideoClick = ::openVideo, onBack = { navController.popBackStack() })
+            }
+            composable("downloads") {
+                DownloadsManagerScreen(onBack = { navController.popBackStack() })
             }
             composable("library") {
                 LibraryScreen(

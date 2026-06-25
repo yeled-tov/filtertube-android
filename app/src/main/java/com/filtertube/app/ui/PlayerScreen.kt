@@ -693,11 +693,14 @@ private fun PlayerOverflowMenu(
 /** דיאלוג הורדה — אודיו (מקסימלי) או וידאו בכל האיכויות. וידאו מעל 720p הוא ללא קול. */
 @Composable
 private fun DownloadDialog(context: Context, data: StreamData, videoId: String, onDismiss: () -> Unit) {
-    fun record() {
-        LibraryStore(context).addDownload(
-            Video(videoId, data.title, data.uploaderName, data.channelId,
-                data.thumbnailUrl ?: "", System.currentTimeMillis()),
-        )
+    val video = Video(videoId, data.title, data.uploaderName, data.channelId,
+        data.thumbnailUrl ?: "", System.currentTimeMillis())
+    // הורדה דרך המנוע המהיר (רב-חיבורי) — מוסיף לתור ב״מנהל הורדות״
+    fun enqueueDl(url: String, isAudio: Boolean) {
+        LibraryStore(context).addDownload(video)
+        com.filtertube.app.data.DownloadEngine.enqueue(context, video, url, isAudio, data.streamUserAgent)
+        Toast.makeText(context, "נוסף לתור ההורדות ⚡", Toast.LENGTH_SHORT).show()
+        onDismiss()
     }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -706,9 +709,7 @@ private fun DownloadDialog(context: Context, data: StreamData, videoId: String, 
             Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 Text("אודיו", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 if (data.bestAudioUrl != null) {
-                    DownloadRow("איכות מקסימלית (M4A / Opus)") {
-                        record(); downloadStream(context, data.bestAudioUrl, data.title, isAudio = true); onDismiss()
-                    }
+                    DownloadRow("איכות מקסימלית (M4A / Opus)") { enqueueDl(data.bestAudioUrl, true) }
                 } else {
                     Text("לא זמין", color = ThemeState.subtext, fontSize = 12.sp)
                 }
@@ -721,9 +722,7 @@ private fun DownloadDialog(context: Context, data: StreamData, videoId: String, 
                     Text("לא זמין להורדה עם קול", color = ThemeState.subtext, fontSize = 12.sp)
                 } else {
                     withSound.forEach { t ->
-                        DownloadRow(t.label) {
-                            record(); downloadStream(context, t.videoUrl, data.title, isAudio = false); onDismiss()
-                        }
+                        DownloadRow(t.label) { enqueueDl(t.videoUrl, false) }
                     }
                     Text("כל ההורדות כוללות קול (וידאו עד 720p).",
                         color = ThemeState.subtext, fontSize = 11.sp,
