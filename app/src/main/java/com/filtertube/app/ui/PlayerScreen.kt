@@ -1018,7 +1018,7 @@ private fun OnVideoPlayerScreen(
             IconButton(onClick = {
                 liked = store.toggleLike(currentVideo())
                 syncLikeToYoutube(context, scope, ui.mediaId ?: "", liked)
-                if (liked && sb.autoDownloadLikes && currentData != null) {
+                if (liked && sb.autoDownloadLikes && sb.premiumActive && currentData != null) {
                     com.filtertube.app.data.DownloadEngine.enqueue(context, currentVideo(), currentData.bestVideoUrl, false, currentData.streamUserAgent)
                     Toast.makeText(context, "מוריד אוטומטית ⚡", Toast.LENGTH_SHORT).show()
                 }
@@ -1036,14 +1036,19 @@ private fun OnVideoPlayerScreen(
                 if (!cid.isNullOrBlank()) subscribed = store.toggleSubscription(cid)
                 else Toast.makeText(context, "לא ניתן לזהות את הערוץ", Toast.LENGTH_SHORT).show()
             }
-            ActionPill("הורדה", Icons.Default.Download, false, Modifier.weight(1f)) { showDownload = true }
+            ActionPill("הורדה", Icons.Default.Download, false, Modifier.weight(1f)) {
+                if (sb.premiumActive) showDownload = true
+                else Toast.makeText(context, "הורדות — פיצ'ר פרימיום. ראה הגדרות → Premium", Toast.LENGTH_LONG).show()
+            }
             ActionPill(if (audioMode) "וידאו" else "אודיו", Icons.Default.GraphicEq, audioMode, Modifier.weight(1f)) {
                 if (forcedAudio) Toast.makeText(context, "תוכן זה זמין באודיו בלבד", Toast.LENGTH_SHORT).show()
                 else setAudio(!audioMode)
             }
             if (!audioMode) {
                 ActionPill("חלון צף", Icons.Default.PictureInPictureAlt, false, Modifier.weight(1f)) {
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && activity != null) {
+                    if (!sb.premiumActive) {
+                        Toast.makeText(context, "חלון צף — פיצ'ר פרימיום. ראה הגדרות → Premium", Toast.LENGTH_LONG).show()
+                    } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && activity != null) {
                         runCatching {
                             activity.enterPictureInPictureMode(
                                 android.app.PictureInPictureParams.Builder()
@@ -1069,7 +1074,11 @@ private fun OnVideoPlayerScreen(
         onSetSpeed = { speed = it; controller.setPlaybackSpeed(it) },
         onSetSleep = { setSleep(it) },
         onAddToPlaylist = { showSheet = false; showAddToPlaylist = true },
-        onDownload = { showSheet = false; showDownload = true },
+        onDownload = {
+            showSheet = false
+            if (sb.premiumActive) showDownload = true
+            else Toast.makeText(context, "הורדות — פיצ'ר פרימיום. ראה הגדרות → Premium", Toast.LENGTH_LONG).show()
+        },
         onCopyLink = {
             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             cm.setPrimaryClip(android.content.ClipData.newPlainText("link", "https://youtu.be/${ui.mediaId}"))

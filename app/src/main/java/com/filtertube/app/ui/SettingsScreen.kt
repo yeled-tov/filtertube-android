@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -55,11 +56,12 @@ fun SettingsScreen(
     onOpenAdmin: () -> Unit,
     onOpenDiag: () -> Unit = {},
     onOpenDownloads: () -> Unit = {},
+    onOpenYoutubeLogin: () -> Unit = {},
+    onOpenPremium: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val settings = remember { SettingsStore(context) }
 
-    var showAccount by remember { mutableStateOf(false) }
     var showGate by remember { mutableStateOf(false) }
     var showFilter by remember { mutableStateOf(false) }
     var showChangePw by remember { mutableStateOf(false) }
@@ -81,8 +83,10 @@ fun SettingsScreen(
         HorizontalDivider(color = ThemeState.divider)
 
         Spacer(Modifier.height(8.dp))
-        SettingsRow(Icons.Default.AccountCircle, Color(0xFFFF0000), "חשבון Google",
-            "התחברות וסנכרון לייקים ומנויים") { showAccount = true }
+        SettingsRow(Icons.Default.AccountCircle, Color(0xFFFF0000), "חיבור ל-YouTube",
+            "סנכרון לייקים, היסטוריה ומנויים עם החשבון שלך") { onOpenYoutubeLogin() }
+        SettingsRow(Icons.Default.WorkspacePremium, Color(0xFFFFC107), "FilterTube Premium",
+            "הורדות וניגון ברקע — ניסיון חינם 60 יום") { onOpenPremium() }
         SettingsRow(Icons.Default.FilterAlt, Color(0xFFFFAA00), "הגדרות סינון 🔒",
             "רמת סינון והצגת Shorts — מוגן בסיסמה") { showGate = true }
         SettingsRow(Icons.Default.MusicNote, Color(0xFF10B981), "נגן ושמע",
@@ -109,7 +113,6 @@ fun SettingsScreen(
         Spacer(Modifier.height(110.dp))
     }
 
-    if (showAccount) AccountDialog(onDismiss = { showAccount = false })
 
     if (showGate) FilterGateDialog(
         settings = settings,
@@ -165,41 +168,6 @@ private fun SettingsRow(icon: ImageVector, accent: Color, title: String, subtitl
     }
 }
 
-// ── חשבון Google ─────────────────────────────────────────────────────────
-@Composable
-private fun AccountDialog(onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    var account by remember { mutableStateOf(GoogleAuth.lastAccount(context)) }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        try {
-            account = GoogleSignIn.getSignedInAccountFromIntent(result.data).getResult(ApiException::class.java)
-        } catch (_: ApiException) {}
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("חשבון Google") },
-        text = {
-            Column {
-                Text(if (account != null) "מחובר: ${account?.email}" else "לא מחובר",
-                    color = ThemeState.text, fontSize = 14.sp)
-                Spacer(Modifier.height(8.dp))
-                Text("סנכרון הלייקים והמנויים מתבצע בטאב ״ספריה״.", color = ThemeState.subtext, fontSize = 12.sp)
-            }
-        },
-        confirmButton = {
-            if (account != null) {
-                TextButton(onClick = { GoogleAuth.client(context).signOut(); account = null }) {
-                    Text("התנתק", color = Color(0xFFFF5555))
-                }
-            } else {
-                TextButton(onClick = { launcher.launch(GoogleAuth.client(context).signInIntent) }) { Text("התחבר") }
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("סגור") } },
-        containerColor = ThemeState.surface,
-        titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
-    )
-}
 
 // ── שער סיסמה לסינון ─────────────────────────────────────────────────────
 @Composable

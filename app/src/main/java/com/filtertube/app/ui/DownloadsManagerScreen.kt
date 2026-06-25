@@ -44,7 +44,11 @@ fun DownloadsManagerScreen(onBack: () -> Unit) {
         LazyColumn(contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp)) {
             item {
                 Button(
-                    onClick = {
+                    onClick = onClick@{
+                        if (!settings.premiumActive) {
+                            Toast.makeText(context, "הורדות — פיצ'ר פרימיום. ראה הגדרות → Premium", Toast.LENGTH_LONG).show()
+                            return@onClick
+                        }
                         queuing = true
                         scope.launch {
                             val likes = store.likes()

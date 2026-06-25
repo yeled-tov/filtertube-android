@@ -125,9 +125,15 @@ class SettingsStore(context: Context) {
         get() = prefs.getLong(KEY_TRIAL_START, 0L)
         set(value) = prefs.edit().putLong(KEY_TRIAL_START, value).apply()
 
-    /** ניסיון חינם פעיל — 60 יום מתחילת הניסיון (פרימיום: הורדות, ניגון ברקע וכו'). */
+    /** מנוי בתשלום פעיל (נקבע ע"י שרת התשלומים לאחר רכישה מאומתת). */
+    var premiumPurchased: Boolean
+        get() = prefs.getBoolean(KEY_PREMIUM_PAID, false)
+        set(value) = prefs.edit().putBoolean(KEY_PREMIUM_PAID, value).apply()
+
+    /** פרימיום פעיל — ניסיון 60 יום פעיל *או* מנוי בתשלום (הורדות, ניגון ברקע, חלון צף). */
     val premiumActive: Boolean
         get() {
+            if (premiumPurchased) return true
             val start = trialStartMillis
             if (start == 0L) return true   // עוד לא נקבע — אל תחסום
             return System.currentTimeMillis() - start < 60L * 24 * 60 * 60 * 1000
@@ -206,6 +212,7 @@ class SettingsStore(context: Context) {
         private const val KEY_USER_EMAIL = "user_email"
         private const val KEY_USER_GENDER = "user_gender"
         private const val KEY_TRIAL_START = "trial_start_millis"
+        private const val KEY_PREMIUM_PAID = "premium_purchased"
         private const val KEY_SEEK_SHAPE = "seek_bar_shape"
         private const val KEY_SEEK_THICK = "seek_bar_thickness"
         private const val KEY_SEEK_GLOW = "seek_bar_glow"

@@ -86,7 +86,9 @@ class MainActivity : ComponentActivity() {
     /** יציאה מהאפליקציה בזמן צפייה בווידאו → חלון צף (PiP) שממשיך לנגן. */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && PipState.canPip) {
+        // חלון צף הוא פיצ'ר פרימיום — חסום אחרי תום הניסיון
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && PipState.canPip
+            && com.filtertube.app.data.SettingsStore(this).premiumActive) {
             runCatching {
                 enterPictureInPictureMode(
                     android.app.PictureInPictureParams.Builder()
@@ -189,10 +191,10 @@ fun AppRoot() {
     val lifecycleActivity = context as? androidx.activity.ComponentActivity
     DisposableEffect(lifecycleActivity, controller) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP &&
-                !com.filtertube.app.data.SettingsStore(context).backgroundPlay && !PipState.inPip
-            ) {
-                runCatching { controller?.pause() }
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && !PipState.inPip) {
+                val s = com.filtertube.app.data.SettingsStore(context)
+                // עצירה אם ניגון-ברקע כבוי, *או* אם הניסיון/מנוי הפרימיום הסתיים
+                if (!s.backgroundPlay || !s.premiumActive) runCatching { controller?.pause() }
             }
         }
         lifecycleActivity?.lifecycle?.addObserver(observer)
@@ -282,6 +284,8 @@ fun AppRoot() {
                     onOpenAdmin = { navController.navigate("admin") },
                     onOpenDiag = { navController.navigate("diag") },
                     onOpenDownloads = { navController.navigate("downloads") },
+                    onOpenYoutubeLogin = { navController.navigate("ytlogin") },
+                    onOpenPremium = { navController.navigate("premium") },
                 )
             }
             composable("admin") {
@@ -304,6 +308,9 @@ fun AppRoot() {
             }
             composable("downloads") {
                 DownloadsManagerScreen(onBack = { navController.popBackStack() })
+            }
+            composable("premium") {
+                PremiumScreen(onBack = { navController.popBackStack() })
             }
             composable("library") {
                 LibraryScreen(
