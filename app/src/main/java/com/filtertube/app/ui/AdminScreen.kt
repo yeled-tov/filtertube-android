@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filtertube.app.data.Channel
 import com.filtertube.app.data.ChannelAdmin
+import com.filtertube.app.data.ChannelRequests
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.categoryLabels
 import kotlinx.coroutines.launch
@@ -43,6 +44,7 @@ fun AdminScreen(onBack: () -> Unit) {
     var sha by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
+    var requests by remember { mutableStateOf<List<ChannelRequests.Req>>(emptyList()) }
 
     // שדות הוספה
     var newChannelInput by remember { mutableStateOf("") }
@@ -58,10 +60,45 @@ fun AdminScreen(onBack: () -> Unit) {
                 channels = list.sortedBy { it.name }
                 sha = currentSha
                 settings.githubToken = token
-                status = "${list.size} ערוצים נטענו"
+                requests = runCatching { ChannelRequests.list(token) }.getOrDefault(emptyList())
+                status = "${list.size} ערוצים נטענו · ${requests.size} בקשות ממתינות"
             } catch (e: Exception) {
                 status = "שגיאה: ${e.message}"
             } finally { loading = false }
+        }
+    }
+
+    fun approveRequest(r: ChannelRequests.Req) {
+        if (busy) return
+        busy = true; status = "מאשר: ${r.name}..."
+        scope.launch {
+            try {
+                val resolved = ChannelAdmin.resolveChannel(r.url)
+                if (resolved == null) { status = "לא זוהה ערוץ מהקישור של ${r.name}"; busy = false; return@launch }
+                val (cid, nm) = resolved
+                if (channels.none { it.youtubeChannelId == cid }) {
+                    val updated = (channels + Channel(cid, nm, r.category)).sortedBy { it.name }
+                    val ok = ChannelAdmin.commit(token, updated, sha, "Add channel (request): $nm")
+                    if (!ok) { status = "שגיאה בעדכון GitHub"; busy = false; return@launch }
+                    val (list, newSha) = ChannelAdmin.fetchCurrent(token)
+                    channels = list.sortedBy { it.name }; sha = newSha
+                }
+                ChannelRequests.delete(token, r.fileName, r.sha)
+                requests = runCatching { ChannelRequests.list(token) }.getOrDefault(emptyList())
+                status = "אושר: ${r.name} ✓"
+            } catch (e: Exception) { status = "שגיאה: ${e.message}" } finally { busy = false }
+        }
+    }
+
+    fun rejectRequest(r: ChannelRequests.Req) {
+        if (busy) return
+        busy = true; status = "דוחה בקשה..."
+        scope.launch {
+            try {
+                ChannelRequests.delete(token, r.fileName, r.sha)
+                requests = runCatching { ChannelRequests.list(token) }.getOrDefault(emptyList())
+                status = "הבקשה נדחתה ✓"
+            } catch (e: Exception) { status = "שגיאה: ${e.message}" } finally { busy = false }
         }
     }
 
@@ -144,6 +181,40 @@ fun AdminScreen(onBack: () -> Unit) {
                 if (status.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     Text(status, color = Color(0xFFFFAA00), fontSize = 12.sp)
+                }
+
+                if (requests.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    Text("בקשות ממתינות (${requests.size})", color = Color(0xFFFFAA00), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    requests.forEach { r ->
+                        Column(
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                .background(ThemeState.card).padding(12.dp),
+                        ) {
+                            Text(r.name, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text(categoryLabels[r.category] ?: r.category, color = Color(0xFFFF0000), fontSize = 11.sp)
+                            if (r.url.isNotBlank()) {
+                                Text(r.url, color = ThemeState.subtext, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            if (r.description.isNotBlank()) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(r.description, color = ThemeState.subtext2, fontSize = 12.sp)
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Button(
+                                    onClick = { approveRequest(r) }, enabled = !busy,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                ) { Text("אשר") }
+                                Spacer(Modifier.width(8.dp))
+                                OutlinedButton(onClick = { rejectRequest(r) }, enabled = !busy) {
+                                    Text("דחה", color = ThemeState.text)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
                 }
 
                 if (channels.isNotEmpty()) {
