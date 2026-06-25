@@ -9,8 +9,10 @@ import android.net.Uri
 import android.os.Environment
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
@@ -40,7 +42,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -48,7 +50,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
@@ -779,7 +787,7 @@ private fun AddToPlaylistDialog(store: LibraryStore, video: Video, onDismiss: ()
 }
 
 /** עיצוב נגן 2 — וידאו עם בקרים עליו, ומתחת רשימת "הבא בתור". */
-@OptIn(UnstableApi::class)
+@OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun OnVideoPlayerScreen(
     controller: MediaController,
@@ -791,6 +799,7 @@ private fun OnVideoPlayerScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val store = remember { LibraryStore(context) }
+    val sb = remember { SettingsStore(context) }
     val currentData = Playback.cachedData(ui.mediaId)
     fun currentVideo() = Video(ui.mediaId ?: "", ui.title, ui.artist, "",
         ui.artworkUri?.toString() ?: "", System.currentTimeMillis())
@@ -823,16 +832,15 @@ private fun OnVideoPlayerScreen(
         speed = next
         controller.setPlaybackSpeed(next)
     }
-    fun cycleSleep() {
-        val opts = listOf(0, 15, 30, 45, 60)
-        val cur = opts.indexOf(sleepMin).let { if (it < 0) 0 else it }
-        val next = opts[(cur + 1) % opts.size]
-        sleepMin = next
+    fun setSleep(min: Int) {
+        sleepMin = min
         sleepJob?.cancel()
-        if (next > 0) sleepJob = scope.launch {
-            kotlinx.coroutines.delay(next * 60_000L); controller.pause()
+        if (min > 0) sleepJob = scope.launch {
+            kotlinx.coroutines.delay(min * 60_000L); controller.pause()
         }
     }
+
+    var showSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(controlsVisible, ui.isPlaying) {
         if (controlsVisible && ui.isPlaying) { kotlinx.coroutines.delay(3000); controlsVisible = false }
@@ -869,12 +877,12 @@ private fun OnVideoPlayerScreen(
                     Row(modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(horizontal = 8.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Text(fmtTime(ui.position), color = ThemeState.text, fontSize = 11.sp)
-                        Slider(value = ui.position.toFloat().coerceIn(0f, ui.duration.toFloat().coerceAtLeast(0f)),
-                            onValueChange = { controller.seekTo(it.toLong()) },
-                            valueRange = 0f..ui.duration.toFloat().coerceAtLeast(1f),
-                            colors = SliderDefaults.colors(thumbColor = ThemeState.accent,
-                                activeTrackColor = ThemeState.accent, inactiveTrackColor = Color(0x55FFFFFF)),
-                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+                        WaveSeekBar(
+                            position = ui.position, duration = ui.duration,
+                            shape = sb.seekBarShape, thickness = sb.seekBarThickness, glow = sb.seekBarGlow,
+                            onSeek = { f -> controller.seekTo((f * ui.duration.coerceAtLeast(0L)).toLong()) },
+                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                        )
                         Text(fmtTime(ui.duration), color = ThemeState.text, fontSize = 11.sp)
                         IconButton(onClick = onFullscreen) { Icon(Icons.Default.Fullscreen, "מסך מלא", tint = ThemeState.text) }
                     }
@@ -895,18 +903,9 @@ private fun OnVideoPlayerScreen(
                 Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "אהבתי",
                     tint = if (liked) ThemeState.accent else ThemeState.text)
             }
-            PlayerOverflowMenu(context = context, hasData = currentData != null, artist = ui.artist,
-                videoId = ui.mediaId ?: "",
-                tracks = currentData?.tracks ?: emptyList(),
-                currentQuality = qualityIndex,
-                audioMode = audioMode,
-                speed = speed,
-                sleepMinutes = sleepMin,
-                onSelectQuality = { qualityIndex = it; replaceCurrent(audioMode, it) },
-                onToggleAudio = { replaceCurrent(!audioMode, qualityIndex) },
-                onCycleSpeed = { cycleSpeed() },
-                onCycleSleep = { cycleSleep() },
-                onAddToPlaylist = { showAddToPlaylist = true }, onDownload = { showDownload = true })
+            IconButton(onClick = { showSheet = true }) {
+                Icon(Icons.Default.Tune, "הגדרות נגן", tint = ThemeState.text)
+            }
         }
         QueueList(controller, ui, Modifier.weight(1f).fillMaxWidth())
     }
@@ -914,6 +913,217 @@ private fun OnVideoPlayerScreen(
     if (showAddToPlaylist) AddToPlaylistDialog(store = store, video = currentVideo(), onDismiss = { showAddToPlaylist = false })
     if (showDownload && currentData != null) {
         DownloadDialog(context = context, data = currentData, videoId = ui.mediaId ?: "", onDismiss = { showDownload = false })
+    }
+    if (showSheet) PlayerSettingsSheet(
+        tracks = currentData?.tracks ?: emptyList(),
+        currentQuality = qualityIndex,
+        audioMode = audioMode,
+        speed = speed,
+        sleepMin = sleepMin,
+        onSelectQuality = { qualityIndex = it; replaceCurrent(audioMode, it) },
+        onToggleAudio = { replaceCurrent(!audioMode, qualityIndex) },
+        onSetSpeed = { speed = it; controller.setPlaybackSpeed(it) },
+        onSetSleep = { setSleep(it) },
+        onAddToPlaylist = { showSheet = false; showAddToPlaylist = true },
+        onDownload = { showSheet = false; showDownload = true },
+        onCopyLink = {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("link", "https://youtu.be/${ui.mediaId}"))
+            Toast.makeText(context, "הקישור הועתק", Toast.LENGTH_SHORT).show()
+        },
+        onDismiss = { showSheet = false },
+    )
+}
+
+/** פס התקדמות מותאם — צורת ישר/גלי/זיגזג, עובי, זוהר וגרדיאנט; גרירה/הקשה לדילוג. */
+@Composable
+private fun WaveSeekBar(
+    position: Long,
+    duration: Long,
+    shape: Int,
+    thickness: Int,
+    glow: Boolean,
+    onSeek: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val frac = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
+    val accent = ThemeState.accent
+    val accent2 = ThemeState.accent2
+    val track = Color(0x55FFFFFF)
+    Canvas(
+        modifier = modifier.height(26.dp)
+            .pointerInput(duration) {
+                detectTapGestures { o -> if (size.width > 0) onSeek((o.x / size.width).coerceIn(0f, 1f)) }
+            }
+            .pointerInput(duration) {
+                detectHorizontalDragGestures { change, _ ->
+                    if (size.width > 0) onSeek((change.position.x / size.width).coerceIn(0f, 1f))
+                }
+            },
+    ) {
+        val w = size.width
+        val midY = size.height / 2f
+        val amp = if (shape == 0) 0f else size.height * 0.16f
+        val waves = 22f
+        val stroke = thickness.dp.toPx().coerceAtLeast(2f)
+        val twoPi = 2f * Math.PI.toFloat()
+
+        fun yAt(x: Float): Float = when (shape) {
+            1 -> midY + amp * kotlin.math.sin(x / w * waves * twoPi)
+            2 -> {
+                val period = w / waves
+                val t = if (period > 0f) (x % period) / period else 0f
+                val tri = if (t < 0.5f) t * 2f else (1f - t) * 2f
+                midY - amp + tri * 2f * amp
+            }
+            else -> midY
+        }
+
+        fun pathTo(toX: Float): Path {
+            val p = Path()
+            p.moveTo(0f, yAt(0f))
+            var x = 0f
+            while (x <= toX) { p.lineTo(x, yAt(x)); x += 3f }
+            p.lineTo(toX, yAt(toX))
+            return p
+        }
+
+        drawPath(pathTo(w), color = track, style = Stroke(width = stroke, cap = StrokeCap.Round))
+        val progX = w * frac
+        val brush = Brush.linearGradient(listOf(accent, accent2), start = Offset(0f, 0f), end = Offset(w, 0f))
+        if (glow) drawPath(pathTo(progX), brush = brush, style = Stroke(width = stroke * 2.6f, cap = StrokeCap.Round), alpha = 0.22f)
+        drawPath(pathTo(progX), brush = brush, style = Stroke(width = stroke, cap = StrokeCap.Round))
+        drawCircle(color = Color.White, radius = (thickness + 4).dp.toPx(), center = Offset(progX, yAt(progX)))
+        drawCircle(brush = brush, radius = (thickness + 1).dp.toPx(), center = Offset(progX, yAt(progX)))
+    }
+}
+
+/** גיליון הגדרות הנגן — מהירות, איכות, אודיו, ניגון ברקע, טיימר שינה ופעולות. */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun PlayerSettingsSheet(
+    tracks: List<StreamTrack>,
+    currentQuality: Int,
+    audioMode: Boolean,
+    speed: Float,
+    sleepMin: Int,
+    onSelectQuality: (Int) -> Unit,
+    onToggleAudio: () -> Unit,
+    onSetSpeed: (Float) -> Unit,
+    onSetSleep: (Int) -> Unit,
+    onAddToPlaylist: () -> Unit,
+    onDownload: () -> Unit,
+    onCopyLink: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val settings = remember { SettingsStore(context) }
+    var bgPlay by remember { mutableStateOf(settings.backgroundPlay) }
+    var shape by remember { mutableStateOf(settings.seekBarShape) }
+    var thick by remember { mutableStateOf(settings.seekBarThickness.toFloat()) }
+    var glow by remember { mutableStateOf(settings.seekBarGlow) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = ThemeState.surface) {
+        Column(
+            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(start = 20.dp, end = 20.dp, bottom = 30.dp),
+        ) {
+            Text("הגדרות נגן", color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+
+            SheetLabel("מהירות נגינה", Icons.Default.Speed)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).forEach { s ->
+                    SheetChip(fmtSpeed(s), selected = speed == s) { onSetSpeed(s) }
+                }
+            }
+
+            if (tracks.isNotEmpty()) {
+                SheetLabel("איכות", Icons.Default.HighQuality)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    tracks.forEachIndexed { i, t ->
+                        SheetChip(t.label, selected = !audioMode && i == currentQuality) { onSelectQuality(i) }
+                    }
+                }
+            }
+
+            SheetToggle("אודיו בלבד (חוסך נתונים)", Icons.Default.Audiotrack, audioMode) { onToggleAudio() }
+            SheetToggle("ניגון ברקע", Icons.Default.MusicNote, bgPlay) { bgPlay = it; settings.backgroundPlay = it }
+
+            SheetLabel("טיימר שינה", Icons.Default.Bedtime)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(0, 15, 30, 45, 60, 90).forEach { m ->
+                    SheetChip(if (m == 0) "כבוי" else "$m דק׳", selected = sleepMin == m) { onSetSleep(m) }
+                }
+            }
+
+            // ── התאמת פס ההתקדמות (מהמוקאפ) ──
+            SheetLabel("פס ההתקדמות", Icons.Default.Tune)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("ישר" to 0, "גלי" to 1, "זיגזג" to 2).forEach { (name, v) ->
+                    SheetChip(name, selected = shape == v) { shape = v; settings.seekBarShape = v }
+                }
+            }
+            Text("עובי: ${thick.toInt()}", color = ThemeState.subtext, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+            Slider(
+                value = thick, onValueChange = { thick = it },
+                onValueChangeFinished = { settings.seekBarThickness = thick.toInt() },
+                valueRange = 1f..6f, steps = 4,
+                colors = SliderDefaults.colors(thumbColor = ThemeState.accent,
+                    activeTrackColor = ThemeState.accent, inactiveTrackColor = ThemeState.divider),
+            )
+            SheetToggle("זוהר (glow)", Icons.Default.Tune, glow) { glow = it; settings.seekBarGlow = it }
+
+            HorizontalDivider(color = ThemeState.divider, modifier = Modifier.padding(vertical = 14.dp))
+            SheetAction("הוסף לאלבום", Icons.AutoMirrored.Filled.PlaylistAdd, onAddToPlaylist)
+            SheetAction("הורד", Icons.Default.Download, onDownload)
+            SheetAction("העתק קישור", Icons.Default.Link, onCopyLink)
+        }
+    }
+}
+
+private fun fmtSpeed(s: Float): String =
+    if (s == 1f) "רגיל" else s.toString().trimEnd('0').trimEnd('.') + "x"
+
+@Composable
+private fun SheetLabel(text: String, icon: ImageVector) {
+    Row(modifier = Modifier.padding(top = 20.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = ThemeState.accent, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(text, color = ThemeState.subtext, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun SheetChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier.clip(RoundedCornerShape(50))
+            .background(if (selected) ThemeState.accent else ThemeState.card)
+            .clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp),
+    ) {
+        Text(text, color = if (selected) Color.White else ThemeState.text, fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+    }
+}
+
+@Composable
+private fun SheetToggle(text: String, icon: ImageVector, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = ThemeState.accent, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(text, color = ThemeState.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onChange, colors = SwitchDefaults.colors(
+            checkedThumbColor = Color.White, checkedTrackColor = ThemeState.accent,
+            uncheckedThumbColor = ThemeState.subtext, uncheckedTrackColor = ThemeState.divider))
+    }
+}
+
+@Composable
+private fun SheetAction(text: String, icon: ImageVector, onClick: () -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = ThemeState.text, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(text, color = ThemeState.text, fontSize = 14.sp)
     }
 }
 

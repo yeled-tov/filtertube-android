@@ -96,6 +96,26 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_DL_AUTO_LIKES, false)
         set(value) = prefs.edit().putBoolean(KEY_DL_AUTO_LIKES, value).apply()
 
+    /** המשך ניגון כשהאפליקציה ברקע. כבוי = עצירה ביציאה מהאפליקציה. */
+    var backgroundPlay: Boolean
+        get() = prefs.getBoolean(KEY_BG_PLAY, true)
+        set(value) = prefs.edit().putBoolean(KEY_BG_PLAY, value).apply()
+
+    /** צורת פס ההתקדמות בנגן: 0 = ישר, 1 = גלי, 2 = זיגזג. */
+    var seekBarShape: Int
+        get() = prefs.getInt(KEY_SEEK_SHAPE, 1)
+        set(value) = prefs.edit().putInt(KEY_SEEK_SHAPE, value).apply()
+
+    /** עובי פס ההתקדמות (1–6 dp לערך). */
+    var seekBarThickness: Int
+        get() = prefs.getInt(KEY_SEEK_THICK, 3).coerceIn(1, 6)
+        set(value) = prefs.edit().putInt(KEY_SEEK_THICK, value.coerceIn(1, 6)).apply()
+
+    /** זוהר (glow) סביב פס ההתקדמות. */
+    var seekBarGlow: Boolean
+        get() = prefs.getBoolean(KEY_SEEK_GLOW, true)
+        set(value) = prefs.edit().putBoolean(KEY_SEEK_GLOW, value).apply()
+
     // ── היסטוריית חיפוש ──────────────────────────────────────────────────
     fun getSearchHistory(): List<String> {
         val raw = prefs.getString(KEY_HISTORY, "") ?: ""
@@ -139,5 +159,9 @@ class SettingsStore(context: Context) {
         private const val KEY_DL_CONCURRENT = "dl_concurrent"
         private const val KEY_DL_CONNECTIONS = "dl_connections"
         private const val KEY_DL_AUTO_LIKES = "dl_auto_likes"
+        private const val KEY_BG_PLAY = "background_play"
+        private const val KEY_SEEK_SHAPE = "seek_bar_shape"
+        private const val KEY_SEEK_THICK = "seek_bar_thickness"
+        private const val KEY_SEEK_GLOW = "seek_bar_glow"
     }
 }
