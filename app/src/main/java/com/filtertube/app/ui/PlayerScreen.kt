@@ -899,6 +899,12 @@ private fun OnVideoPlayerScreen(
             IconButton(onClick = {
                 liked = store.toggleLike(currentVideo())
                 syncLikeToYoutube(context, scope, ui.mediaId ?: "", liked)
+                // הורדה אוטומטית של לייקים (אם הופעל במנהל ההורדות)
+                if (liked && sb.autoDownloadLikes && currentData != null) {
+                    com.filtertube.app.data.DownloadEngine.enqueue(
+                        context, currentVideo(), currentData.bestVideoUrl, false, currentData.streamUserAgent)
+                    Toast.makeText(context, "מוריד אוטומטית ⚡", Toast.LENGTH_SHORT).show()
+                }
             }) {
                 Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "אהבתי",
                     tint = if (liked) ThemeState.accent else ThemeState.text)

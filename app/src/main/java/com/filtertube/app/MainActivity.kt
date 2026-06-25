@@ -177,6 +177,20 @@ fun AppRoot() {
     val controller by com.filtertube.app.ui.rememberMediaController()
     val playerUi = com.filtertube.app.ui.rememberPlayerUiState(controller)
 
+    // ניגון ברקע כבוי → עצירה ביציאה מהאפליקציה (אלא אם במצב חלון צף PiP)
+    val lifecycleActivity = context as? androidx.activity.ComponentActivity
+    DisposableEffect(lifecycleActivity, controller) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP &&
+                !com.filtertube.app.data.SettingsStore(context).backgroundPlay && !PipState.inPip
+            ) {
+                runCatching { controller?.pause() }
+            }
+        }
+        lifecycleActivity?.lifecycle?.addObserver(observer)
+        onDispose { lifecycleActivity?.lifecycle?.removeObserver(observer) }
+    }
+
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
