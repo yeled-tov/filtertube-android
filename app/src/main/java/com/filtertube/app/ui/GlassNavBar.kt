@@ -47,7 +47,7 @@ fun GlassNavBar(items: List<GlassNavItem>, currentRoute: String?, onClick: (Stri
                 modifier = Modifier
                     .then(
                         if (selected) Modifier.background(
-                            Brush.horizontalGradient(listOf(ThemeState.accent, Color(0xFFFF6A5C))),
+                            Brush.horizontalGradient(ThemeState.accentColors),
                             RoundedCornerShape(16.dp),
                         ) else Modifier,
                     )

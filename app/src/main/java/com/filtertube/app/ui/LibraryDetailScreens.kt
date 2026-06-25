@@ -78,7 +78,7 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
         if (type == "history" && videos.isNotEmpty()) {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { store.clearLocalHistory(); refreshKey++ }) {
-                    Text("נקה היסטוריה", color = Color(0xFFFF6A5C), fontSize = 13.sp)
+                    Text("נקה היסטוריה", color = ThemeState.accent2, fontSize = 13.sp)
                 }
             }
         }

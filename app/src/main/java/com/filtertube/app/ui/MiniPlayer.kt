@@ -41,7 +41,7 @@ fun MiniPlayer(
         LinearProgressIndicator(
             progress = { progress },
             modifier = Modifier.fillMaxWidth().height(2.dp),
-            color = Color(0xFFFF0000),
+            color = ThemeState.accent,
             trackColor = Color(0xFF333333),
         )
         Row(

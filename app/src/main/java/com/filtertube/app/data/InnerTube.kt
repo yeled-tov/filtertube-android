@@ -124,11 +124,11 @@ object InnerTube {
     }
 
     // ערכי ברירת מחדל מוטמעים — נעשה בהם שימוש אם RemoteConfig (הענן) לא נטען.
-    private const val DEF_IOS_UA = "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X;)"
+    private const val DEF_IOS_UA = "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X)"
     private const val DEF_VR_UA = "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip"
-    private const val DEF_IOS_VER = "19.45.4"
+    private const val DEF_IOS_VER = "19.29.1"
     private const val DEF_IOS_MODEL = "iPhone16,2"
-    private const val DEF_IOS_OS = "18.1.0.22B83"
+    private const val DEF_IOS_OS = "17.5.1.21F90"
     private const val DEF_VR_VER = "1.60.19"
 
     // ה-UA בפועל — מהענן אם קיים, אחרת ברירת המחדל. עדכון יוטיוב = עריכת JSON ב-GitHub.
@@ -142,6 +142,9 @@ object InnerTube {
         put("deviceModel", RemoteConfig.iosDeviceModel(DEF_IOS_MODEL))
         put("osName", "iPhone")
         put("osVersion", RemoteConfig.iosOsVersion(DEF_IOS_OS))
+        put("userAgent", RemoteConfig.iosUserAgent(DEF_IOS_UA))   // נדרש ב-context של iOS
+        put("timeZone", "UTC")
+        put("utcOffsetMinutes", 0)
         put("hl", "he"); put("gl", "IL")
     }
 

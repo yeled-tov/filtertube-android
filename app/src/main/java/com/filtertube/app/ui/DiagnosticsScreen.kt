@@ -75,7 +75,7 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                     val warn = line.contains("⚠") || line.contains("✖") || line.contains("נכשל")
                     Text(
                         line,
-                        color = if (warn) Color(0xFFFF6A5C) else ThemeState.subtext2,
+                        color = if (warn) ThemeState.accent2 else ThemeState.subtext2,
                         fontSize = 12.sp, lineHeight = 17.sp,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
                     )

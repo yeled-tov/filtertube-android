@@ -51,10 +51,15 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_HIGH_HZ, true)
         set(value) = prefs.edit().putBoolean(KEY_HIGH_HZ, value).apply()
 
-    /** הצבע הראשי של האפליקציה (ARGB int). ברירת מחדל אדום. */
+    /** הצבע הראשי של האפליקציה (ARGB int). ברירת מחדל #FF2D43 (אמבר). */
     var accentColor: Int
-        get() = prefs.getInt(KEY_ACCENT, 0xFFFF0000.toInt())
+        get() = prefs.getInt(KEY_ACCENT, 0xFFFF2D43.toInt())
         set(value) = prefs.edit().putInt(KEY_ACCENT, value).apply()
+
+    /** הצבע המשני לגרדיאנט (ARGB int). ברירת מחדל #FF6A5C. */
+    var accent2Color: Int
+        get() = prefs.getInt(KEY_ACCENT2, 0xFFFF6A5C.toInt())
+        set(value) = prefs.edit().putInt(KEY_ACCENT2, value).apply()
 
     /** איכות ניגון מועדפת לפי גובה (px). 0 = אוטומטי (עד 720). */
     var preferredQuality: Int
@@ -110,6 +115,7 @@ class SettingsStore(context: Context) {
         private const val KEY_FILTER_PW = "filter_password"
         private const val KEY_HIGH_HZ = "high_refresh_rate"
         private const val KEY_ACCENT = "accent_color"
+        private const val KEY_ACCENT2 = "accent2_color"
         private const val KEY_QUALITY = "preferred_quality"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_THEME_MODE = "theme_mode"

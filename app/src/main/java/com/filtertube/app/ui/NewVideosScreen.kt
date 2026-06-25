@@ -39,7 +39,7 @@ fun NewVideosScreen(onVideoClick: (Video) -> Unit, onBack: () -> Unit) {
                 fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             if (videos.isNotEmpty()) {
                 TextButton(onClick = { store.clearNewVideos(); refreshKey++ }) {
-                    Text("נקה", color = Color(0xFFFF6A5C), fontSize = 13.sp)
+                    Text("נקה", color = ThemeState.accent2, fontSize = 13.sp)
                 }
             }
         }

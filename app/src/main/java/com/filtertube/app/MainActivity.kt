@@ -51,7 +51,8 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         val settings = SettingsStore(this)
-        ThemeState.accent = Color(settings.accentColor)   // צבע ראשי שנבחר
+        ThemeState.accent = Color(settings.accentColor)     // צבע ראשי שנבחר
+        ThemeState.accent2 = Color(settings.accent2Color)   // צבע משני לגרדיאנט
         val sysDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
             android.content.res.Configuration.UI_MODE_NIGHT_YES
         ThemeState.dark = when (settings.themeMode) { 1 -> true; 2 -> false; else -> sysDark }
@@ -427,18 +428,23 @@ private fun CrashReportDialog(report: String, onDismiss: () -> Unit) {
  * שינוי של accent או dark מרענן את כל המסכים מיד (mutableState).
  */
 object ThemeState {
-    var accent by mutableStateOf(Color(0xFFFF0000))
+    // accent + accent2 = הגרדיאנט הראשי (תואם 1:1 למפרט Claude Design)
+    var accent by mutableStateOf(Color(0xFFFF2D43))
+    var accent2 by mutableStateOf(Color(0xFFFF6A5C))
     var dark by mutableStateOf(true)
 
-    // פלטה יוקרתית — תואמת לאפליקציית החנות (כהה עמוק עם נגיעה קרירה)
-    val bg: Color get() = if (dark) Color(0xFF0B0B0D) else Color(0xFFFAFAFA)
+    // פלטה יוקרתית — תואמת למפרט Claude Design (כהה עמוק, טוקנים מדויקים)
+    val bg: Color get() = if (dark) Color(0xFF08080B) else Color(0xFFFAFAFA)
     val bg2: Color get() = if (dark) Color(0xFF111114) else Color(0xFFEDEDED)   // נאב/נגן כהה יותר
     val surface: Color get() = if (dark) Color(0xFF18181B) else Color(0xFFFFFFFF)
-    val card: Color get() = if (dark) Color(0xFF1E1E22) else Color(0xFFF1F1F1)
-    val divider: Color get() = if (dark) Color(0xFF2A2A30) else Color(0xFFE2E2E2)
-    val text: Color get() = if (dark) Color(0xFFF5F5F7) else Color(0xFF111111)
-    val subtext: Color get() = if (dark) Color(0xFF8E8E96) else Color(0xFF6B6B6B)
+    val card: Color get() = if (dark) Color(0xFF121216) else Color(0xFFF1F1F1)
+    val divider: Color get() = if (dark) Color(0xFF26262C) else Color(0xFFE2E2E2)
+    val text: Color get() = if (dark) Color(0xFFF4F4F6) else Color(0xFF111111)
+    val subtext: Color get() = if (dark) Color(0xFF8B8B93) else Color(0xFF6B6B6B)
     val subtext2: Color get() = if (dark) Color(0xFFC6C6CE) else Color(0xFF555555)
+
+    /** הגרדיאנט הראשי — לכפתורים, אווטארים, פריט נבחר וכו'. */
+    val accentColors: List<Color> get() = listOf(accent, accent2)
 }
 
 @Composable

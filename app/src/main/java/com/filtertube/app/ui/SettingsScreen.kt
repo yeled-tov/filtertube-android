@@ -28,6 +28,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -361,9 +362,11 @@ private fun LevelRow(value: Int, title: String, desc: String, selected: Int, onC
 }
 
 // ── תצוגה ────────────────────────────────────────────────────────────────
-private val accentOptions = listOf(
-    Color(0xFFFF0000), Color(0xFFFF6D00), Color(0xFFFFC400), Color(0xFF00C853),
-    Color(0xFF2962FF), Color(0xFFAA00FF), Color(0xFF00BFA5), Color(0xFFEC407A),
+// ערכות צבע (פלטות) — תואם 1:1 למפרט Claude Design: שם, צבע ראשי, צבע משני לגרדיאנט
+private val palettes = listOf(
+    Triple("אמבר", Color(0xFFFF2D43), Color(0xFFFF6A5C)),
+    Triple("מלכותי", Color(0xFF7B5CFF), Color(0xFFB98CFF)),
+    Triple("אקווה", Color(0xFF10C8A2), Color(0xFF5BE3C0)),
 )
 
 private val qualityOptions = listOf(
@@ -408,17 +411,36 @@ private fun DisplayDialog(settings: SettingsStore, onDismiss: () -> Unit) {
 
                 HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 12.dp))
 
-                Text("צבע ראשי", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text("ערכת צבע", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Text("נכנס לתוקף מיד", color = ThemeState.subtext, fontSize = 11.sp)
                 Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    accentOptions.forEach { c ->
-                        val selected = ThemeState.accent.toArgb() == c.toArgb()
-                        Box(
-                            modifier = Modifier.size(34.dp).clip(CircleShape).background(c)
-                                .border(if (selected) 3.dp else 0.dp, Color.White, CircleShape)
-                                .clickable { ThemeState.accent = c; settings.accentColor = c.toArgb() },
-                        )
+                Row(horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+                    palettes.forEach { (name, a, b) ->
+                        val selected = ThemeState.accent.toArgb() == a.toArgb()
+                        Column(
+                            modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
+                                .background(ThemeState.card)
+                                .border(
+                                    if (selected) 2.dp else 1.dp,
+                                    if (selected) a else ThemeState.divider,
+                                    RoundedCornerShape(16.dp),
+                                )
+                                .clickable {
+                                    ThemeState.accent = a; ThemeState.accent2 = b
+                                    settings.accentColor = a.toArgb(); settings.accent2Color = b.toArgb()
+                                }
+                                .padding(11.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().height(40.dp)
+                                    .clip(RoundedCornerShape(11.dp))
+                                    .background(Brush.linearGradient(listOf(a, b))),
+                            )
+                            Spacer(Modifier.height(9.dp))
+                            Text(name, color = if (selected) ThemeState.text else ThemeState.subtext2,
+                                fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
                     }
                 }
             }

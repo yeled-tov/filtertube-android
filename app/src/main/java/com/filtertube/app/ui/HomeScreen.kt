@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
@@ -127,7 +128,7 @@ fun HomeScreen(
             ) {
                 Box(
                     modifier = Modifier.size(36.dp).clip(RoundedCornerShape(50))
-                        .background(Brush.linearGradient(listOf(ThemeState.accent, Color(0xFFFF6A5C))))
+                        .background(Brush.linearGradient(ThemeState.accentColors))
                         .clickable { showMenu = true },
                     contentAlignment = Alignment.Center,
                 ) { Icon(Icons.Default.Person, "תפריט", tint = Color.White, modifier = Modifier.size(20.dp)) }
@@ -230,7 +231,7 @@ private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) 
             .clip(RoundedCornerShape(50))
             .then(
                 if (selected) Modifier.background(
-                    Brush.horizontalGradient(listOf(ThemeState.accent, Color(0xFFFF6A5C))),
+                    Brush.horizontalGradient(ThemeState.accentColors),
                 ) else Modifier.background(ThemeState.surface),
             )
             .clickable(onClick = onClick)
@@ -249,7 +250,7 @@ private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) 
 fun CenteredLoading(text: String) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(color = Color(0xFFFF0000))
+            CircularProgressIndicator(color = ThemeState.accent)
             Spacer(Modifier.height(16.dp))
             Text(text, color = ThemeState.subtext2, fontSize = 14.sp)
         }
@@ -266,7 +267,7 @@ fun CenteredError(message: String, onRetry: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             Text(message, color = ThemeState.subtext2, fontSize = 13.sp)
             Spacer(Modifier.height(24.dp))
-            Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF0000))) {
+            Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = ThemeState.accent)) {
                 Text("נסה שוב")
             }
         }
@@ -279,18 +280,40 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
             .padding(horizontal = 12.dp).padding(bottom = 18.dp),
     ) {
-        AsyncImage(
-            model = video.thumbnailUrl,
-            contentDescription = video.title,
+        Box(
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(14.dp)).background(ThemeState.card),
-            contentScale = ContentScale.Crop,
-        )
+                .clip(RoundedCornerShape(16.dp)).background(ThemeState.card),
+        ) {
+            AsyncImage(
+                model = video.thumbnailUrl,
+                contentDescription = video.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+            // ברק עדין מלמעלה לעומק
+            Box(
+                modifier = Modifier.matchParentSize().background(
+                    Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.06f), Color.Transparent, Color.Black.copy(alpha = 0.12f))),
+                ),
+            )
+            // באדג' "מאושר" (כל הסרטונים מערוצים מאושרים)
+            Row(
+                modifier = Modifier.align(Alignment.TopEnd).padding(9.dp)
+                    .clip(RoundedCornerShape(20.dp)).background(Color.Black.copy(alpha = 0.5f))
+                    .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(20.dp))
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.Check, null, tint = Color(0xFF7CF2C0), modifier = Modifier.size(11.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("מאושר", color = Color(0xFF7CF2C0), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        }
         Spacer(Modifier.height(10.dp))
         Row(modifier = Modifier.fillMaxWidth()) {
             Box(
                 modifier = Modifier.size(34.dp).clip(RoundedCornerShape(50))
-                    .background(Brush.linearGradient(listOf(ThemeState.accent, Color(0xFFFF6A5C)))),
+                    .background(Brush.linearGradient(ThemeState.accentColors)),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(video.channelName.firstOrNull()?.uppercase() ?: "?", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)

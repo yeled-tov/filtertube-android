@@ -2,10 +2,10 @@
   "_comment": "קונפיג ענן ל-FilterTube. כשיוטיוב משתנה והנגן מפסיק לעבוד — עדכן כאן את גרסאות הלקוח / ה-User-Agent ושמור. כל הטלפונים יתעדכנו בהפעלה הבאה, בלי בנייה חדשה ובלי עדכון אפליקציה.",
   "innertube": {
     "ios": {
-      "clientVersion": "19.45.4",
-      "userAgent": "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X;)",
+      "clientVersion": "19.29.1",
+      "userAgent": "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X)",
       "deviceModel": "iPhone16,2",
-      "osVersion": "18.1.0.22B83"
+      "osVersion": "17.5.1.21F90"
     },
     "vr": {
       "clientVersion": "1.60.19",

@@ -75,7 +75,7 @@ private fun ChannelFollowRow(ch: Channel, store: LibraryStore, version: Int, onC
     ) {
         Box(
             modifier = Modifier.size(40.dp).clip(RoundedCornerShape(50))
-                .background(Brush.linearGradient(listOf(ThemeState.accent, Color(0xFFFF6A5C)))),
+                .background(Brush.linearGradient(ThemeState.accentColors)),
             contentAlignment = Alignment.Center,
         ) {
             Text(ch.name.firstOrNull()?.uppercase() ?: "?", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
