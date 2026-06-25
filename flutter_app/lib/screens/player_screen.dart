@@ -116,9 +116,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
           case 'copy':
             _copyLink();
             break;
-          case 'youtube':
-            _openInYoutube();
-            break;
         }
       },
       itemBuilder: (context) => [
@@ -156,14 +153,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
             Icon(Icons.link, color: AppTheme.text, size: 20),
             SizedBox(width: 10),
             Text('העתק קישור', style: TextStyle(color: AppTheme.text)),
-          ]),
-        ),
-        const PopupMenuItem(
-          value: 'youtube',
-          child: Row(children: [
-            Icon(Icons.open_in_new, color: AppTheme.text, size: 20),
-            SizedBox(width: 10),
-            Text('פתח ביוטיוב', style: TextStyle(color: AppTheme.text)),
           ]),
         ),
       ],

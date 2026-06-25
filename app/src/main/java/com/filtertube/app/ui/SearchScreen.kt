@@ -28,6 +28,7 @@ import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeDataApi
+import com.filtertube.app.data.YouTubeSuggest
 import com.filtertube.app.data.forLevel
 import kotlinx.coroutines.launch
 
@@ -49,6 +50,15 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
     var query by remember { mutableStateOf("") }
     var state by remember { mutableStateOf<SearchState>(SearchState.Idle) }
     var history by remember { mutableStateOf(settings.getSearchHistory()) }
+    var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    // חיפוש חי — השלמה אוטומטית תוך כדי הקלדה (עם debounce קצר)
+    LaunchedEffect(query) {
+        val q = query.trim()
+        if (q.isEmpty()) { suggestions = emptyList(); return@LaunchedEffect }
+        kotlinx.coroutines.delay(220)
+        suggestions = YouTubeSuggest.suggest(q)
+    }
 
     fun runSearch(q: String) {
         val trimmed = q.trim()
@@ -78,7 +88,7 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
         ) {
             TextField(
                 value = query,
-                onValueChange = { query = it },
+                onValueChange = { query = it; state = SearchState.Idle },
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("חפש בערוצים המאושרים...", color = ThemeState.subtext) },
                 leadingIcon = { Icon(Icons.Default.Search, null, tint = ThemeState.subtext) },
@@ -100,18 +110,19 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
                     unfocusedTextColor = ThemeState.text,
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
-                    cursorColor = Color(0xFFFF0000),
+                    cursorColor = ThemeState.accent,
                 ),
             )
         }
 
         when (val s = state) {
-            is SearchState.Idle -> SearchHistory(
-                history = history,
-                onPick = { query = it; runSearch(it) },
-                onRemove = { settings.removeSearchQuery(it); history = settings.getSearchHistory() },
-                onClear = { settings.clearSearchHistory(); history = emptyList() },
-            )
+            is SearchState.Idle ->
+                if (query.isBlank()) SearchHistory(
+                    history = history,
+                    onPick = { query = it; runSearch(it) },
+                    onRemove = { settings.removeSearchQuery(it); history = settings.getSearchHistory() },
+                    onClear = { settings.clearSearchHistory(); history = emptyList() },
+                ) else SuggestionsList(suggestions) { picked -> query = picked; runSearch(picked) }
             is SearchState.Loading -> CenteredLoading("מחפש...")
             is SearchState.Error -> CenteredError(s.message) { runSearch(query) }
             is SearchState.Results -> LazyColumn(
@@ -121,6 +132,29 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
                 items(s.videos, key = { it.id }) { video ->
                     VideoRow(video, onClick = { onVideoClick(video) })
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SuggestionsList(suggestions: List<String>, onPick: (String) -> Unit) {
+    if (suggestions.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("מקליד…", color = ThemeState.subtext, fontSize = 13.sp)
+        }
+        return
+    }
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 4.dp, bottom = 96.dp)) {
+        items(suggestions) { s ->
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { onPick(s) }
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.Search, null, tint = ThemeState.subtext, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(14.dp))
+                Text(s, color = ThemeState.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
             }
         }
     }
