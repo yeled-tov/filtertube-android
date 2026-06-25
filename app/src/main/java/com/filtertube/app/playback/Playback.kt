@@ -20,8 +20,8 @@ import com.filtertube.app.data.audioOnlyCategories
 object Playback {
 
     const val EXTRA_IS_AUDIO = "filtertube_is_audio"
-    private const val CACHE_CAP = 40
-    private const val RADIO_SIZE = 6
+    private const val CACHE_CAP = 60
+    private const val RADIO_SIZE = 14
 
     private val dataCache = LinkedHashMap<String, StreamData>()
 
@@ -137,8 +137,18 @@ object Playback {
         val sameCategory = feed
             .filter { currentCat != null && catById[it.channelId] == currentCat && it.channelId != data.channelId }
             .shuffled()
-        val sameChannel = feed.filter { it.channelId == data.channelId }
-        val queue = (relatedApproved + sameCategory + sameChannel)
+        val sameChannel = feed.filter { it.channelId == data.channelId && it.id != video.id }
+        // משלבים סרטונים מאותו ערוץ (אותו אמן — הכי קשור) עם סרטונים מאותה קטגוריה
+        // מערוצים אחרים (גיוון) לסירוגין, כדי שיהיה גם קשור וגם מגוון — לא רק אותו ערוץ.
+        val mixed = buildList {
+            val a = sameCategory.iterator()
+            val b = sameChannel.iterator()
+            while (a.hasNext() || b.hasNext()) {
+                if (a.hasNext()) add(a.next())
+                if (b.hasNext()) add(b.next())
+            }
+        }
+        val queue = (relatedApproved + mixed)
             .distinctBy { it.id }
             .filter { it.id != video.id }
             .take(RADIO_SIZE)

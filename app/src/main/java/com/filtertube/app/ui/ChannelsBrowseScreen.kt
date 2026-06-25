@@ -1,6 +1,7 @@
 package com.filtertube.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,7 +29,7 @@ import com.filtertube.app.data.sortedCategories
 
 /** רשימת כל הערוצים המאושרים (מקובצת לפי קטגוריה) עם כפתור "עקוב" לכל ערוץ. */
 @Composable
-fun ChannelsBrowseScreen(onBack: () -> Unit) {
+fun ChannelsBrowseScreen(onBack: () -> Unit, onOpenChannel: (String, String) -> Unit = { _, _ -> }) {
     val context = LocalContext.current
     val store = remember { LibraryStore(context) }
     val settings = remember { SettingsStore(context) }
@@ -58,7 +59,8 @@ fun ChannelsBrowseScreen(onBack: () -> Unit) {
                         )
                     }
                     items(list, key = { it.youtubeChannelId }) { ch ->
-                        ChannelFollowRow(ch, store, version) { version++ }
+                        ChannelFollowRow(ch, store, version,
+                            onOpenChannel = { onOpenChannel(ch.youtubeChannelId, ch.name) }) { version++ }
                     }
                 }
             }
@@ -67,10 +69,10 @@ fun ChannelsBrowseScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun ChannelFollowRow(ch: Channel, store: LibraryStore, version: Int, onChange: () -> Unit) {
+private fun ChannelFollowRow(ch: Channel, store: LibraryStore, version: Int, onOpenChannel: () -> Unit, onChange: () -> Unit) {
     var subscribed by remember(ch.youtubeChannelId, version) { mutableStateOf(store.isSubscribed(ch.youtubeChannelId)) }
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth().clickable { onOpenChannel() }.padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(

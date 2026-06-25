@@ -9,8 +9,10 @@ import android.net.Uri
 import android.os.Environment
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -24,7 +26,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Fullscreen
@@ -50,6 +58,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -64,6 +73,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -786,7 +796,32 @@ private fun AddToPlaylistDialog(store: LibraryStore, video: Video, onDismiss: ()
     )
 }
 
-/** עיצוב נגן 2 — וידאו עם בקרים עליו, ומתחת רשימת "הבא בתור". */
+// ---------------------------------------------------------------------------
+//  עזרי מותג — גרדיאנט ההדגשה + צללית זוהר (הוסף פעם אחת לקובץ)
+// ---------------------------------------------------------------------------
+
+/** הגרדיאנט הראשי של FilterTube — 140° מ-accent ל-accent2. */
+private fun brandBrush(): Brush =
+    Brush.linearGradient(listOf(ThemeState.accent, ThemeState.accent2))
+
+private val ScrimTop = Brush.verticalGradient(listOf(Color(0xB8000000), Color(0x00000000)))
+private val ScrimBottom = Brush.verticalGradient(listOf(Color(0x00000000), Color(0xC7000000)))
+
+/** כפתור עגול שקוף מעל הוידאו (טופ-בר ודילוגים). */
+@Composable
+private fun GlassCircle(size: Dp, onClick: () -> Unit, content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier.size(size).clip(RoundedCornerShape(50))
+            .background(Color(0x57000000)).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+        content = { content() },
+    )
+}
+
+// ---------------------------------------------------------------------------
+//  1) הנגן עם בקרים צפים מעל הוידאו
+// ---------------------------------------------------------------------------
+
 @OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun OnVideoPlayerScreen(
@@ -809,7 +844,7 @@ private fun OnVideoPlayerScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     val audioMode = ui.isAudio
     var qualityIndex by remember(ui.mediaId) {
-        mutableStateOf(currentData?.let { Playback.defaultQuality(it, SettingsStore(context).preferredQuality) } ?: 0)
+        mutableStateOf(currentData?.let { Playback.defaultQuality(it, sb.preferredQuality) } ?: 0)
     }
     fun replaceCurrent(audio: Boolean, qIdx: Int) {
         val d = currentData ?: return
@@ -825,107 +860,135 @@ private fun OnVideoPlayerScreen(
     var speed by remember { mutableStateOf(controller.playbackParameters.speed) }
     var sleepMin by remember { mutableStateOf(0) }
     var sleepJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-    fun cycleSpeed() {
-        val speeds = listOf(1f, 1.25f, 1.5f, 2f, 0.75f)
-        val cur = speeds.indexOf(speed).let { if (it < 0) 0 else it }
-        val next = speeds[(cur + 1) % speeds.size]
-        speed = next
-        controller.setPlaybackSpeed(next)
-    }
     fun setSleep(min: Int) {
-        sleepMin = min
-        sleepJob?.cancel()
-        if (min > 0) sleepJob = scope.launch {
-            kotlinx.coroutines.delay(min * 60_000L); controller.pause()
-        }
+        sleepMin = min; sleepJob?.cancel()
+        if (min > 0) sleepJob = scope.launch { kotlinx.coroutines.delay(min * 60_000L); controller.pause() }
     }
 
     var showSheet by remember { mutableStateOf(false) }
-
     LaunchedEffect(controlsVisible, ui.isPlaying) {
         if (controlsVisible && ui.isPlaying) { kotlinx.coroutines.delay(3000); controlsVisible = false }
     }
 
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
+
+        // ---- אזור הוידאו עם הבקרים הצפים ----
         Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
             VideoSurface(controller)
-            VideoGestures(controller, activity, audioMode = false, onSingleTap = { controlsVisible = !controlsVisible }, onSwipeDown = onCollapse)
+            VideoGestures(controller, activity, audioMode = false,
+                onSingleTap = { controlsVisible = !controlsVisible }, onSwipeDown = onCollapse)
             if (ui.buffering) CircularProgressIndicator(color = ThemeState.accent, modifier = Modifier.align(Alignment.Center))
-            if (controlsVisible) {
-                Box(modifier = Modifier.fillMaxSize().background(Color(0x66000000))) {
-                    IconButton(onClick = onCollapse, modifier = Modifier.align(Alignment.TopStart)) {
-                        Icon(Icons.Default.KeyboardArrowDown, "כווץ", tint = ThemeState.text)
+
+            // פס דק כשהבקרים מוסתרים
+            if (!controlsVisible) {
+                val frac = if (ui.duration > 0) (ui.position.toFloat() / ui.duration).coerceIn(0f, 1f) else 0f
+                Box(modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth(frac).height(3.dp).background(brandBrush()))
+            }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = controlsVisible,
+                enter = androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.fadeOut(),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    // scrims
+                    Box(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().height(84.dp).background(ScrimTop))
+                    Box(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(120.dp).background(ScrimBottom))
+
+                    // top bar
+                    Row(
+                        modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        GlassCircle(38.dp, onCollapse) { Icon(Icons.Default.KeyboardArrowDown, "כווץ", tint = Color.White) }
+                        Spacer(Modifier.weight(1f))
+                        GlassCircle(38.dp, { /* cast */ }) { Icon(Icons.Default.Cast, "שידור", tint = Color.White, modifier = Modifier.size(20.dp)) }
+                        Spacer(Modifier.width(8.dp))
+                        GlassCircle(38.dp, { showSheet = true }) { Icon(Icons.Default.Settings, "הגדרות נגן", tint = Color.White, modifier = Modifier.size(20.dp)) }
                     }
+
+                    // center transport
                     Row(modifier = Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { controller.seekToPreviousMediaItem() }, enabled = ui.hasPrev) {
-                            Icon(Icons.Default.SkipPrevious, "הקודם",
-                                tint = if (ui.hasPrev) Color.White else Color(0x88FFFFFF), modifier = Modifier.size(36.dp))
+                        GlassCircle(46.dp, { controller.seekTo((controller.currentPosition - 10_000).coerceAtLeast(0)) }) {
+                            Icon(Icons.Default.Replay10, "אחורה 10", tint = Color.White, modifier = Modifier.size(24.dp))
                         }
-                        Spacer(Modifier.width(24.dp))
-                        Box(modifier = Modifier.size(60.dp).clip(RoundedCornerShape(50)).background(ThemeState.accent)
-                            .clickable { if (ui.isPlaying) controller.pause() else controller.play() },
-                            contentAlignment = Alignment.Center) {
+                        Spacer(Modifier.width(30.dp))
+                        Box(
+                            modifier = Modifier.size(72.dp)
+                                .shadow(18.dp, RoundedCornerShape(50), spotColor = ThemeState.accent, ambientColor = ThemeState.accent)
+                                .clip(RoundedCornerShape(50)).background(brandBrush())
+                                .clickable { if (ui.isPlaying) controller.pause() else controller.play() },
+                            contentAlignment = Alignment.Center,
+                        ) {
                             Icon(if (ui.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null,
-                                tint = ThemeState.text, modifier = Modifier.size(36.dp))
+                                tint = Color.White, modifier = Modifier.size(34.dp))
                         }
-                        Spacer(Modifier.width(24.dp))
-                        IconButton(onClick = { controller.seekToNextMediaItem() }, enabled = ui.hasNext) {
-                            Icon(Icons.Default.SkipNext, "הבא",
-                                tint = if (ui.hasNext) Color.White else Color(0x88FFFFFF), modifier = Modifier.size(36.dp))
+                        Spacer(Modifier.width(30.dp))
+                        GlassCircle(46.dp, { controller.seekTo(controller.currentPosition + 10_000) }) {
+                            Icon(Icons.Default.Forward10, "קדימה 10", tint = Color.White, modifier = Modifier.size(24.dp))
                         }
                     }
-                    Row(modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text(fmtTime(ui.position), color = ThemeState.text, fontSize = 11.sp)
+
+                    // bottom seek
+                    Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Text(fmtTime(ui.position), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.weight(1f))
+                            Text(fmtTime(ui.duration), color = Color(0xB3FFFFFF), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
                         WaveSeekBar(
                             position = ui.position, duration = ui.duration,
                             shape = sb.seekBarShape, thickness = sb.seekBarThickness, glow = sb.seekBarGlow,
                             onSeek = { f -> controller.seekTo((f * ui.duration.coerceAtLeast(0L)).toLong()) },
-                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                            modifier = Modifier.fillMaxWidth(),
                         )
-                        Text(fmtTime(ui.duration), color = ThemeState.text, fontSize = 11.sp)
-                        IconButton(onClick = onFullscreen) { Icon(Icons.Default.Fullscreen, "מסך מלא", tint = ThemeState.text) }
+                        Row(modifier = Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(modifier = Modifier.clip(RoundedCornerShape(50)).clickable { replaceCurrent(!audioMode, qualityIndex) }.padding(4.dp)) {
+                                Icon(Icons.Default.GraphicEq, "אודיו", tint = if (audioMode) ThemeState.accent else Color.White, modifier = Modifier.size(19.dp))
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Box(modifier = Modifier.clip(RoundedCornerShape(9.dp)).background(Color(0x29FFFFFF)).clickable { showSheet = true }.padding(horizontal = 9.dp, vertical = 3.dp)) {
+                                Text("${speed}x", color = Color.White, fontSize = 11.5f.sp, fontWeight = FontWeight.ExtraBold)
+                            }
+                            Spacer(Modifier.weight(1f))
+                            IconButton(onClick = onFullscreen, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Default.Fullscreen, "מסך מלא", tint = Color.White)
+                            }
+                        }
                     }
                 }
             }
         }
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically) {
+
+        // ---- כותרת + לב + הגדרות ----
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(ui.title, color = ThemeState.text, fontSize = 16.sp, fontWeight = FontWeight.Bold,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 20.sp)
-                Text(ui.artist, color = ThemeState.subtext2, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 21.sp)
+                Spacer(Modifier.height(3.dp))
+                Text(ui.artist, color = ThemeState.subtext2, fontSize = 12.5f.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             IconButton(onClick = {
                 liked = store.toggleLike(currentVideo())
                 syncLikeToYoutube(context, scope, ui.mediaId ?: "", liked)
-                // הורדה אוטומטית של לייקים (אם הופעל במנהל ההורדות)
                 if (liked && sb.autoDownloadLikes && currentData != null) {
-                    com.filtertube.app.data.DownloadEngine.enqueue(
-                        context, currentVideo(), currentData.bestVideoUrl, false, currentData.streamUserAgent)
+                    com.filtertube.app.data.DownloadEngine.enqueue(context, currentVideo(), currentData.bestVideoUrl, false, currentData.streamUserAgent)
                     Toast.makeText(context, "מוריד אוטומטית ⚡", Toast.LENGTH_SHORT).show()
                 }
-            }) {
-                Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "אהבתי",
-                    tint = if (liked) ThemeState.accent else ThemeState.text)
-            }
-            IconButton(onClick = { showSheet = true }) {
-                Icon(Icons.Default.Tune, "הגדרות נגן", tint = ThemeState.text)
-            }
+            }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "אהבתי", tint = if (liked) ThemeState.accent else ThemeState.text) }
+            IconButton(onClick = { showSheet = true }) { Icon(Icons.Default.Tune, "הגדרות נגן", tint = ThemeState.text) }
         }
+
         QueueList(controller, ui, Modifier.weight(1f).fillMaxWidth())
     }
 
     if (showAddToPlaylist) AddToPlaylistDialog(store = store, video = currentVideo(), onDismiss = { showAddToPlaylist = false })
-    if (showDownload && currentData != null) {
+    if (showDownload && currentData != null)
         DownloadDialog(context = context, data = currentData, videoId = ui.mediaId ?: "", onDismiss = { showDownload = false })
-    }
     if (showSheet) PlayerSettingsSheet(
         tracks = currentData?.tracks ?: emptyList(),
-        currentQuality = qualityIndex,
-        audioMode = audioMode,
-        speed = speed,
-        sleepMin = sleepMin,
+        currentQuality = qualityIndex, audioMode = audioMode, speed = speed, sleepMin = sleepMin,
         onSelectQuality = { qualityIndex = it; replaceCurrent(audioMode, it) },
         onToggleAudio = { replaceCurrent(!audioMode, qualityIndex) },
         onSetSpeed = { speed = it; controller.setPlaybackSpeed(it) },
@@ -941,7 +1004,10 @@ private fun OnVideoPlayerScreen(
     )
 }
 
-/** פס התקדמות מותאם — צורת ישר/גלי/זיגזג, עובי, זוהר וגרדיאנט; גרירה/הקשה לדילוג. */
+// ---------------------------------------------------------------------------
+//  2) פס התקדמות — ישר / גלי / מזוגזג + עובי + זוהר (מראה זהה למוקאפ)
+// ---------------------------------------------------------------------------
+
 @Composable
 private fun WaveSeekBar(
     position: Long,
@@ -951,25 +1017,25 @@ private fun WaveSeekBar(
     glow: Boolean,
     onSeek: (Float) -> Unit,
     modifier: Modifier = Modifier,
+    // preview = true מצייר נקודת אמצע קבועה לתצוגה מקדימה בגיליון ההגדרות
+    previewFrac: Float? = null,
 ) {
-    val frac = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
+    val frac = previewFrac ?: if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
     val accent = ThemeState.accent
     val accent2 = ThemeState.accent2
-    val track = Color(0x55FFFFFF)
+    val track = Color(0x47FFFFFF)
     Canvas(
-        modifier = modifier.height(26.dp)
-            .pointerInput(duration) {
-                detectTapGestures { o -> if (size.width > 0) onSeek((o.x / size.width).coerceIn(0f, 1f)) }
+        modifier = modifier.fillMaxWidth().height(28.dp)
+            .pointerInput(duration, previewFrac) {
+                if (previewFrac == null) detectTapGestures { o -> if (size.width > 0) onSeek((o.x / size.width).coerceIn(0f, 1f)) }
             }
-            .pointerInput(duration) {
-                detectHorizontalDragGestures { change, _ ->
-                    if (size.width > 0) onSeek((change.position.x / size.width).coerceIn(0f, 1f))
-                }
+            .pointerInput(duration, previewFrac) {
+                if (previewFrac == null) detectHorizontalDragGestures { c, _ -> if (size.width > 0) onSeek((c.position.x / size.width).coerceIn(0f, 1f)) }
             },
     ) {
         val w = size.width
         val midY = size.height / 2f
-        val amp = if (shape == 0) 0f else size.height * 0.16f
+        val amp = if (shape == 0) 0f else size.height * 0.22f
         val waves = 22f
         val stroke = thickness.dp.toPx().coerceAtLeast(2f)
         val twoPi = 2f * Math.PI.toFloat()
@@ -984,27 +1050,25 @@ private fun WaveSeekBar(
             }
             else -> midY
         }
-
         fun pathTo(toX: Float): Path {
-            val p = Path()
-            p.moveTo(0f, yAt(0f))
-            var x = 0f
-            while (x <= toX) { p.lineTo(x, yAt(x)); x += 3f }
-            p.lineTo(toX, yAt(toX))
-            return p
+            val p = Path(); p.moveTo(0f, yAt(0f)); var x = 0f
+            while (x <= toX) { p.lineTo(x, yAt(x)); x += 3f }; p.lineTo(toX, yAt(toX)); return p
         }
 
-        drawPath(pathTo(w), color = track, style = Stroke(width = stroke, cap = StrokeCap.Round))
         val progX = w * frac
         val brush = Brush.linearGradient(listOf(accent, accent2), start = Offset(0f, 0f), end = Offset(w, 0f))
-        if (glow) drawPath(pathTo(progX), brush = brush, style = Stroke(width = stroke * 2.6f, cap = StrokeCap.Round), alpha = 0.22f)
+        drawPath(pathTo(w), color = track, style = Stroke(width = stroke, cap = StrokeCap.Round))
+        if (glow) drawPath(pathTo(progX), brush = brush, style = Stroke(width = stroke * 2.8f, cap = StrokeCap.Round), alpha = 0.28f)
         drawPath(pathTo(progX), brush = brush, style = Stroke(width = stroke, cap = StrokeCap.Round))
-        drawCircle(color = Color.White, radius = (thickness + 4).dp.toPx(), center = Offset(progX, yAt(progX)))
-        drawCircle(brush = brush, radius = (thickness + 1).dp.toPx(), center = Offset(progX, yAt(progX)))
+        if (glow) drawCircle(color = accent, radius = (thickness + 7).dp.toPx(), center = Offset(progX, yAt(progX)), alpha = 0.30f)
+        drawCircle(color = Color.White, radius = (thickness + 3).dp.toPx(), center = Offset(progX, yAt(progX)))
     }
 }
 
-/** גיליון הגדרות הנגן — מהירות, איכות, אודיו, ניגון ברקע, טיימר שינה ופעולות. */
+// ---------------------------------------------------------------------------
+//  3) גיליון "הגדרות נגן ושמע" — קומפקטי, מלא פיצ'רים (מראה זהה למוקאפ)
+// ---------------------------------------------------------------------------
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun PlayerSettingsSheet(
@@ -1028,108 +1092,136 @@ private fun PlayerSettingsSheet(
     var shape by remember { mutableStateOf(settings.seekBarShape) }
     var thick by remember { mutableStateOf(settings.seekBarThickness.toFloat()) }
     var glow by remember { mutableStateOf(settings.seekBarGlow) }
+    var audio by remember { mutableStateOf(audioMode) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = ThemeState.surface) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = ThemeState.surface,
+        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
+    ) {
         Column(
             modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-                .padding(start = 20.dp, end = 20.dp, bottom = 30.dp),
+                .padding(start = 18.dp, end = 18.dp, bottom = 28.dp),
         ) {
-            Text("הגדרות נגן", color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-
-            SheetLabel("מהירות נגינה", Icons.Default.Speed)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).forEach { s ->
-                    SheetChip(fmtSpeed(s), selected = speed == s) { onSetSpeed(s) }
+            // כותרת
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                Icon(Icons.Default.Settings, null, tint = ThemeState.accent, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(9.dp))
+                Text("הגדרות נגן ושמע", color = ThemeState.text, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                Box(modifier = Modifier.size(32.dp).clip(RoundedCornerShape(50)).background(Color(0x10FFFFFF)).clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Close, "סגור", tint = ThemeState.subtext2, modifier = Modifier.size(18.dp))
                 }
             }
 
-            if (tracks.isNotEmpty()) {
-                SheetLabel("איכות", Icons.Default.HighQuality)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    tracks.forEachIndexed { i, t ->
-                        SheetChip(t.label, selected = !audioMode && i == currentQuality) { onSelectQuality(i) }
-                    }
+            SheetSection("פס התקדמות")
+
+            // תצוגה מקדימה חיה
+            Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(ThemeState.card)
+                .border(1.dp, Color(0x0FFFFFFF), RoundedCornerShape(18.dp)).padding(horizontal = 16.dp, vertical = 12.dp)) {
+                WaveSeekBar(position = 0, duration = 1, shape = shape, thickness = thick.toInt(), glow = glow,
+                    onSeek = {}, previewFrac = 0.55f)
+            }
+            Spacer(Modifier.height(12.dp))
+
+            // בורר צורה — מקטעים
+            Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(ThemeState.card)
+                .border(1.dp, Color(0x0FFFFFFF), RoundedCornerShape(15.dp)).padding(5.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(0 to "ישר", 1 to "גלי", 2 to "מזוגזג").forEach { (v, label) ->
+                    val sel = shape == v
+                    Box(
+                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(11.dp))
+                            .then(if (sel) Modifier.background(brandBrush()) else Modifier)
+                            .clickable { shape = v; settings.seekBarShape = v }.padding(vertical = 9.dp),
+                        contentAlignment = Alignment.Center,
+                    ) { Text(label, color = if (sel) Color.White else ThemeState.subtext2, fontSize = 12.5f.sp, fontWeight = FontWeight.Bold) }
                 }
             }
+            Spacer(Modifier.height(10.dp))
 
-            SheetToggle("אודיו בלבד (חוסך נתונים)", Icons.Default.Audiotrack, audioMode) { onToggleAudio() }
-            SheetToggle("ניגון ברקע", Icons.Default.MusicNote, bgPlay) { bgPlay = it; settings.backgroundPlay = it }
-
-            SheetLabel("טיימר שינה", Icons.Default.Bedtime)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(0, 15, 30, 45, 60, 90).forEach { m ->
-                    SheetChip(if (m == 0) "כבוי" else "$m דק׳", selected = sleepMin == m) { onSetSleep(m) }
+            // עובי הפס
+            Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(ThemeState.card)
+                .border(1.dp, Color(0x0FFFFFFF), RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("עובי הפס", color = ThemeState.text, fontSize = 13.5f.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("${thick.toInt()}px", color = ThemeState.accent, fontSize = 12.5f.sp, fontWeight = FontWeight.ExtraBold)
                 }
+                Slider(
+                    value = thick, onValueChange = { thick = it; settings.seekBarThickness = it.toInt() },
+                    valueRange = 3f..9f, steps = 5,
+                    colors = SliderDefaults.colors(thumbColor = ThemeState.accent, activeTrackColor = ThemeState.accent, inactiveTrackColor = Color(0x33FFFFFF)),
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+
+            // זוהר
+            ToggleRow("זוהר על הפס", "הילה רכה בצבע ההדגשה", glow) { glow = it; settings.seekBarGlow = it }
+
+            SheetSection("ניגון ושמע")
+
+            Text("מהירות נגינה", color = ThemeState.subtext2, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { s -> Chip("${s}x", speed == s) { onSetSpeed(s) } }
+            }
+            Spacer(Modifier.height(14.dp))
+
+            if (!audio && tracks.size > 1) {
+                Text("איכות", color = ThemeState.subtext2, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    tracks.forEachIndexed { i, t -> Chip(t.label, i == currentQuality) { onSelectQuality(i) } }
+                }
+                Spacer(Modifier.height(14.dp))
             }
 
-            // ── התאמת פס ההתקדמות (מהמוקאפ) ──
-            SheetLabel("פס ההתקדמות", Icons.Default.Tune)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("ישר" to 0, "גלי" to 1, "זיגזג" to 2).forEach { (name, v) ->
-                    SheetChip(name, selected = shape == v) { shape = v; settings.seekBarShape = v }
+            ToggleRow("אודיו בלבד", "חיסכון בנתונים · האזנה ברקע", audio) { audio = it; onToggleAudio() }
+            Spacer(Modifier.height(9.dp))
+            ToggleRow("ניגון ברקע", "המשך השמעה במסך כבוי", bgPlay) { bgPlay = it; settings.backgroundPlay = it }
+            Spacer(Modifier.height(14.dp))
+
+            Text("טיימר שינה", color = ThemeState.subtext2, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                listOf(0 to "כבוי", 15 to "15 דק", 30 to "30 דק", 45 to "45 דק", 60 to "שעה").forEach { (m, label) ->
+                    Chip(label, sleepMin == m) { onSetSleep(m) }
                 }
             }
-            Text("עובי: ${thick.toInt()}", color = ThemeState.subtext, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
-            Slider(
-                value = thick, onValueChange = { thick = it },
-                onValueChangeFinished = { settings.seekBarThickness = thick.toInt() },
-                valueRange = 1f..6f, steps = 4,
-                colors = SliderDefaults.colors(thumbColor = ThemeState.accent,
-                    activeTrackColor = ThemeState.accent, inactiveTrackColor = ThemeState.divider),
-            )
-            SheetToggle("זוהר (glow)", Icons.Default.Tune, glow) { glow = it; settings.seekBarGlow = it }
-
-            HorizontalDivider(color = ThemeState.divider, modifier = Modifier.padding(vertical = 14.dp))
-            SheetAction("הוסף לאלבום", Icons.AutoMirrored.Filled.PlaylistAdd, onAddToPlaylist)
-            SheetAction("הורד", Icons.Default.Download, onDownload)
-            SheetAction("העתק קישור", Icons.Default.Link, onCopyLink)
         }
     }
 }
 
-private fun fmtSpeed(s: Float): String =
-    if (s == 1f) "רגיל" else s.toString().trimEnd('0').trimEnd('.') + "x"
+// ---- עזרי גיליון ----
 
 @Composable
-private fun SheetLabel(text: String, icon: ImageVector) {
-    Row(modifier = Modifier.padding(top = 20.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = ThemeState.accent, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(text, color = ThemeState.subtext, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-    }
+private fun SheetSection(title: String) {
+    Spacer(Modifier.height(18.dp))
+    Text(title, color = ThemeState.subtext2, fontSize = 12.5f.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(bottom = 10.dp))
 }
 
 @Composable
-private fun SheetChip(text: String, selected: Boolean, onClick: () -> Unit) {
+private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
-        modifier = Modifier.clip(RoundedCornerShape(50))
-            .background(if (selected) ThemeState.accent else ThemeState.card)
-            .clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp),
+        modifier = Modifier.clip(RoundedCornerShape(12.dp))
+            .then(if (selected) Modifier.background(brandBrush()) else Modifier.background(Color(0x0DFFFFFF)).border(1.dp, Color(0x12FFFFFF), RoundedCornerShape(12.dp)))
+            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
+    ) { Text(label, color = if (selected) Color.White else ThemeState.subtext2, fontSize = 12.5f.sp, fontWeight = FontWeight.Bold) }
+}
+
+@Composable
+private fun ToggleRow(title: String, sub: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(ThemeState.card)
+            .border(1.dp, Color(0x0FFFFFFF), RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text, color = if (selected) Color.White else ThemeState.text, fontSize = 13.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-    }
-}
-
-@Composable
-private fun SheetToggle(text: String, icon: ImageVector, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = ThemeState.accent, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(12.dp))
-        Text(text, color = ThemeState.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange, colors = SwitchDefaults.colors(
-            checkedThumbColor = Color.White, checkedTrackColor = ThemeState.accent,
-            uncheckedThumbColor = ThemeState.subtext, uncheckedTrackColor = ThemeState.divider))
-    }
-}
-
-@Composable
-private fun SheetAction(text: String, icon: ImageVector, onClick: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = ThemeState.text, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(12.dp))
-        Text(text, color = ThemeState.text, fontSize = 14.sp)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = ThemeState.text, fontSize = 13.5f.sp, fontWeight = FontWeight.Bold)
+            Text(sub, color = ThemeState.subtext2, fontSize = 11.sp)
+        }
+        Switch(
+            checked = checked, onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White, checkedTrackColor = ThemeState.accent,
+                uncheckedThumbColor = Color.White, uncheckedTrackColor = Color(0xFF2A2A30), uncheckedBorderColor = Color.Transparent,
+            ),
+        )
     }
 }
 

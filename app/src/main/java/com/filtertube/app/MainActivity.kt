@@ -286,7 +286,10 @@ fun AppRoot() {
                 NewVideosScreen(onVideoClick = ::openVideo, onBack = { navController.popBackStack() })
             }
             composable("channels") {
-                ChannelsBrowseScreen(onBack = { navController.popBackStack() })
+                ChannelsBrowseScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenChannel = { id, name -> navController.navigate("channel/$id/${Uri.encode(name)}") },
+                )
             }
             composable("live") {
                 LiveScreen(onVideoClick = ::openVideo, onBack = { navController.popBackStack() })
