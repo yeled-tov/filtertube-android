@@ -239,6 +239,7 @@ fun AppRoot() {
                     onAccount = { navController.navigate("ytlogin") },
                     onInbox = { navController.navigate("newvideos") },
                     onChannels = { navController.navigate("channels") },
+                    onLive = { navController.navigate("live") },
                 )
             }
             composable("shorts") { ShortsScreen(onOpenShort = { navController.navigate("shortsPlayer") }, onSearch = { navController.navigate("search") }) }
@@ -271,6 +272,9 @@ fun AppRoot() {
             }
             composable("channels") {
                 ChannelsBrowseScreen(onBack = { navController.popBackStack() })
+            }
+            composable("live") {
+                LiveScreen(onVideoClick = ::openVideo, onBack = { navController.popBackStack() })
             }
             composable("library") {
                 LibraryScreen(

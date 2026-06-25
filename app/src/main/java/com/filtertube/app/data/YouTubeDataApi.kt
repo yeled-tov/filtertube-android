@@ -20,11 +20,15 @@ object YouTubeDataApi {
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
 
-    /** חיפוש מסונן לרשימה הלבנה — מחזיר רק תוצאות מערוצים מאושרים. */
-    suspend fun search(query: String, channels: List<Channel>): List<Video> = withContext(Dispatchers.IO) {
+    /**
+     * חיפוש מסונן לרשימה הלבנה — מחזיר רק תוצאות מערוצים מאושרים.
+     * [live] = רק שידורים חיים פעילים (eventType=live).
+     */
+    suspend fun search(query: String, channels: List<Channel>, live: Boolean = false): List<Video> = withContext(Dispatchers.IO) {
         val allowed = channels.map { it.youtubeChannelId }.toHashSet()
         val q = java.net.URLEncoder.encode(query, "UTF-8")
-        val url = "$BASE/search?part=snippet&type=video&maxResults=40&q=$q&key=$KEY"
+        val event = if (live) "&eventType=live" else ""
+        val url = "$BASE/search?part=snippet&type=video$event&maxResults=40&q=$q&key=$KEY"
         val out = LinkedHashMap<String, Video>()
         runCatching {
             http.newCall(Request.Builder().url(url).build()).execute().use { resp ->

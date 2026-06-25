@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
@@ -58,6 +59,7 @@ fun HomeScreen(
     onAccount: () -> Unit = {},
     onInbox: () -> Unit = {},
     onChannels: () -> Unit = {},
+    onLive: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -145,6 +147,13 @@ fun HomeScreen(
                             .clip(RoundedCornerShape(50)).background(Color(0xFFFF3B30)))
                     }
                 }
+                Spacer(Modifier.width(10.dp))
+                // שידורים חיים
+                Box(
+                    modifier = Modifier.size(36.dp).clip(RoundedCornerShape(50))
+                        .background(ThemeState.surface).clickable { onLive() },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Default.LiveTv, "שידורים חיים", tint = Color(0xFFFF3B30), modifier = Modifier.size(19.dp)) }
                 Spacer(Modifier.weight(1f))
             }
             // טאבים של קטגוריות (כמו ביוטיוב) — לחיצה מסננת את הפיד לפי תחום
