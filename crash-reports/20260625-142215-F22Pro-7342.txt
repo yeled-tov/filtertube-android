@@ -1,0 +1,62 @@
+== אבחון ==
+14:21:43  ⚠ עצירה 13645ms בשנייה 30
+13:44:29  ⚠ עצירה 490ms בשנייה 65
+13:44:25  ⚠ עצירה 227ms בשנייה 52
+13:44:05  טעינה TzubN4yUoMY: NewPipe 1903ms · 4 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+13:44:03  InnerTube: VR+IOS נכשלו → NewPipe
+13:44:03  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+13:44:03  InnerTube IOS: HTTP 400
+13:44:02  טעינה m0awQAiwsAc: NewPipe 1899ms · 6 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+13:44:00  InnerTube: VR+IOS נכשלו → NewPipe
+13:44:00  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+13:44:00  InnerTube IOS: HTTP 400
+13:43:59  טעינה ViSQg7q6rFs: NewPipe 1837ms · 6 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+13:43:57  InnerTube: VR+IOS נכשלו → NewPipe
+13:43:57  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+13:43:57  InnerTube IOS: HTTP 400
+13:43:56  טעינה UIUn8dZUNCk: NewPipe 1903ms · 4 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+13:43:54  InnerTube: VR+IOS נכשלו → NewPipe
+13:43:54  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+13:43:54  InnerTube IOS: HTTP 400
+13:43:52  טעינה FyJy9I_Kw7E: NewPipe 1681ms · 4 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+13:43:51  InnerTube: VR+IOS נכשלו → NewPipe
+13:43:51  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+13:43:51  InnerTube IOS: HTTP 400
+13:43:50  טעינה OrBu21X6_n8: NewPipe 1869ms · 8 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+13:43:48  InnerTube: VR+IOS נכשלו → NewPipe
+13:43:48  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+13:43:48  InnerTube IOS: HTTP 400
+13:43:41  טעינה bmTIhl0J3mg: NewPipe 2074ms · 6 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+13:43:39  InnerTube: VR+IOS נכשלו → NewPipe
+13:43:39  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+13:43:39  InnerTube IOS: HTTP 400
+13:42:59  טעינה zEwzUGMBp0Q: NewPipe 1860ms · 6 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+13:42:59  ⚠ עצירה 687ms בשנייה 21
+13:42:58  InnerTube: VR+IOS נכשלו → NewPipe
+13:42:58  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+13:42:58  InnerTube IOS: HTTP 400
+13:42:56  טעינה xbEpFnP69As: NewPipe 1956ms · 4 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+13:42:55  InnerTube: VR+IOS נכשלו → NewPipe
+13:42:55  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+13:42:55  InnerTube IOS: HTTP 400
+13:42:53  טעינה MmFk4Dr2xgc: NewPipe 1701ms · 6 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+13:42:52  InnerTube: VR+IOS נכשלו → NewPipe
+13:42:52  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+13:42:52  InnerTube IOS: HTTP 400
+13:42:50  טעינה PSX7uqJdrPg: NewPipe 1860ms · 5 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+13:42:49  InnerTube: VR+IOS נכשלו → NewPipe
+13:42:49  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+13:42:49  InnerTube IOS: HTTP 400
+13:42:47  טעינה 4dzOQh0yoKE: NewPipe 1857ms · 3 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+13:42:46  InnerTube: VR+IOS נכשלו → NewPipe
+13:42:46  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+13:42:46  InnerTube IOS: HTTP 400
+13:42:44  טעינה XfMYwlOeypY: NewPipe 1668ms · 3 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+13:42:43  InnerTube: VR+IOS נכשלו → NewPipe
+13:42:43  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+13:42:43  InnerTube IOS: HTTP 400
+13:42:36  טעינה lFjBxY-P8Fo: NewPipe 3082ms · 8 איכויות (1 muxed), ברירת מחדל 360p [muxed]
+13:42:33  InnerTube: VR+IOS נכשלו → NewPipe
+13:42:33  InnerTube ANDROID_VR: status=LOGIN_REQUIRED
+13:42:33  InnerTube IOS: HTTP 400
+13:42:03  RemoteConfig נטען מהענן ✓
