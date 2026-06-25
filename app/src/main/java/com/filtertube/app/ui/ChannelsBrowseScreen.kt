@@ -18,8 +18,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.Channel
+import com.filtertube.app.data.ChannelAvatars
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
@@ -40,6 +42,7 @@ fun ChannelsBrowseScreen(onBack: () -> Unit, onOpenChannel: (String, String) -> 
         channels = runCatching {
             ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
         }.getOrNull().orEmpty().sortedBy { it.name }
+        runCatching { ChannelAvatars.warm(context, channels.map { it.youtubeChannelId }) }
     }
 
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
@@ -75,12 +78,21 @@ private fun ChannelFollowRow(ch: Channel, store: LibraryStore, version: Int, onO
         modifier = Modifier.fillMaxWidth().clickable { onOpenChannel() }.padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier.size(40.dp).clip(RoundedCornerShape(50))
-                .background(Brush.linearGradient(ThemeState.accentColors)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(ch.name.firstOrNull()?.uppercase() ?: "?", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        val avatar = ChannelAvatars.cache[ch.youtubeChannelId]
+        if (avatar != null) {
+            AsyncImage(
+                model = avatar, contentDescription = null,
+                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(50))
+                    .background(ThemeState.card),
+            )
+        } else {
+            Box(
+                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(50))
+                    .background(Brush.linearGradient(ThemeState.accentColors)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(ch.name.firstOrNull()?.uppercase() ?: "?", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
         }
         Spacer(Modifier.width(12.dp))
         Text(ch.name, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium,

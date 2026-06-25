@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,8 +40,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.Channel
+import com.filtertube.app.data.ChannelAvatars
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
@@ -221,19 +224,28 @@ private fun StepLevel(level: Int, onLevel: (Int) -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StepArtists(channels: List<Channel>, selected: MutableList<String>) {
-    StepHeader("מה אוהבים לשמוע 🎵", "בחר/י כמה ערוצים/זמרים — נתאים לך את הבית ונשלח התראות על סרטונים חדשים.")
+    val context = LocalContext.current
+    var query by remember { mutableStateOf("") }
+    LaunchedEffect(channels) {
+        if (channels.isNotEmpty()) runCatching { ChannelAvatars.warm(context, channels.map { it.youtubeChannelId }) }
+    }
+    StepHeader("מה אוהבים לשמוע 🎵", "בחר/י זמרים/ערוצים — נתאים לך את הבית ונשלח התראות. אפשר לחפש לפי שם.")
     if (channels.isEmpty()) {
         Box(modifier = Modifier.fillMaxWidth().padding(top = 30.dp), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = ThemeState.accent)
         }
         return
     }
-    // קודם מוזיקה, אחר כך השאר — הכי רלוונטי לבחירת "זמרים"
-    val ordered = channels.sortedByDescending { it.category == "music" }
+    OnbField(query, { query = it }, "חיפוש זמר / ערוץ", Icons.Default.Search)
+    Spacer(Modifier.height(16.dp))
+    // קודם מוזיקה (הכי רלוונטי ל"זמרים"), ומסונן לפי החיפוש
+    val ordered = channels
+        .filter { query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) }
+        .sortedByDescending { it.category == "music" }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(9.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
         ordered.forEach { ch ->
             val sel = ch.youtubeChannelId in selected
-            ArtistChip(ch.name, sel) {
+            ArtistChip(ch.name, ChannelAvatars.cache[ch.youtubeChannelId], sel) {
                 if (sel) selected.remove(ch.youtubeChannelId) else selected.add(ch.youtubeChannelId)
             }
         }
@@ -332,17 +344,27 @@ private fun LevelCard(num: Int, title: String, sub: String, selected: Boolean, o
 }
 
 @Composable
-private fun ArtistChip(name: String, selected: Boolean, onClick: () -> Unit) {
+private fun ArtistChip(name: String, avatar: String?, selected: Boolean, onClick: () -> Unit) {
     Row(
         modifier = Modifier.clip(RoundedCornerShape(50))
             .then(if (selected) Modifier.background(Brush.linearGradient(ThemeState.accentColors)) else Modifier.background(ThemeState.card))
             .border(1.dp, if (selected) Color.Transparent else ThemeState.divider, RoundedCornerShape(50))
-            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 9.dp),
+            .clickable(onClick = onClick).padding(start = 5.dp, end = 14.dp, top = 5.dp, bottom = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (avatar != null) {
+            AsyncImage(model = avatar, contentDescription = null,
+                modifier = Modifier.size(28.dp).clip(RoundedCornerShape(50)).background(ThemeState.bg))
+        } else {
+            Box(
+                modifier = Modifier.size(28.dp).clip(RoundedCornerShape(50)).background(ThemeState.bg),
+                contentAlignment = Alignment.Center,
+            ) { Text(name.firstOrNull()?.uppercase() ?: "?", color = ThemeState.subtext2, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+        }
+        Spacer(Modifier.width(8.dp))
         if (selected) {
-            Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(15.dp))
-            Spacer(Modifier.width(6.dp))
+            Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(4.dp))
         }
         Text(name, color = if (selected) Color.White else ThemeState.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
     }
