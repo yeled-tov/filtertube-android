@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "63693398191",
+    "project_id": "filter-tube-52d8e",
+    "storage_bucket": "filter-tube-52d8e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:63693398191:android:dfbb6993622b857a40f45a",
+        "android_client_info": {
+          "package_name": "com.filtertube.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAgDoBTOHhb0RaPL0vkQtFmVwkr126OpNw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
