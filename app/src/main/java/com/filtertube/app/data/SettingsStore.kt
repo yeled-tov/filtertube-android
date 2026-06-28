@@ -120,6 +120,14 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_USER_GENDER, "") ?: ""
         set(value) = prefs.edit().putString(KEY_USER_GENDER, value).apply()
 
+    var cloudEmail: String
+        get() = prefs.getString(KEY_CLOUD_EMAIL, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_CLOUD_EMAIL, value).apply()
+
+    var cloudUid: String
+        get() = prefs.getString(KEY_CLOUD_UID, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_CLOUD_UID, value).apply()
+
     /** תחילת תקופת הניסיון (מילישניות). 0 = לא התחיל. */
     var trialStartMillis: Long
         get() = prefs.getLong(KEY_TRIAL_START, 0L)
@@ -211,6 +219,8 @@ class SettingsStore(context: Context) {
         private const val KEY_USER_NAME = "user_name"
         private const val KEY_USER_EMAIL = "user_email"
         private const val KEY_USER_GENDER = "user_gender"
+        private const val KEY_CLOUD_EMAIL = "cloud_email"
+        private const val KEY_CLOUD_UID = "cloud_uid"
         private const val KEY_TRIAL_START = "trial_start_millis"
         private const val KEY_PREMIUM_PAID = "premium_purchased"
         private const val KEY_SEEK_SHAPE = "seek_bar_shape"

@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -102,6 +103,7 @@ dependencies {
     // OkHttp + Kotlin coroutines (לקריאות HTTP ל-Supabase + YouTube)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     // Coil — טעינת תמונות אסינכרונית מ-URLs (thumbnails)
@@ -115,4 +117,11 @@ implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
 
     // WorkManager — בדיקת רקע תקופתית להתראות על סרטון חדש
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    // Firebase — סנכרון ענן/פרופיל
+    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
+    implementation("com.google.firebase:firebase-auth-ktx")
+    implementation("com.google.firebase:firebase-firestore-ktx")
+
+    testImplementation("junit:junit:4.13.2")
 }

@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,11 +37,13 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filtertube.app.BuildConfig
 import com.filtertube.app.ThemeState
+import com.filtertube.app.data.CloudSync
 import com.filtertube.app.data.GoogleAuth
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.UpdateChecker
@@ -72,6 +75,7 @@ fun SettingsScreen(
     var showUpdate by remember { mutableStateOf(false) }
     var showNotify by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
+    var showCloud by remember { mutableStateOf(false) }
     var adminUnlocked by remember { mutableStateOf(settings.adminUnlocked) }
 
     Column(
@@ -87,6 +91,8 @@ fun SettingsScreen(
         Spacer(Modifier.height(8.dp))
         SettingsRow(Icons.Default.AccountCircle, Color(0xFFFF0000), "חיבור ל-YouTube",
             "סנכרון לייקים, היסטוריה ומנויים עם החשבון שלך") { onOpenYoutubeLogin() }
+        SettingsRow(Icons.Default.AccountCircle, Color(0xFF2563EB), "סנכרון ענן",
+            if (settings.cloudEmail.isNotBlank()) "מחובר: ${settings.cloudEmail}" else "התחבר/י עם אימייל וסיסמה") { showCloud = true }
         SettingsRow(Icons.Default.WorkspacePremium, Color(0xFFFFC107), "FilterTube Premium",
             "הורדות וניגון ברקע — ניסיון חינם 60 יום") { onOpenPremium() }
         SettingsRow(Icons.Default.FilterAlt, Color(0xFFFFAA00), "הגדרות סינון 🔒",
@@ -151,9 +157,95 @@ fun SettingsScreen(
         onUnlock = { settings.adminUnlocked = true; adminUnlocked = true },
         onDismiss = { showAbout = false },
     )
+
+    if (showCloud) CloudSyncDialog(settings = settings, onDismiss = { showCloud = false })
 }
 
 // ── שורת הגדרה ───────────────────────────────────────────────────────────
+@Composable
+private fun CloudSyncDialog(settings: SettingsStore, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var email by remember { mutableStateOf(settings.cloudEmail) }
+    var password by remember { mutableStateOf("") }
+    var status by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (settings.cloudEmail.isNotBlank()) "סנכרון ענן" else "התחברות לענן") },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    if (settings.cloudEmail.isNotBlank()) "מחובר/ת כעת לענן — אפשר לסנכרן את הפרופיל שלך." else "הזן אימייל וסיסמה כדי להתחבר או ליצור חשבון ענן.",
+                    color = ThemeState.subtext2, fontSize = 12.sp,
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("אימייל") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = ThemeState.text,
+                        unfocusedTextColor = ThemeState.text,
+                        focusedBorderColor = ThemeState.accent,
+                        unfocusedBorderColor = ThemeState.divider,
+                    ),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("סיסמה") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = ThemeState.text,
+                        unfocusedTextColor = ThemeState.text,
+                        focusedBorderColor = ThemeState.accent,
+                        unfocusedBorderColor = ThemeState.divider,
+                    ),
+                )
+                if (status.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(status, color = if (status.contains("הצלחה")) Color(0xFF22C55E) else Color(0xFFFF5555), fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                loading = true
+                status = ""
+                scope.launch {
+                    val ok = CloudSync.signInOrRegister(email, password, settings)
+                    loading = false
+                    status = if (ok) "הצלחה — הפרופיל סונכרן לענן" else "התחברות נכשלה. בדוק אימייל/סיסמה"
+                }
+            }, enabled = !loading) {
+                Text(if (loading) "עובד..." else if (settings.cloudEmail.isNotBlank()) "סנכרן" else "התחבר")
+            }
+        },
+        dismissButton = {
+            Row {
+                if (settings.cloudEmail.isNotBlank()) {
+                    TextButton(onClick = {
+                        scope.launch { CloudSync.signOut(settings) }
+                        onDismiss()
+                    }) { Text("התנתק") }
+                }
+                TextButton(onClick = onDismiss) { Text("סגור") }
+            }
+        },
+        containerColor = ThemeState.surface,
+        titleContentColor = ThemeState.text,
+        textContentColor = ThemeState.text,
+    )
+}
+
 @Composable
 private fun SettingsRow(icon: ImageVector, accent: Color, title: String, subtitle: String, onClick: () -> Unit) {
     Row(
