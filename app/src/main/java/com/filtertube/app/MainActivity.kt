@@ -177,6 +177,7 @@ fun AppRoot() {
 
     var shortsEnabled by remember { mutableStateOf(settings.shortsEnabled) }
     var filterLevel by remember { mutableStateOf(settings.filterLevel) }
+    var userGender by remember { mutableStateOf(settings.userGender) }
     var crashReport by remember { mutableStateOf(com.filtertube.app.data.CrashLog.lastCrash(context)) }
     var pendingUpdate by remember { mutableStateOf<com.filtertube.app.data.UpdateChecker.Update?>(null) }
     LaunchedEffect(Unit) {
@@ -286,6 +287,11 @@ fun AppRoot() {
                     onOpenDownloads = { navController.navigate("downloads") },
                     onOpenYoutubeLogin = { navController.navigate("ytlogin") },
                     onOpenPremium = { navController.navigate("premium") },
+                    userGender = userGender,
+                    onUserGenderChange = { gender ->
+                        userGender = gender
+                        settings.userGender = gender
+                    },
                 )
             }
             composable("admin") {

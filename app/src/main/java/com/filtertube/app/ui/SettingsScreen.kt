@@ -58,6 +58,8 @@ fun SettingsScreen(
     onOpenDownloads: () -> Unit = {},
     onOpenYoutubeLogin: () -> Unit = {},
     onOpenPremium: () -> Unit = {},
+    userGender: String,
+    onUserGenderChange: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val settings = remember { SettingsStore(context) }
@@ -125,6 +127,8 @@ fun SettingsScreen(
         onFilterLevelChange = onFilterLevelChange,
         shortsEnabled = shortsEnabled,
         onShortsToggle = onShortsToggle,
+        userGender = userGender,
+        onUserGenderChange = onUserGenderChange,
         onChangePassword = { showFilter = false; showChangePw = true },
         onDismiss = { showFilter = false },
     )
@@ -274,11 +278,14 @@ private fun FilterSettingsDialog(
     onFilterLevelChange: (Int) -> Unit,
     shortsEnabled: Boolean,
     onShortsToggle: (Boolean) -> Unit,
+    userGender: String,
+    onUserGenderChange: (String) -> Unit,
     onChangePassword: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var level by remember { mutableStateOf(filterLevel) }
     var shorts by remember { mutableStateOf(shortsEnabled) }
+    var gender by remember { mutableStateOf(userGender) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("הגדרות סינון") },
@@ -287,6 +294,23 @@ private fun FilterSettingsDialog(
                 LevelRow(1, "מחמיר", "מוזיקה כאודיו בלבד · ״דתי לייט״ מוסתר", level) { level = 1; onFilterLevelChange(1) }
                 LevelRow(2, "רגיל", "הכל כווידאו · ״דתי לייט״ מוסתר", level) { level = 2; onFilterLevelChange(2) }
                 LevelRow(3, "דתי לייט", "כולל ״דתי לייט״ (אודיו בלבד)", level) { level = 3; onFilterLevelChange(3) }
+
+                HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
+
+                Text("תצוגת ערוצים לפי מגדר", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("" to "הכל", "male" to "זכר", "female" to "נקבה").forEach { (value, label) ->
+                        val selected = gender == value
+                        Box(
+                            modifier = Modifier.clip(RoundedCornerShape(50)).background(if (selected) ThemeState.accent else ThemeState.card)
+                                .clickable {
+                                    gender = value
+                                    onUserGenderChange(value)
+                                }.padding(horizontal = 12.dp, vertical = 7.dp),
+                        ) { Text(label, color = if (selected) Color.White else ThemeState.text, fontSize = 12.sp) }
+                    }
+                }
 
                 HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
 

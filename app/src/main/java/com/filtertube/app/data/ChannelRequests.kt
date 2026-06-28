@@ -38,12 +38,13 @@ object ChannelRequests {
         val name: String,
         val url: String,
         val category: String,
+        val gender: String,
         val description: String,
         val requestedAt: String,
     )
 
     /** שולח בקשת הוספת ערוץ. true בהצלחה. */
-    suspend fun submit(name: String, url: String, category: String, description: String): Boolean =
+    suspend fun submit(name: String, url: String, category: String, gender: String, description: String): Boolean =
         withContext(Dispatchers.IO) {
             val token = com.filtertube.app.BuildConfig.BUG_REPORT_TOKEN
             if (token.isBlank()) return@withContext false
@@ -53,6 +54,7 @@ object ChannelRequests {
                 put("name", name.trim())
                 put("url", url.trim())
                 put("category", category)
+                put("gender", gender)
                 put("description", description.trim())
                 put("requestedAt", ts)
                 put("device", android.os.Build.MODEL)
@@ -100,6 +102,7 @@ object ChannelRequests {
                             fileName = fileName, sha = sha,
                             name = obj.optString("name"), url = obj.optString("url"),
                             category = obj.optString("category", "general"),
+                            gender = obj.optString("gender", ""),
                             description = obj.optString("description"),
                             requestedAt = obj.optString("requestedAt"),
                         ),

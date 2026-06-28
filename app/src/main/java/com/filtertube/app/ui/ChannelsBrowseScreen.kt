@@ -49,7 +49,7 @@ fun ChannelsBrowseScreen(onBack: () -> Unit, onOpenChannel: (String, String) -> 
 
     LaunchedEffect(Unit) {
         channels = runCatching {
-            ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
+            ChannelsRepository.getChannels(context).forLevel(settings.filterLevel, settings.userGender)
         }.getOrNull().orEmpty().sortedBy { it.name }
         runCatching { ChannelAvatars.warm(context, channels.map { it.youtubeChannelId }) }
     }
@@ -106,6 +106,7 @@ private fun ChannelRequestDialog(onDismiss: () -> Unit) {
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("music") }
+    var gender by remember { mutableStateOf("all") }
     var desc by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var sent by remember { mutableStateOf(false) }
@@ -150,6 +151,19 @@ private fun ChannelRequestDialog(onDismiss: () -> Unit) {
                         }
                     }
                     Spacer(Modifier.height(12.dp))
+                    Text("מגדר", color = ThemeState.subtext, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        listOf("all" to "הכל", "male" to "זכר", "female" to "נקבה").forEach { (key, label) ->
+                            val sel = gender == key
+                            Box(
+                                modifier = Modifier.padding(end = 6.dp).clip(RoundedCornerShape(50))
+                                    .background(if (sel) ThemeState.accent else ThemeState.card)
+                                    .clickable { gender = key }.padding(horizontal = 13.dp, vertical = 7.dp),
+                            ) { Text(label, color = if (sel) Color.White else ThemeState.text, fontSize = 12.sp) }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
                     OutlinedTextField(desc, { desc = it }, label = { Text("מה הערוץ מכיל? (תוכן, קהל יעד)") },
                         modifier = Modifier.fillMaxWidth().height(96.dp), shape = RoundedCornerShape(14.dp), colors = colors)
                 }
@@ -164,7 +178,7 @@ private fun ChannelRequestDialog(onDismiss: () -> Unit) {
                     onClick = {
                         sending = true
                         scope.launch {
-                            val ok = ChannelRequests.submit(name, url, category, desc)
+                            val ok = ChannelRequests.submit(name, url, category, gender, desc)
                             sending = false
                             if (ok) sent = true
                             else android.widget.Toast.makeText(context, "שליחה נכשלה — נסה שוב", android.widget.Toast.LENGTH_SHORT).show()

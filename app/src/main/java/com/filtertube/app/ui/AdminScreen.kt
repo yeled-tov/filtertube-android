@@ -49,6 +49,7 @@ fun AdminScreen(onBack: () -> Unit) {
     // שדות הוספה
     var newChannelInput by remember { mutableStateOf("") }
     var newCategory by remember { mutableStateOf("music") }
+    var newGender by remember { mutableStateOf("all") }
     var busy by remember { mutableStateOf(false) }
 
     fun loadChannels() {
@@ -77,7 +78,7 @@ fun AdminScreen(onBack: () -> Unit) {
                 if (resolved == null) { status = "לא זוהה ערוץ מהקישור של ${r.name}"; busy = false; return@launch }
                 val (cid, nm) = resolved
                 if (channels.none { it.youtubeChannelId == cid }) {
-                    val updated = (channels + Channel(cid, nm, r.category)).sortedBy { it.name }
+                    val updated = (channels + Channel(cid, nm, r.category, r.gender)).sortedBy { it.name }
                     val ok = ChannelAdmin.commit(token, updated, sha, "Add channel (request): $nm")
                     if (!ok) { status = "שגיאה בעדכון GitHub"; busy = false; return@launch }
                     val (list, newSha) = ChannelAdmin.fetchCurrent(token)
@@ -113,7 +114,7 @@ fun AdminScreen(onBack: () -> Unit) {
                 if (channels.any { it.youtubeChannelId == channelId }) {
                     status = "הערוץ כבר קיים"; busy = false; return@launch
                 }
-                val updated = (channels + Channel(channelId, name, newCategory)).sortedBy { it.name }
+                val updated = (channels + Channel(channelId, name, newCategory, newGender)).sortedBy { it.name }
                 status = "מעדכן ב-GitHub..."
                 val ok = ChannelAdmin.commit(token, updated, sha, "Add channel: $name")
                 if (ok) {
@@ -194,6 +195,14 @@ fun AdminScreen(onBack: () -> Unit) {
                         ) {
                             Text(r.name, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                             Text(categoryLabels[r.category] ?: r.category, color = Color(0xFFFF0000), fontSize = 11.sp)
+                            Text(
+                                when (r.gender.lowercase()) {
+                                    "male" -> "זכר"
+                                    "female" -> "נקבה"
+                                    else -> "הכל"
+                                },
+                                color = ThemeState.subtext, fontSize = 11.sp,
+                            )
                             if (r.url.isNotBlank()) {
                                 Text(r.url, color = ThemeState.subtext, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
@@ -233,7 +242,8 @@ fun AdminScreen(onBack: () -> Unit) {
                         ),
                     )
                     Spacer(Modifier.height(8.dp))
-                    // בחירת קטגוריה
+                    Text("קטגוריה", color = ThemeState.subtext, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
                     Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                         categoryLabels.forEach { (key, label) ->
                             val selected = newCategory == key
@@ -241,6 +251,20 @@ fun AdminScreen(onBack: () -> Unit) {
                                 modifier = Modifier.padding(end = 6.dp).clip(RoundedCornerShape(16.dp))
                                     .background(if (selected) Color(0xFFFF0000) else ThemeState.divider)
                                     .clickable { newCategory = key }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                            ) { Text(label, color = ThemeState.text, fontSize = 12.sp) }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("מגדר", color = ThemeState.subtext, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        listOf("all" to "הכל", "male" to "זכר", "female" to "נקבה").forEach { (key, label) ->
+                            val selected = newGender == key
+                            Box(
+                                modifier = Modifier.padding(end = 6.dp).clip(RoundedCornerShape(16.dp))
+                                    .background(if (selected) Color(0xFFFF0000) else ThemeState.divider)
+                                    .clickable { newGender = key }
                                     .padding(horizontal = 12.dp, vertical = 6.dp),
                             ) { Text(label, color = ThemeState.text, fontSize = 12.sp) }
                         }
@@ -269,6 +293,14 @@ fun AdminScreen(onBack: () -> Unit) {
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(categoryLabels[channel.category] ?: channel.category,
                             color = ThemeState.subtext, fontSize = 11.sp)
+                        Text(
+                            when (channel.gender.lowercase()) {
+                                "male" -> "זכר"
+                                "female" -> "נקבה"
+                                else -> "הכל"
+                            },
+                            color = ThemeState.subtext2, fontSize = 11.sp,
+                        )
                     }
                     IconButton(onClick = { removeChannel(channel) }, enabled = !busy) {
                         Icon(Icons.Default.Delete, "הסר", tint = Color(0xFFFF0000))

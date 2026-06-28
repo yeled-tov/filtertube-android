@@ -45,8 +45,10 @@ import com.filtertube.app.ThemeState
 import com.filtertube.app.data.Channel
 import com.filtertube.app.data.ChannelAvatars
 import com.filtertube.app.data.ChannelsRepository
+import com.filtertube.app.data.CloudSync
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
+import kotlinx.coroutines.launch
 
 /**
  * מסך הרשמה ראשוני (Onboarding) — אשף 5 שלבים:
@@ -60,6 +62,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
     val context = LocalContext.current
     val settings = remember { SettingsStore(context) }
     val store = remember { LibraryStore(context) }
+    val scope = rememberCoroutineScope()
 
     val total = 5
     var step by remember { mutableStateOf(0) }
@@ -91,6 +94,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
         selected.forEach { id -> if (!store.isSubscribed(id)) store.toggleSubscription(id) }
         settings.trialStartMillis = System.currentTimeMillis()
         settings.onboardingDone = true
+        scope.launch { CloudSync.syncUserProfile(settings) }
         onDone()
     }
 

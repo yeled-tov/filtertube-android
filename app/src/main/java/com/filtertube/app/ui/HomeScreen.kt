@@ -95,7 +95,7 @@ fun HomeScreen(
         refreshing = true
         scope.launch {
             try {
-                val chans = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
+                val chans = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel, settings.userGender)
                 channels = chans
                 val videos = YouTubeRepository.fetchAllChannelsFeed(chans)
                 if (videos.isNotEmpty()) {
@@ -114,7 +114,7 @@ fun HomeScreen(
 
     // טעינה מיידית מהקאש (אם יש), ואז רענון ברקע
     LaunchedEffect(Unit) {
-        runCatching { channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel) }
+        runCatching { channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel, settings.userGender) }
         val cached = FeedCache.loadFeed(context)
         if (!cached.isNullOrEmpty()) state = HomeState.Success(personalizeFeed(cached, store.localHistory()))
         refresh(showSpinner = cached.isNullOrEmpty())
