@@ -128,6 +128,10 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_CLOUD_UID, "") ?: ""
         set(value) = prefs.edit().putString(KEY_CLOUD_UID, value).apply()
 
+    var cloudToken: String
+        get() = prefs.getString(KEY_CLOUD_TOKEN, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_CLOUD_TOKEN, value).apply()
+
     /** תחילת תקופת הניסיון (מילישניות). 0 = לא התחיל. */
     var trialStartMillis: Long
         get() = prefs.getLong(KEY_TRIAL_START, 0L)
@@ -207,9 +211,60 @@ class SettingsStore(context: Context) {
         prefs.edit().remove(KEY_HISTORY).apply()
     }
 
+    fun getHistoryItems(): List<String> {
+        val raw = prefs.getString(KEY_HISTORY_ITEMS, "") ?: ""
+        return raw.split("\n").filter { it.isNotBlank() }
+    }
+
+    fun setHistoryItems(items: List<String>) {
+        prefs.edit().putString(KEY_HISTORY_ITEMS, items.joinToString("\n")).apply()
+    }
+
+    fun getLikedVideos(): List<String> {
+        val raw = prefs.getString(KEY_LIKED_VIDEOS, "") ?: ""
+        return raw.split("\n").filter { it.isNotBlank() }
+    }
+
+    fun setLikedVideos(items: List<String>) {
+        prefs.edit().putString(KEY_LIKED_VIDEOS, items.joinToString("\n")).apply()
+    }
+
+    fun getDownloads(): List<String> {
+        val raw = prefs.getString(KEY_DOWNLOADS, "") ?: ""
+        return raw.split("\n").filter { it.isNotBlank() }
+    }
+
+    fun setDownloads(items: List<String>) {
+        prefs.edit().putString(KEY_DOWNLOADS, items.joinToString("\n")).apply()
+    }
+
+    fun applyCloudProfile(json: org.json.JSONObject) {
+        val searchHistory = json.optJSONArray("searchHistory")?.let { array ->
+            List(array.length()) { array.optString(it) }
+        }.orEmpty()
+        val history = json.optJSONArray("history")?.let { array ->
+            List(array.length()) { array.optString(it) }
+        }.orEmpty()
+        val likes = json.optJSONArray("likedVideos")?.let { array ->
+            List(array.length()) { array.optString(it) }
+        }.orEmpty()
+        val downloads = json.optJSONArray("downloads")?.let { array ->
+            List(array.length()) { array.optString(it) }
+        }.orEmpty()
+        prefs.edit()
+            .putString(KEY_HISTORY, searchHistory.joinToString("\n"))
+            .putString(KEY_HISTORY_ITEMS, history.joinToString("\n"))
+            .putString(KEY_LIKED_VIDEOS, likes.joinToString("\n"))
+            .putString(KEY_DOWNLOADS, downloads.joinToString("\n"))
+            .apply()
+    }
+
     companion object {
         private const val KEY_SHORTS = "shorts_enabled"
         private const val KEY_HISTORY = "search_history"
+        private const val KEY_HISTORY_ITEMS = "history_items"
+        private const val KEY_LIKED_VIDEOS = "liked_videos"
+        private const val KEY_DOWNLOADS = "downloads"
         private const val KEY_LEVEL = "filter_level"
         private const val KEY_GH_TOKEN = "github_token"
         private const val KEY_FILTER_PW = "filter_password"
@@ -231,6 +286,7 @@ class SettingsStore(context: Context) {
         private const val KEY_USER_GENDER = "user_gender"
         private const val KEY_CLOUD_EMAIL = "cloud_email"
         private const val KEY_CLOUD_UID = "cloud_uid"
+        private const val KEY_CLOUD_TOKEN = "cloud_token"
         private const val KEY_TRIAL_START = "trial_start_millis"
         private const val KEY_PREMIUM_PAID = "premium_purchased"
         private const val KEY_SERVER_BASE_URL = "server_base_url"

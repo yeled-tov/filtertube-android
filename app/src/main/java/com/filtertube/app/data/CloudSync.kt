@@ -1,67 +1,138 @@
 package com.filtertube.app.data
 
+import android.content.Context
 import android.util.Log
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 
 /**
- * סנכרון פרופיל בסיסי ל-Firebase Auth + Firestore.
- * אם המשתמש מחובר, הפרופיל נשמר בענן ומקושר למשתמש המקומי.
+ * סנכרון ענן דרך שרת משלי — לא משתמש ב-Google Sign-In.
+ * כל לקוח יוצר/מתחבר עם אימייל וסיסמה, והשרת שומר:
+ * - היסטוריית חיפושים
+ * - היסטוריית האזנה
+ * - אהובים
+ * - הורדות
+ * - הגדרות בסיסיות
  */
 object CloudSync {
     private const val TAG = "CloudSync"
-    private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
-    private val firestore: FirebaseFirestore by lazy { FirebaseFirestore.getInstance() }
+    private val client = OkHttpClient()
 
-    val isSignedIn: Boolean get() = auth.currentUser != null
-    val currentEmail: String get() = auth.currentUser?.email.orEmpty()
+    private fun baseUrl(settings: SettingsStore): String = settings.serverBaseUrl.trim().removeSuffix("/")
 
     suspend fun signInOrRegister(email: String, password: String, settings: SettingsStore): Boolean = withContext(Dispatchers.IO) {
         val normalized = email.trim()
         if (normalized.isBlank() || password.length < 6) return@withContext false
-        try {
-            val result = if (auth.currentUser != null) {
-                auth.signInWithEmailAndPassword(normalized, password).await()
-            } else {
-                auth.createUserWithEmailAndPassword(normalized, password).await()
+        val url = baseUrl(settings)
+        if (url.isBlank()) return@withContext false
+
+        val payload = JSONObject().apply {
+            put("email", normalized)
+            put("password", password)
+            put("app", "filtertube")
+            put("device", "android")
+            put("apiKey", settings.serverApiKey)
+        }
+
+        val request = Request.Builder()
+            .url("$url/api/cloud/auth")
+            .post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        runCatching {
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "auth failed: ${response.code} $body")
+                    return@withContext false
+                }
+
+                val json = JSONObject(body)
+                val token = json.optString("token", "").takeIf { it.isNotBlank() } ?: return@withContext false
+                settings.cloudUid = json.optString("userId", "")
+                settings.cloudEmail = normalized
+                settings.cloudToken = token
+                syncUserProfile(settings)
+                true
             }
-            val uid = result.user?.uid ?: return@withContext false
-            settings.cloudUid = uid
-            settings.cloudEmail = result.user?.email.orEmpty()
-            syncUserProfile(settings)
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "signInOrRegister failed", e)
+        }.getOrElse {
+            Log.e(TAG, "signInOrRegister failed", it)
             false
         }
     }
 
     suspend fun signOut(settings: SettingsStore) = withContext(Dispatchers.IO) {
-        auth.signOut()
         settings.cloudUid = ""
         settings.cloudEmail = ""
+        settings.cloudToken = ""
     }
 
     suspend fun syncUserProfile(settings: SettingsStore): Boolean = withContext(Dispatchers.IO) {
-        val uid = auth.currentUser?.uid ?: return@withContext false
-        val data = hashMapOf(
-            "name" to settings.userName,
-            "email" to settings.userEmail,
-            "gender" to settings.userGender,
-            "filterLevel" to settings.filterLevel,
-            "updatedAt" to System.currentTimeMillis(),
-        )
-        try {
-            firestore.collection("users").document(uid).set(data, SetOptions.merge()).await()
-            settings.cloudUid = uid
-            settings.cloudEmail = auth.currentUser?.email.orEmpty()
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "syncUserProfile failed", e)
+        val url = baseUrl(settings)
+        if (url.isBlank() || settings.cloudToken.isBlank()) return@withContext false
+
+        val payload = JSONObject().apply {
+            put("token", settings.cloudToken)
+            put("name", settings.userName)
+            put("email", settings.cloudEmail)
+            put("gender", settings.userGender)
+            put("filterLevel", settings.filterLevel)
+            put("searchHistory", settings.getSearchHistory())
+            put("history", settings.getHistoryItems())
+            put("likedVideos", settings.getLikedVideos())
+            put("downloads", settings.getDownloads())
+            put("updatedAt", System.currentTimeMillis())
+        }
+
+        val request = Request.Builder()
+            .url("$url/api/cloud/profile")
+            .post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        runCatching {
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "profile sync failed: ${response.code} $body")
+                    return@withContext false
+                }
+                true
+            }
+        }.getOrElse {
+            Log.e(TAG, "syncUserProfile failed", it)
+            false
+        }
+    }
+
+    suspend fun pullCloudData(settings: SettingsStore): Boolean = withContext(Dispatchers.IO) {
+        val url = baseUrl(settings)
+        if (url.isBlank() || settings.cloudToken.isBlank()) return@withContext false
+
+        val request = Request.Builder()
+            .url("$url/api/cloud/profile")
+            .header("Authorization", "Bearer ${settings.cloudToken}")
+            .get()
+            .build()
+
+        runCatching {
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "pull failed: ${response.code} $body")
+                    return@withContext false
+                }
+
+                val json = JSONObject(body)
+                settings.applyCloudProfile(json)
+                true
+            }
+        }.getOrElse {
+            Log.e(TAG, "pullCloudData failed", it)
             false
         }
     }
