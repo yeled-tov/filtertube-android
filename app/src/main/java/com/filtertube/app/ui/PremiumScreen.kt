@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.ServerBilling
 import com.filtertube.app.data.SettingsStore
+import kotlinx.coroutines.launch
 
 /**
  * מסך FilterTube Premium — שער תשלום מעוצב. לאחר 60 ימי הניסיון נחסמים הורדות,
@@ -45,6 +46,7 @@ import com.filtertube.app.data.SettingsStore
 fun PremiumScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val settings = remember { SettingsStore(context) }
+    val scope = rememberCoroutineScope()
     val daysLeft = settings.trialDaysLeft
     val active = settings.premiumActive
     var plan by remember { mutableStateOf("year") }   // "month" / "year"
@@ -151,7 +153,7 @@ fun PremiumScreen(onBack: () -> Unit) {
                     onClick = {
                         loading = true
                         status = "שולח בקשת תשלום לשרת…"
-                        androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycleScope.launch {
+                        scope.launch {
                             val result = ServerBilling.createCheckout(settings, plan, method)
                             loading = false
                             status = result.message
@@ -174,7 +176,7 @@ fun PremiumScreen(onBack: () -> Unit) {
                     onClick = {
                         loading = true
                         status = "מאמת תשלום עם השרת…"
-                        androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycleScope.launch {
+                        scope.launch {
                             val result = ServerBilling.verifyPurchase(settings, plan, method)
                             loading = false
                             status = result.message
