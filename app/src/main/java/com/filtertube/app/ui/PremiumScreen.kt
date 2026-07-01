@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -26,11 +27,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filtertube.app.ThemeState
+import com.filtertube.app.data.ServerBilling
 import com.filtertube.app.data.SettingsStore
 
 /**
@@ -46,6 +49,10 @@ fun PremiumScreen(onBack: () -> Unit) {
     val active = settings.premiumActive
     var plan by remember { mutableStateOf("year") }   // "month" / "year"
     var method by remember { mutableStateOf("card") }  // "card" / "paypal"
+    var serverUrl by remember { mutableStateOf(settings.serverBaseUrl) }
+    var apiKey by remember { mutableStateOf(settings.serverApiKey) }
+    var status by remember { mutableStateOf("התחבר לשרת התשלומים כדי לאמת רכישה מאובטחת") }
+    var loading by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar("FilterTube Premium", onBack)
@@ -101,22 +108,87 @@ fun PremiumScreen(onBack: () -> Unit) {
                     PayMethod("PayPal", null, method == "paypal", Modifier.weight(1f)) { method = "paypal" }
                 }
 
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = serverUrl,
+                    onValueChange = {
+                        serverUrl = it
+                        settings.serverBaseUrl = it
+                    },
+                    label = { Text("כתובת שרת תשלומים") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = ThemeState.text,
+                        unfocusedTextColor = ThemeState.text,
+                        focusedBorderColor = ThemeState.accent,
+                        unfocusedBorderColor = ThemeState.divider,
+                    ),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = {
+                        apiKey = it
+                        settings.serverApiKey = it
+                    },
+                    label = { Text("API Key") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = ThemeState.text,
+                        unfocusedTextColor = ThemeState.text,
+                        focusedBorderColor = ThemeState.accent,
+                        unfocusedBorderColor = ThemeState.divider,
+                    ),
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(status, color = if (status.contains("✅") || status.contains("הושלם")) Color(0xFF22C55E) else ThemeState.subtext2, fontSize = 12.sp)
+                Spacer(Modifier.height(12.dp))
                 Button(
                     onClick = {
-                        Toast.makeText(
-                            context,
-                            "התשלומים בהקמה — נעדכן כשייפתחו. בינתיים אתה נהנה מהכול בחינם 🙏",
-                            Toast.LENGTH_LONG,
-                        ).show()
+                        loading = true
+                        status = "שולח בקשת תשלום לשרת…"
+                        androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycleScope.launch {
+                            val result = ServerBilling.createCheckout(settings, plan, method)
+                            loading = false
+                            status = result.message
+                            if (result.checkoutUrl != null) {
+                                Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                            }
+                        }
                     },
                     modifier = Modifier.fillMaxWidth().height(54.dp).clip(RoundedCornerShape(16.dp)),
                     colors = ButtonDefaults.buttonColors(containerColor = ThemeState.accent),
+                    enabled = !loading,
                 ) {
                     Text(
                         if (plan == "year") "המשך לתשלום מאובטח · ₪70/שנה" else "המשך לתשלום מאובטח · ₪10/חודש",
                         fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = Color.White,
                     )
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        loading = true
+                        status = "מאמת תשלום עם השרת…"
+                        androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycleScope.launch {
+                            val result = ServerBilling.verifyPurchase(settings, plan, method)
+                            loading = false
+                            status = result.message
+                            if (result.ok) {
+                                settings.premiumPurchased = true
+                                Toast.makeText(context, "האימות הושלם", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    enabled = !loading,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = ThemeState.accent),
+                ) {
+                    Text("אמת רכישה")
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {

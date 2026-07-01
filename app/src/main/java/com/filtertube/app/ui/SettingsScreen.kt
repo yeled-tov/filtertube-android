@@ -49,6 +49,7 @@ import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.UpdateChecker
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
@@ -89,16 +90,21 @@ fun SettingsScreen(
         HorizontalDivider(color = ThemeState.divider)
 
         Spacer(Modifier.height(8.dp))
+        SettingsSectionHeader("חיבור ואימות")
         SettingsRow(Icons.Default.AccountCircle, Color(0xFFFF0000), "חיבור ל-YouTube",
             "סנכרון לייקים, היסטוריה ומנויים עם החשבון שלך") { onOpenYoutubeLogin() }
         SettingsRow(Icons.Default.AccountCircle, Color(0xFF2563EB), "סנכרון ענן",
             if (settings.cloudEmail.isNotBlank()) "מחובר: ${settings.cloudEmail}" else "התחבר/י עם אימייל וסיסמה") { showCloud = true }
         SettingsRow(Icons.Default.WorkspacePremium, Color(0xFFFFC107), "FilterTube Premium",
             "הורדות וניגון ברקע — ניסיון חינם 60 יום") { onOpenPremium() }
+
+        SettingsSectionHeader("סינון וניגון")
         SettingsRow(Icons.Default.FilterAlt, Color(0xFFFFAA00), "הגדרות סינון 🔒",
             "רמת סינון והצגת Shorts — מוגן בסיסמה") { showGate = true }
         SettingsRow(Icons.Default.MusicNote, Color(0xFF10B981), "נגן ושמע",
             "עיצוב הנגן ואיכות") { showPlayerAudio = true }
+
+        SettingsSectionHeader("ניהול והצגה")
         SettingsRow(Icons.Default.Download, Color(0xFF00BFA5), "מנהל הורדות",
             "הורדת לייקים · מהירות · הורדות במקביל") { onOpenDownloads() }
         SettingsRow(Icons.Default.Tune, Color(0xFF3B82F6), "הגדרות תצוגה",
@@ -243,6 +249,17 @@ private fun CloudSyncDialog(settings: SettingsStore, onDismiss: () -> Unit) {
         containerColor = ThemeState.surface,
         titleContentColor = ThemeState.text,
         textContentColor = ThemeState.text,
+    )
+}
+
+@Composable
+private fun SettingsSectionHeader(title: String) {
+    Text(
+        title,
+        color = ThemeState.accent,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp),
     )
 }
 

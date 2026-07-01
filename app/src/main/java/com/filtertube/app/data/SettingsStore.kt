@@ -138,6 +138,16 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_PREMIUM_PAID, false)
         set(value) = prefs.edit().putBoolean(KEY_PREMIUM_PAID, value).apply()
 
+    /** כתובת שרת התשלומים/האימות. */
+    var serverBaseUrl: String
+        get() = prefs.getString(KEY_SERVER_BASE_URL, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_SERVER_BASE_URL, value).apply()
+
+    /** מפתח API לשימוש באימות שרת. */
+    var serverApiKey: String
+        get() = prefs.getString(KEY_SERVER_API_KEY, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_SERVER_API_KEY, value).apply()
+
     /** פרימיום פעיל — ניסיון 60 יום פעיל *או* מנוי בתשלום (הורדות, ניגון ברקע, חלון צף). */
     val premiumActive: Boolean
         get() {
@@ -223,6 +233,8 @@ class SettingsStore(context: Context) {
         private const val KEY_CLOUD_UID = "cloud_uid"
         private const val KEY_TRIAL_START = "trial_start_millis"
         private const val KEY_PREMIUM_PAID = "premium_purchased"
+        private const val KEY_SERVER_BASE_URL = "server_base_url"
+        private const val KEY_SERVER_API_KEY = "server_api_key"
         private const val KEY_SEEK_SHAPE = "seek_bar_shape"
         private const val KEY_SEEK_THICK = "seek_bar_thickness"
         private const val KEY_SEEK_GLOW = "seek_bar_glow"

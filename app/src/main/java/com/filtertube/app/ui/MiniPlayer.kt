@@ -7,9 +7,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -67,11 +71,23 @@ fun MiniPlayer(
                 Text(ui.artist, color = ThemeState.subtext2, fontSize = 11.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            IconButton(onClick = { controller.seekBack() }) {
+                Icon(Icons.Default.Replay10, "10 שניות אחורה", tint = ThemeState.text)
+            }
+            IconButton(onClick = { controller.seekForward() }) {
+                Icon(Icons.Default.FastForward, "10 שניות קדימה", tint = ThemeState.text)
+            }
             IconButton(onClick = { if (ui.isPlaying) controller.pause() else controller.play() }) {
                 Icon(
                     if (ui.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     if (ui.isPlaying) "השהה" else "נגן", tint = ThemeState.text,
                 )
+            }
+            IconButton(onClick = { controller.seekToNextMediaItem() }) {
+                Icon(Icons.Default.SkipNext, "שיר הבא", tint = ThemeState.text)
+            }
+            IconButton(onClick = { controller.seekToPreviousMediaItem() }) {
+                Icon(Icons.Default.SkipPrevious, "שיר קודם", tint = ThemeState.text)
             }
             IconButton(onClick = { controller.stop(); controller.clearMediaItems() }) {
                 Icon(Icons.Default.Close, "סגור", tint = ThemeState.subtext2)
