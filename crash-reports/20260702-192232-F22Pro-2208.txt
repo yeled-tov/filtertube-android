@@ -1,0 +1,29 @@
+זמן: Thu Jul 02 19:21:56 GMT+03:00 2026
+אנדרואיד: 14 (API 34)
+מכשיר: DUOQIN F22Pro
+
+java.lang.IndexOutOfBoundsException: Index -1 out of bounds for length 1
+	at jdk.internal.util.Preconditions.outOfBounds(Preconditions.java:100)
+	at jdk.internal.util.Preconditions.outOfBoundsCheckIndex(Preconditions.java:106)
+	at jdk.internal.util.Preconditions.checkIndex(Preconditions.java:302)
+	at java.util.Objects.checkIndex(Objects.java:371)
+	at java.util.ArrayList.get(ArrayList.java:435)
+	at androidx.navigation.compose.NavHostKt$NavHost$25$1.invokeSuspend(NavHost.kt:518)
+	at androidx.navigation.compose.NavHostKt$NavHost$25$1.invoke(NavHost.kt:8)
+	at androidx.navigation.compose.NavHostKt$NavHost$25$1.invoke(NavHost.kt:4)
+	at androidx.activity.compose.OnBackInstance$job$1.invokeSuspend(PredictiveBackHandler.kt:160)
+	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:33)
+	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:104)
+	at androidx.compose.ui.platform.AndroidUiDispatcher.performTrampolineDispatch(AndroidUiDispatcher.android.kt:81)
+	at androidx.compose.ui.platform.AndroidUiDispatcher.access$performTrampolineDispatch(AndroidUiDispatcher.android.kt:41)
+	at androidx.compose.ui.platform.AndroidUiDispatcher$dispatchCallback$1.run(AndroidUiDispatcher.android.kt:57)
+	at android.os.Handler.handleCallback(Handler.java:958)
+	at android.os.Handler.dispatchMessage(Handler.java:99)
+	at android.os.Looper.loopOnce(Looper.java:205)
+	at android.os.Looper.loop(Looper.java:294)
+	at android.app.ActivityThread.main(ActivityThread.java:8225)
+	at java.lang.reflect.Method.invoke(Native Method)
+	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:573)
+	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1058)
+	Suppressed: kotlinx.coroutines.internal.DiagnosticCoroutineContextException: [androidx.compose.ui.platform.MotionDurationScaleImpl@b3ac840, androidx.compose.runtime.BroadcastFrameClock@28af379, StandaloneCoroutine{Cancelling}@3eeb8be, AndroidUiDispatcher@9e2bd1f]
+    
