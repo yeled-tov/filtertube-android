@@ -124,9 +124,9 @@ object InnerTube {
     }
 
     // ערכי ברירת מחדל מוטמעים — נעשה בהם שימוש אם RemoteConfig (הענן) לא נטען.
-    private const val DEF_IOS_UA = "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X)"
+    private const val DEF_IOS_UA = "com.google.ios.youtube/20.50.3 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X)"
     private const val DEF_VR_UA = "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip"
-    private const val DEF_IOS_VER = "19.29.1"
+    private const val DEF_IOS_VER = "20.50.3"
     private const val DEF_IOS_MODEL = "iPhone16,2"
     private const val DEF_IOS_OS = "17.5.1.21F90"
     private const val DEF_VR_VER = "1.60.19"
