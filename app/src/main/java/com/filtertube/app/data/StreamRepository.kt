@@ -72,7 +72,6 @@ object StreamRepository {
     )
     np ?: throw IllegalStateException("לא נמצא video stream")
 }
-    }
 
     /** תקציר האיכויות שנבחרו — האם ברירת המחדל משולבת (muxed) או DASH (מיזוג). */
     private fun trackSummary(d: StreamData): String {
