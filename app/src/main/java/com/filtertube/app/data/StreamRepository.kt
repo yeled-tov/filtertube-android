@@ -47,23 +47,31 @@ data class StreamData(
 object StreamRepository {
 
     suspend fun getStream(videoId: String): StreamData = coroutineScope {
-        // שני הנתיבים רצים במקביל — מי שמחזיר מהר מנצח. NewPipe מתחיל מיד; ל-InnerTube
-        // תקרת זמן, ואם חזר ראשון מבטלים את NewPipe. כך אין יותר המתנה לנתיב האיטי.
-        val t0 = System.currentTimeMillis()
-        val newpipe = async(Dispatchers.IO) { runCatching { extractViaNewPipe(videoId) }.getOrNull() }
-        val inner = withTimeoutOrNull(4500) { runCatching { InnerTube.player(videoId) }.getOrNull() }
-        if (inner != null) {
-            newpipe.cancel()
-            Diagnostics.log("טעינה $videoId: InnerTube ${System.currentTimeMillis() - t0}ms · ${trackSummary(inner)}")
-            return@coroutineScope inner
-        }
-        val np = newpipe.await()
-        Diagnostics.log(
-            "טעינה $videoId: " +
-                if (np != null) "NewPipe ${System.currentTimeMillis() - t0}ms · ${trackSummary(np)}"
-                else "נכשל ${System.currentTimeMillis() - t0}ms ✖",
-        )
-        np ?: throw IllegalStateException("לא נמצא video stream")
+    val t0 = System.currentTimeMillis()
+    
+    // מפעיל את NewPipe ואת InnerTube במקביל באמת כדי לא לבזבז זמן
+    val newpipeDeferred = async(Dispatchers.IO) { runCatching { extractViaNewPipe(videoId) }.getOrNull() }
+    val innerDeferred = async(Dispatchers.IO) { 
+        withTimeoutOrNull(4500) { runCatching { InnerTube.player(videoId) }.getOrNull() } 
+    }
+    
+    // בודק קודם כל אם InnerTube הצליח
+    val inner = innerDeferred.await()
+    if (inner != null) {
+        newpipeDeferred.cancel() // אם InnerTube הצליח, נבטל את NewPipe כדי לחסוך משאבים
+        Diagnostics.log("טעינה $videoId: InnerTube ${System.currentTimeMillis() - t0}ms · ${trackSummary(inner)}")
+        return@coroutineScope inner
+    }
+    
+    // אם InnerTube נכשל, אנחנו לוקחים מיד את מה ש-NewPipe כבר חילץ בלי לחכות סתם
+    val np = newpipeDeferred.await()
+    Diagnostics.log(
+        "טעינה $videoId: " +
+            if (np != null) "NewPipe ${System.currentTimeMillis() - t0}ms · ${trackSummary(np)}"
+            else "נכשל ${System.currentTimeMillis() - t0}ms ✖",
+    )
+    np ?: throw IllegalStateException("לא נמצא video stream")
+}
     }
 
     /** תקציר האיכויות שנבחרו — האם ברירת המחדל משולבת (muxed) או DASH (מיזוג). */
