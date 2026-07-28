@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import com.filtertube.app.data.AccountDataGuard
 import com.filtertube.app.data.ChannelsRepository
@@ -20,6 +21,7 @@ import com.google.firebase.auth.FirebaseAuth
  * לוגיקת ניגון משותפת — בניית פריטי מדיה, תור "רדיו" אוטומטי, ומטמון StreamData
  * (כדי שמעבר איכות/אודיו יעבוד גם על פריטים שהתור הוסיף אוטומטית).
  */
+@OptIn(UnstableApi::class)
 object Playback {
 
     const val EXTRA_IS_AUDIO = "filtertube_is_audio"
