@@ -2,32 +2,52 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'codex/**'
     paths-ignore:
       - 'flutter_app/**'
       - '.github/workflows/flutter.yml'
       - '**/*.md'
-  workflow_dispatch:  # מאפשר הרצה ידנית
+  workflow_dispatch:
 
-# הרשאה ליצור Releases (אחרת מקבלים 403)
+# Build and dependency steps never receive repository write access.
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Set up Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install and lint Firebase Functions
+        run: |
+          npm ci --prefix functions
+          npm --prefix functions run lint
+
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          gradle-version: '8.10.2'
 
       - name: Generate Gradle Wrapper
         run: gradle wrapper --gradle-version 8.10.2 --distribution-type bin
@@ -35,55 +55,60 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
 
-      - name: Build debug APK
+      - name: Test, lint, and build release APK
         run: |
           set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace -PbuildNumber=${{ github.run_number }} -PbugToken=${{ secrets.BUG_REPORT_TOKEN }} 2>&1 | tee build-output.txt
+          ./gradlew testReleaseUnitTest lintRelease assembleRelease \
+            --no-daemon --stacktrace \
+            -PbuildNumber=${{ github.run_number }} 2>&1 | tee build-output.txt
 
-      - name: Commit error log back to repo on failure
+      - name: Upload build log on failure
         if: failure()
-        run: |
-          {
-            echo "# Build Error Log"
-            echo ""
-            echo "Commit: ${{ github.sha }}"
-            echo ""
-            echo '```'
-            grep -E "^e: |error: |FAILED|Unresolved|Caused by|Could not|Duplicate|> Task|What went wrong|Execution failed|No matching variant|Required by" build-output.txt | head -80
-            echo '```'
-          } > BUILD_ERROR.md
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add BUILD_ERROR.md
-          git commit -m "ci: build error log [skip ci]" || true
-          git push || true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-error-log
+          path: build-output.txt
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Rename APK
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/FilterTube-debug.apk
+          cp app/build/outputs/apk/release/app-release.apk artifacts/FilterTube.apk
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: FilterTube-APK
-          path: artifacts/FilterTube-debug.apk
+          path: artifacts/FilterTube.apk
           retention-days: 30
 
-      # אם זה push ל-main, גם יוצרים Release אוטומטית
+  # Only the main-only release job receives contents:write.
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download APK artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: FilterTube-APK
+          path: artifacts
+
       - name: Create Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           tag_name: build-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
           name: Build ${{ github.run_number }}
           body: |
             APK build אוטומטי מקומיט ${{ github.sha }}.
 
-            **הורד את `FilterTube-debug.apk` למטה והעבר לטלפון.**
+            **הורד את `FilterTube.apk` למטה והעבר לטלפון.**
 
-            לפרטים על איך להתקין → ראה README.md
-          files: artifacts/FilterTube-debug.apk
+            לפרטים על ההתקנה ראה README.md.
+          files: artifacts/FilterTube.apk
+          fail_on_unmatched_files: true
           generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

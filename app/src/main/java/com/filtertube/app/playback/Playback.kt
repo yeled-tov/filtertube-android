@@ -6,12 +6,15 @@ import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.session.MediaController
+import com.filtertube.app.data.AccountDataGuard
 import com.filtertube.app.data.ChannelsRepository
+import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.StreamData
 import com.filtertube.app.data.StreamRepository
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.audioOnlyCategories
+import com.google.firebase.auth.FirebaseAuth
 
 /**
  * לוגיקת ניגון משותפת — בניית פריטי מדיה, תור "רדיו" אוטומטי, ומטמון StreamData
@@ -91,6 +94,18 @@ object Playback {
      */
     suspend fun start(context: Context, controller: MediaController?, video: Video) {
         val c = controller ?: return
+        val firebaseUser = FirebaseAuth.getInstance().currentUser
+            ?.takeIf { it.isEmailVerified }
+            ?: return
+        val expectedUid = firebaseUser.uid
+        val generation = AccountDataGuard.generation()
+        val library = LibraryStore(context)
+        fun sessionCurrent(): Boolean {
+            val current = FirebaseAuth.getInstance().currentUser
+            return current?.uid == expectedUid &&
+                current.isEmailVerified &&
+                AccountDataGuard.generation() == generation
+        }
         val settings = SettingsStore(context)
         val level = settings.filterLevel
         val channels = ChannelsRepository.getChannels(context)
@@ -99,10 +114,11 @@ object Playback {
 
         val preferred = settings.preferredQuality
         val data = StreamRepository.getStream(video.id)
+        if (!sessionCurrent()) return
         cache(video.id, data)
         // היסטוריית צפייה מקומית — מזינה את מסך ההיסטוריה ואת התאמת מסך הבית
         runCatching {
-            com.filtertube.app.data.LibraryStore(context).addToHistory(
+            library.addToHistory(
                 Video(
                     id = video.id,
                     title = data.title.ifBlank { video.title },
@@ -116,6 +132,7 @@ object Playback {
         val audio = forcedAudio(catById[data.channelId], level)
         val firstItem = buildItem(data, video.id, audio, defaultQuality(data, preferred))
 
+        if (!sessionCurrent()) return
         c.setMediaItem(firstItem)
         c.prepare()
         c.play()
@@ -123,6 +140,7 @@ object Playback {
         // תן לסרטון הנוכחי "ראש" גדול (6ש') לבנות buffer לפני שמתחילים עבודת רקע,
         // אחרת חילוץ התור גוזל רוחב פס והניגון נתקע אחרי כמה שניות (התסמין שדווח).
         kotlinx.coroutines.delay(6000)
+        if (!sessionCurrent()) return
 
         // ── בניית תור "רדיו" חכם ומגוון (בתוך הרשימה הלבנה בלבד) ──
         // מועמדים, לפי עדיפות:
@@ -156,7 +174,9 @@ object Playback {
         // פותרים *אחד-אחד* דרך getStream (הנתיב העובד — NewPipe). הראש הגדול (6ש') +
         // הבאפר הענק מונעים עצירות. כל פריט מתווסף לתור ברגע שהתפענח.
         for (v in queue) {
+            if (!sessionCurrent()) return
             val d = runCatching { StreamRepository.getStream(v.id) }.getOrNull() ?: continue
+            if (!sessionCurrent()) return
             cache(v.id, d)
             val a = forcedAudio(catById[d.channelId] ?: catById[v.channelId], level)
             c.addMediaItem(buildItem(d, v.id, a, defaultQuality(d, preferred)))

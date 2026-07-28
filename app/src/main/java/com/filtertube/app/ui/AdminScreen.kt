@@ -19,27 +19,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filtertube.app.data.Channel
 import com.filtertube.app.data.ChannelAdmin
 import com.filtertube.app.data.ChannelRequests
-import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.categoryLabels
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val settings = remember { SettingsStore(context) }
 
-    // ברירת מחדל: הטוקן שהוזרק מה-secret (BuildConfig) — כך אין צורך להזין ידנית
-    var token by remember { mutableStateOf(settings.githubToken.ifBlank { com.filtertube.app.BuildConfig.BUG_REPORT_TOKEN }) }
+    // The administrator supplies the PAT for this screen session only.
+    var token by remember { mutableStateOf("") }
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var sha by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
@@ -60,8 +57,7 @@ fun AdminScreen(onBack: () -> Unit) {
                 val (list, currentSha) = ChannelAdmin.fetchCurrent(token)
                 channels = list.sortedBy { it.name }
                 sha = currentSha
-                settings.githubToken = token
-                requests = runCatching { ChannelRequests.list(token) }.getOrDefault(emptyList())
+                requests = ChannelRequests.list()
                 status = "${list.size} ערוצים נטענו · ${requests.size} בקשות ממתינות"
             } catch (e: Exception) {
                 status = "שגיאה: ${e.message}"
@@ -84,8 +80,12 @@ fun AdminScreen(onBack: () -> Unit) {
                     val (list, newSha) = ChannelAdmin.fetchCurrent(token)
                     channels = list.sortedBy { it.name }; sha = newSha
                 }
-                ChannelRequests.delete(token, r.fileName, r.sha)
-                requests = runCatching { ChannelRequests.list(token) }.getOrDefault(emptyList())
+                if (!ChannelRequests.resolve(r.id, r.version, "approved")) {
+                    status = "הערוץ נוסף, אך סימון הבקשה כמאושרת נכשל"
+                    busy = false
+                    return@launch
+                }
+                requests = ChannelRequests.list()
                 status = "אושר: ${r.name} ✓"
             } catch (e: Exception) { status = "שגיאה: ${e.message}" } finally { busy = false }
         }
@@ -96,8 +96,12 @@ fun AdminScreen(onBack: () -> Unit) {
         busy = true; status = "דוחה בקשה..."
         scope.launch {
             try {
-                ChannelRequests.delete(token, r.fileName, r.sha)
-                requests = runCatching { ChannelRequests.list(token) }.getOrDefault(emptyList())
+                if (!ChannelRequests.resolve(r.id, r.version, "rejected")) {
+                    status = "דחיית הבקשה נכשלה"
+                    busy = false
+                    return@launch
+                }
+                requests = ChannelRequests.list()
                 status = "הבקשה נדחתה ✓"
             } catch (e: Exception) { status = "שגיאה: ${e.message}" } finally { busy = false }
         }
@@ -168,6 +172,7 @@ fun AdminScreen(onBack: () -> Unit) {
                     label = { Text("GitHub Token", color = ThemeState.subtext) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = ThemeState.text, unfocusedTextColor = ThemeState.text,
                         focusedBorderColor = Color(0xFFFF0000), unfocusedBorderColor = Color(0xFF333333),

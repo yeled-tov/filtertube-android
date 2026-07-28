@@ -21,11 +21,6 @@ android {
         versionCode = buildNum
         versionName = "0.2.$buildNum"
 
-        // טוקן דיווח-באגים — מוזרק מ-secret של CI בזמן בנייה (לא נשמר בקוד, לכן לא
-        // מבוטל ע"י סריקת הסודות של GitHub). מאפשר לכל לקוח לשלוח דוח באג אוטומטית.
-        val bugToken = (project.findProperty("bugToken") as String?) ?: ""
-        buildConfigField("String", "BUG_REPORT_TOKEN", "\"$bugToken\"")
-
         // RTL support
         resourceConfigurations += listOf("en", "iw")
     }
@@ -104,7 +99,7 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
 
-    // OkHttp + Kotlin coroutines (לקריאות HTTP ל-Supabase + YouTube)
+    // OkHttp + Kotlin coroutines (Firebase Functions + YouTube)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")

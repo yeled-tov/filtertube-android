@@ -2,14 +2,20 @@ name: Build Flutter APK
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'codex/**'
     paths:
       - 'flutter_app/**'
       - '.github/workflows/flutter.yml'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: build-flutter-apk-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -19,82 +25,89 @@ jobs:
         working-directory: flutter_app
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
       - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          channel: stable
+          flutter-version: '3.44.0'
           cache: true
 
       - name: Accept Android SDK licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
 
       - name: Flutter pub get
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
-      - name: Build release APK (split per ABI — קל בהרבה מ-debug)
+      - name: Analyze Flutter app
+        run: |
+          set -o pipefail
+          flutter analyze 2>&1 | tee build-output.txt
+
+      - name: Build release APKs
         run: |
           set -o pipefail
           flutter build apk --release --split-per-abi \
             --build-number=${{ github.run_number }} \
-            --build-name=0.1.${{ github.run_number }} 2>&1 | tee build-output.txt
+            --build-name=0.1.${{ github.run_number }} 2>&1 | tee -a build-output.txt
 
-      - name: Commit error log back to repo on failure
+      - name: Upload build log on failure
         if: failure()
-        run: |
-          {
-            echo "# Flutter Build Error Log"
-            echo ""
-            echo "Commit: ${{ github.sha }}"
-            echo ""
-            echo '```'
-            grep -E "Error|error:|FAILURE|Exception|Unresolved|Could not|FAILED|Target |lib/" build-output.txt | head -80
-            echo '```'
-          } > ../BUILD_ERROR_FLUTTER.md
-          cd ..
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add BUILD_ERROR_FLUTTER.md
-          git commit -m "ci: flutter build error log [skip ci]" || true
-          git push || true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: flutter-build-error-log
+          path: flutter_app/build-output.txt
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Collect APKs
         run: |
           mkdir -p ../artifacts
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk ../artifacts/FilterTube-Flutter-arm64.apk
-          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk ../artifacts/FilterTube-Flutter-arm32.apk || true
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk ../artifacts/FilterTube-Flutter-arm32.apk
           ls -lh ../artifacts
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: FilterTube-Flutter-APK
           path: artifacts/*.apk
+          if-no-files-found: error
           retention-days: 30
 
-      - name: Create Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download APK artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: FilterTube-Flutter-APK
+          path: artifacts
+
+      - name: Create prerelease
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           tag_name: flutter-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
           name: Flutter Build ${{ github.run_number }}
           prerelease: true
           body: |
-            גרסת Flutter (API רשמי + נגן IFrame) — לחנויות.
-            בנייה אוטומטית מקומיט ${{ github.sha }}.
+            גרסת Flutter המבוססת על ה‑API הרשמי ומיועדת לחנויות.
 
-            **הורד את `FilterTube-Flutter-arm64.apk` (לרוב הטלפונים) והעבר לטלפון.**
-            אם לא מתקין — נסה את `FilterTube-Flutter-arm32.apk`.
+            הורד את `FilterTube-Flutter-arm64.apk`. במכשיר ישן אפשר לנסות את
+            `FilterTube-Flutter-arm32.apk`.
           files: |
             artifacts/FilterTube-Flutter-arm64.apk
             artifacts/FilterTube-Flutter-arm32.apk
+          fail_on_unmatched_files: true
           generate_release_notes: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

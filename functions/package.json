@@ -1,0 +1,17 @@
+{
+  "name": "filtertube-functions",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "lint": "node --check index.js && node --check scripts/set-admin.mjs",
+    "set-admin": "node scripts/set-admin.mjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.4.0",
+    "firebase-functions": "^6.3.2",
+    "stripe": "^18.1.0"
+  }
+}

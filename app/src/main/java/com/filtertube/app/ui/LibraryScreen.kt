@@ -75,15 +75,22 @@ fun LibraryScreen(
     // מסנכרן גם לייקים וגם מנויים מחשבון הגוגל
     fun syncAccount(acct: GoogleSignInAccount) {
         val a = acct.account ?: return
+        val googleSession = GoogleAuth.session(context, acct) ?: run {
+            account = null
+            status = "יש להתחבר מחדש לחשבון YouTube"
+            return
+        }
         syncing = true; status = "מסנכרן מיוטיוב..."
         scope.launch {
             try {
-                val token = GoogleAuth.accessToken(context, a)
+                val token = GoogleAuth.accessToken(context, a, googleSession)
                 // רק תוכן מהערוצים המאושרים — לייק/מנוי שלא ברשימה הלבנה לא נשמר ולא מוצג
                 val approved = ChannelsRepository.getChannels(context).map { it.youtubeChannelId }.toHashSet()
                 val liked = YouTubeAccountRepository.likedVideos(token).filter { it.channelId in approved }
+                if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
                 store.setYoutubeLikes(liked); ytLikes = liked
                 val subList = YouTubeAccountRepository.subscriptions(token).filter { it.channelId in approved }
+                if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
                 store.setSubscriptions(subList); subs = subList
                 status = "סונכרנו ${liked.size} לייקים ו-${subList.size} מנויים (מאושרים בלבד) ✓"
             } catch (e: Exception) {
@@ -120,8 +127,13 @@ fun LibraryScreen(
     ) { result ->
         try {
             val acct = GoogleSignIn.getSignedInAccountFromIntent(result.data).getResult(ApiException::class.java)
-            account = acct
-            syncAccount(acct)
+            if (GoogleAuth.bindToCurrentFirebaseAccount(context, acct) == null) {
+                GoogleAuth.signOut(context)
+                status = "יש להתחבר קודם לחשבון FilterTube"
+            } else {
+                account = acct
+                syncAccount(acct)
+            }
         } catch (e: ApiException) {
             status = "ההתחברות נכשלה (${e.statusCode})"
         }
@@ -172,7 +184,7 @@ fun LibraryScreen(
                     if (account != null) {
                         Spacer(Modifier.width(8.dp))
                         OutlinedButton(onClick = {
-                            GoogleAuth.client(context).signOut()
+                            GoogleAuth.signOut(context)
                             account = null; ytLikes = emptyList(); subs = emptyList()
                             store.setYoutubeLikes(emptyList()); store.setSubscriptions(emptyList())
                             status = "התנתקת"

@@ -46,9 +46,12 @@ import com.filtertube.app.data.Channel
 import com.filtertube.app.data.ChannelAvatars
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.CloudSync
+import com.filtertube.app.data.FirebaseAccount
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * מסך הרשמה ראשוני (Onboarding) — אשף 5 שלבים:
@@ -63,16 +66,33 @@ fun OnboardingScreen(onDone: () -> Unit) {
     val settings = remember { SettingsStore(context) }
     val store = remember { LibraryStore(context) }
     val scope = rememberCoroutineScope()
+    val pendingVerificationEmail = remember {
+        com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+            ?.takeIf { !it.isEmailVerified }
+            ?.email
+    }
 
     val total = 5
     var step by remember { mutableStateOf(0) }
 
-    var name by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var gender by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf(settings.userName) }
+    var email by remember {
+        mutableStateOf(
+            com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email
+                ?: settings.userEmail,
+        )
+    }
+    var gender by remember {
+        mutableStateOf(settings.userGender.takeIf { it == "male" || it == "female" }.orEmpty())
+    }
     var password by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
-    var level by remember { mutableStateOf(2) }
+    var saving by remember { mutableStateOf(false) }
+    var accountError by remember { mutableStateOf("") }
+    var accountMessageSuccess by remember { mutableStateOf(false) }
+    var verificationEmail by remember { mutableStateOf(pendingVerificationEmail) }
+    var verificationWasCreated by remember { mutableStateOf(false) }
+    var level by remember { mutableStateOf(settings.filterLevel.coerceIn(1, 3)) }
     val selected = remember { mutableStateListOf<String>() }
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     LaunchedEffect(Unit) {
@@ -81,21 +101,165 @@ fun OnboardingScreen(onDone: () -> Unit) {
 
     fun canProceed(): Boolean = when (step) {
         0 -> name.isNotBlank() && email.contains("@") && email.contains(".") && gender.isNotEmpty()
-        1 -> password.length >= 4 && password == confirm
+        1 -> password.length >= 6 && password == confirm
         else -> true
     }
 
-    fun finish() {
-        settings.userName = name.trim()
-        settings.userEmail = email.trim()
+    fun validNewProfileDraft(): Boolean {
+        val user = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser ?: return false
+        val verifiedEmail = user.email?.trim()?.lowercase().orEmpty()
+        return user.isEmailVerified &&
+            name.isNotBlank() &&
+            verifiedEmail.isNotBlank() &&
+            email.trim().lowercase() == verifiedEmail &&
+            gender in setOf("male", "female") &&
+            password.length >= 6 &&
+            password == confirm &&
+            level in 1..3
+    }
+
+    fun returnToProfileWizard(verifiedEmail: String?) {
+        email = verifiedEmail?.trim()?.lowercase().orEmpty().ifBlank { email.trim().lowercase() }
+        password = ""
+        confirm = ""
+        verificationEmail = null
+        verificationWasCreated = false
+        step = 0
+        accountError =
+            "המייל אומת. כדי להשלים את יצירת החשבון, הזן שוב את הפרטים ואת סיסמת ההורה."
+        accountMessageSuccess = false
+    }
+
+    suspend fun finishNewProfile(): Boolean {
+        val user = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (!validNewProfileDraft()) {
+            returnToProfileWizard(user?.email)
+            return false
+        }
+        settings.userName = name.trim().take(80)
+        settings.userEmail = user?.email?.trim()?.lowercase().orEmpty()
         settings.userGender = gender
-        if (password.isNotBlank()) settings.filterPassword = password
-        settings.filterLevel = level
-        selected.forEach { id -> if (!store.isSubscribed(id)) store.toggleSubscription(id) }
-        settings.trialStartMillis = System.currentTimeMillis()
+        withContext(Dispatchers.Default) { settings.setFilterPassword(password) }
+        settings.filterLevel = level.coerceIn(1, 3)
+        val accountStore = LibraryStore(context)
+        accountStore.replaceLocalSubscriptions(
+            accountStore.localSubscriptions() + selected,
+        )
         settings.onboardingDone = true
-        scope.launch { CloudSync.syncUserProfile(settings) }
+        val userId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+        if (userId != null && !CloudSync.syncUserProfile(context, settings, userId)) {
+            if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid == userId) {
+                CloudSync.enqueueUpload(context, includeProfile = true)
+            }
+        }
         onDone()
+        return true
+    }
+
+    suspend fun finishExistingProfile(userId: String): Boolean {
+        if (!CloudSync.pullCloudData(context, settings, userId)) {
+            accountError = "לא ניתן לשחזר את החשבון כרגע. בדוק את החיבור ונסה שוב."
+            accountMessageSuccess = false
+            return false
+        }
+        settings.onboardingDone = true
+        if (!CloudSync.syncUserProfile(context, settings, userId)) {
+            if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid == userId) {
+                CloudSync.enqueueUpload(context, includeProfile = true)
+            }
+        }
+        onDone()
+        return true
+    }
+
+    fun finish() {
+        if (saving) return
+        saving = true
+        accountError = ""
+        accountMessageSuccess = false
+        scope.launch {
+            val account = FirebaseAccount.signInOrRegister(email, password, settings)
+            if (!account.ok) {
+                saving = false
+                accountError = account.message
+                if (account.verificationPending) {
+                    verificationWasCreated = account.created
+                    verificationEmail = account.email ?: email.trim()
+                }
+                return@launch
+            }
+            if (account.created) {
+                finishNewProfile()
+            } else {
+                // A user reinstalling the app must recover the cloud profile
+                // instead of overwriting it with a new onboarding profile.
+                val userId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                if (userId == null || !finishExistingProfile(userId)) {
+                    saving = false
+                    return@launch
+                }
+            }
+            saving = false
+        }
+    }
+
+    if (verificationEmail != null) {
+        EmailVerificationScreen(
+            email = verificationEmail.orEmpty(),
+            message = accountError,
+            messageSuccess = accountMessageSuccess,
+            busy = saving,
+            onResend = {
+                saving = true
+                scope.launch {
+                    val result = FirebaseAccount.resendVerificationEmail()
+                    saving = false
+                    accountError = result.message
+                    accountMessageSuccess = result.ok
+                }
+            },
+            onCheck = {
+                saving = true
+                scope.launch {
+                    val result = FirebaseAccount.checkEmailVerification(settings)
+                    accountError = result.message
+                    accountMessageSuccess = result.ok
+                    if (result.ok) {
+                        if (password.length >= 6) {
+                            withContext(Dispatchers.Default) { settings.setFilterPassword(password) }
+                        }
+                        verificationWasCreated = verificationWasCreated || result.created
+                        val userId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                        if (userId == null) {
+                            accountError = "יש להתחבר מחדש כדי להשלים את הכניסה."
+                            accountMessageSuccess = false
+                        } else if (verificationWasCreated) {
+                            if (!validNewProfileDraft()) {
+                                returnToProfileWizard(result.email)
+                            } else {
+                                finishNewProfile()
+                            }
+                        } else {
+                            finishExistingProfile(userId)
+                        }
+                    } else {
+                        verificationEmail = result.email ?: verificationEmail
+                    }
+                    saving = false
+                }
+            },
+            onChangeEmail = {
+                FirebaseAccount.abandonPendingAuthentication()
+                verificationEmail = null
+                verificationWasCreated = false
+                password = ""
+                confirm = ""
+                accountError = ""
+                accountMessageSuccess = false
+                step = 0
+            },
+        )
+        return
     }
 
     Column(
@@ -137,7 +301,23 @@ fun OnboardingScreen(onDone: () -> Unit) {
             Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 when (s) {
                     0 -> StepIdentity(name, { name = it }, email, { email = it }, gender, { gender = it })
-                    1 -> StepPassword(password, { password = it }, confirm, { confirm = it })
+                    1 -> StepPassword(
+                        password,
+                        { password = it },
+                        confirm,
+                        { confirm = it },
+                        onForgotPassword = {
+                            if (!saving) {
+                                saving = true
+                                scope.launch {
+                                    val result = FirebaseAccount.sendPasswordReset(email)
+                                    saving = false
+                                    accountError = result.message
+                                    accountMessageSuccess = result.ok
+                                }
+                            }
+                        },
+                    )
                     2 -> StepLevel(level) { level = it }
                     3 -> StepArtists(channels, selected)
                     else -> StepWelcome(name)
@@ -147,6 +327,16 @@ fun OnboardingScreen(onDone: () -> Unit) {
 
         // ── ניווט ──
         Spacer(Modifier.height(14.dp))
+        if (accountError.isNotBlank()) {
+            Text(
+                accountError,
+                color = if (accountMessageSuccess) Color(0xFF22C55E) else Color(0xFFEF4444),
+                fontSize = 12.sp,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (step > 0) {
                 TextButton(onClick = { step-- }) { Text("חזרה", color = ThemeState.subtext2) }
@@ -155,7 +345,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
             val isLast = step == total - 1
             Button(
                 onClick = { if (isLast) finish() else if (canProceed()) step++ },
-                enabled = canProceed(),
+                enabled = canProceed() && !saving,
                 modifier = Modifier.weight(1f).height(54.dp).clip(RoundedCornerShape(16.dp)),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = ThemeState.accent,
@@ -204,14 +394,18 @@ private fun StepIdentity(
 private fun StepPassword(
     password: String, onPassword: (String) -> Unit,
     confirm: String, onConfirm: (String) -> Unit,
+    onForgotPassword: () -> Unit,
 ) {
     StepHeader("סיסמת הורים 🔒", "הסיסמה הזו תגן על שינוי רמת הסינון, Shorts והגדרות רגישות. בחר/י סיסמה שילדים לא ינחשו.")
-    OnbField(password, onPassword, "סיסמה (4 ספרות לפחות)", Icons.Default.Lock, password = true, keyboard = KeyboardType.NumberPassword)
+    OnbField(password, onPassword, "סיסמה (לפחות 6 תווים)", Icons.Default.Lock, password = true, keyboard = KeyboardType.Password)
     Spacer(Modifier.height(12.dp))
-    OnbField(confirm, onConfirm, "אישור סיסמה", Icons.Default.Lock, password = true, keyboard = KeyboardType.NumberPassword)
+    OnbField(confirm, onConfirm, "אישור סיסמה", Icons.Default.Lock, password = true, keyboard = KeyboardType.Password)
     if (confirm.isNotEmpty() && confirm != password) {
         Spacer(Modifier.height(8.dp))
         Text("הסיסמאות אינן תואמות", color = ThemeState.accent2, fontSize = 12.sp)
+    }
+    TextButton(onClick = onForgotPassword, modifier = Modifier.fillMaxWidth()) {
+        Text("שכחתי סיסמה", color = ThemeState.accent)
     }
 }
 

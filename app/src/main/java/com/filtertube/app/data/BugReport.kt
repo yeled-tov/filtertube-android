@@ -1,30 +1,26 @@
 package com.filtertube.app.data
 
-import android.util.Base64
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
- * דיווח באגים מובנה — שולח דוח קריסה/שגיאה ל-GitHub (תיקיית crash-reports/) דרך
- * טוקן האדמין השמור בהגדרות. כך אפשר למשוך את הדוחות בקלות בלי להעתיק ידנית מהטלפון.
+ * Sends a diagnostic or crash report to the authenticated Firebase backend.
  *
- * שם הקובץ כולל זמן + דגם מכשיר + מספר אקראי כדי להיות ייחודי (יצירה, ללא sha).
- * ה-[skip ci] מבטיח שדוח באג לא יפעיל בנייה/Release.
+ * Reports are stored in a server-only Firestore collection. No GitHub token or
+ * other privileged credential is ever embedded in the Android application.
  */
 object BugReport {
 
-    private const val OWNER = "yeled-tov"
-    private const val REPO = "filtertube-android"
-    private const val API = "https://api.github.com/repos/$OWNER/$REPO/contents/crash-reports"
+    private const val API =
+        "https://europe-west1-filter-tube-52d8e.cloudfunctions.net/submitBugReport"
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -32,38 +28,37 @@ object BugReport {
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
-    /**
-     * שולח דוח ל-GitHub. מחזיר true בהצלחה. דורש טוקן אדמין עם הרשאת contents.
-     * @param note הערה חופשית של המשתמש (מה הוא עשה כשזה קרה) — אופציונלי.
-     */
-    suspend fun submit(token: String, report: String, note: String = ""): Boolean = withContext(Dispatchers.IO) {
-        // טוקן שהוזרק בזמן בנייה מה-secret (קיים בכל לקוח) קודם; אחרת הטוקן שהוזן ידנית
-        val effective = com.filtertube.app.BuildConfig.BUG_REPORT_TOKEN.ifBlank { token }
-        if (effective.isBlank()) return@withContext false
-        val ts = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-        val device = android.os.Build.MODEL.replace(Regex("[^A-Za-z0-9]"), "")
-        val name = "$ts-$device-${(1000..9999).random()}.txt"
-        val full = buildString {
-            if (note.isNotBlank()) append("הערת משתמש: ").append(note).append("\n\n")
-            append(report)
-        }
-        val b64 = Base64.encodeToString(full.toByteArray(), Base64.NO_WRAP)
+    suspend fun submit(report: String, note: String = ""): Boolean = withContext(Dispatchers.IO) {
+        val auth = FirebaseAuth.getInstance()
+        val user = auth.currentUser ?: return@withContext false
+        if (!user.isEmailVerified) return@withContext false
+
+        val expectedUid = user.uid
+        val idToken = runCatching { user.getIdToken(true).await().token }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+            ?: return@withContext false
+        if (auth.currentUser?.uid != expectedUid) return@withContext false
+
         val payload = JSONObject().apply {
-            put("message", "bug report $name [skip ci]")
-            put("content", b64)
+            put("report", report)
+            put("note", note)
         }.toString()
-        val req = Request.Builder()
-            .url("$API/$name")
-            .header("Authorization", "Bearer $effective")
-            .header("Accept", "application/vnd.github+json")
-            .put(payload.toRequestBody("application/json".toMediaType()))
+        val request = Request.Builder()
+            .url(API)
+            .header("Authorization", "Bearer $idToken")
+            .post(payload.toRequestBody("application/json".toMediaType()))
             .build()
+
         runCatching {
-            http.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) {
-                    android.util.Log.w("BugReport", "submit failed ${resp.code}: ${resp.body?.string()}")
+            http.newCall(request).execute().use { response ->
+                if (auth.currentUser?.uid != expectedUid) return@use false
+                if (!response.isSuccessful) {
+                    android.util.Log.w("BugReport", "submit failed: HTTP ${response.code}")
+                    return@use false
                 }
-                resp.isSuccessful
+                val body = response.body?.string().orEmpty()
+                JSONObject(body).optBoolean("ok", false)
             }
         }.getOrDefault(false)
     }

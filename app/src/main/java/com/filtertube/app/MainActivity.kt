@@ -168,10 +168,47 @@ fun AppRoot() {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val settings = remember { SettingsStore(context) }
 
+    // Existing installs created before Firebase account sync must sign in once.
+    // Fresh installs create the account as the final onboarding step.
+    val firebaseAuth = remember { com.google.firebase.auth.FirebaseAuth.getInstance() }
+    var accountReady by remember {
+        val user = firebaseAuth.currentUser
+        mutableStateOf(
+            user != null && user.isEmailVerified && settings.cloudUid == user.uid,
+        )
+    }
+    DisposableEffect(firebaseAuth) {
+        val listener = com.google.firebase.auth.FirebaseAuth.AuthStateListener { auth ->
+            // A non-null user is not enough: account initialization must finish
+            // successfully before the login screen is removed.
+            val user = auth.currentUser
+            if (user == null || !user.isEmailVerified || settings.cloudUid != user.uid) {
+                accountReady = false
+            }
+        }
+        firebaseAuth.addAuthStateListener(listener)
+        onDispose { firebaseAuth.removeAuthStateListener(listener) }
+    }
+    if (settings.onboardingDone && !accountReady) {
+        com.filtertube.app.ui.FirebaseAccountScreen(onDone = { needsProfile ->
+            val user = firebaseAuth.currentUser
+            val ready =
+                user != null && user.isEmailVerified && settings.cloudUid == user.uid
+            if (ready && needsProfile) settings.onboardingDone = false
+            accountReady = ready
+        })
+        return
+    }
+
     // ── הרשמה ראשונית — מוצגת לפני כל שאר האפליקציה בהפעלה הראשונה ──
     var onboarded by remember { mutableStateOf(settings.onboardingDone) }
     if (!onboarded) {
-        com.filtertube.app.ui.OnboardingScreen(onDone = { onboarded = true })
+        com.filtertube.app.ui.OnboardingScreen(onDone = {
+            val user = firebaseAuth.currentUser
+            accountReady =
+                user != null && user.isEmailVerified && settings.cloudUid == user.uid
+            onboarded = true
+        })
         return
     }
 
@@ -180,6 +217,20 @@ fun AppRoot() {
     var userGender by remember { mutableStateOf(settings.userGender) }
     var crashReport by remember { mutableStateOf(com.filtertube.app.data.CrashLog.lastCrash(context)) }
     var pendingUpdate by remember { mutableStateOf<com.filtertube.app.data.UpdateChecker.Update?>(null) }
+    LaunchedEffect(accountReady) {
+        if (!accountReady) return@LaunchedEffect
+        val user = firebaseAuth.currentUser ?: return@LaunchedEffect
+        if (!user.isEmailVerified || settings.cloudUid != user.uid) return@LaunchedEffect
+        val userId = user.uid
+        val verifiedEmail = user.email?.trim() ?: return@LaunchedEffect
+        settings.bindAccountDataOwner(userId, verifiedEmail)
+        val synchronized = com.filtertube.app.data.CloudSync.synchronize(context, settings)
+        if (synchronized) {
+            filterLevel = settings.filterLevel
+            userGender = settings.userGender
+        }
+        com.filtertube.app.data.FirebaseBilling.refresh(settings)
+    }
     LaunchedEffect(Unit) {
         val u = com.filtertube.app.data.UpdateChecker.check()
         if (u != null && u.isNewer) pendingUpdate = u
@@ -192,6 +243,9 @@ fun AppRoot() {
     val lifecycleActivity = context as? androidx.activity.ComponentActivity
     DisposableEffect(lifecycleActivity, controller) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_START && accountReady) {
+                scope.launch { com.filtertube.app.data.FirebaseBilling.refresh(settings) }
+            }
             if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && !PipState.inPip) {
                 val s = com.filtertube.app.data.SettingsStore(context)
                 // עצירה אם ניגון-ברקע כבוי, *או* אם הניסיון/מנוי הפרימיום הסתיים
@@ -281,6 +335,7 @@ fun AppRoot() {
                     onFilterLevelChange = { level ->
                         filterLevel = level
                         settings.filterLevel = level
+                        com.filtertube.app.data.CloudSync.enqueueUpload(context, includeProfile = true)
                     },
                     onOpenAdmin = { navController.navigate("admin") },
                     onOpenDiag = { navController.navigate("diag") },
@@ -291,6 +346,7 @@ fun AppRoot() {
                     onUserGenderChange = { gender ->
                         userGender = gender
                         settings.userGender = gender
+                        com.filtertube.app.data.CloudSync.enqueueUpload(context, includeProfile = true)
                     },
                 )
             }
@@ -418,7 +474,6 @@ fun AppRoot() {
 private fun CrashReportDialog(report: String, onDismiss: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
-    val settings = remember { SettingsStore(context) }
     var sending by remember { mutableStateOf(false) }
 
     fun copy() {
@@ -432,7 +487,7 @@ private fun CrashReportDialog(report: String, onDismiss: () -> Unit) {
         title = { Text("נמצא באג") },
         text = {
             Column(modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
-                Text("אפשר לשלוח את הדוח ישירות אליי (דורש טוקן אדמין בהגדרות).",
+                Text("אפשר לשלוח את הדוח בצורה מאובטחת דרך החשבון המחובר.",
                     color = ThemeState.subtext2, fontSize = 12.sp)
                 Spacer(Modifier.height(8.dp))
                 Text(report, color = Color(0xFF999999), fontSize = 11.sp)
@@ -443,13 +498,9 @@ private fun CrashReportDialog(report: String, onDismiss: () -> Unit) {
                 TextButton(
                     enabled = !sending,
                     onClick = {
-                        // אם לא הוזן טוקן ידנית באדמין — נופלים לטוקן המוטמע מה-CI (BuildConfig),
-                        // כך שדיווח באגים עובד מיד בלי שצריך להזין שום דבר.
-                        val token = settings.githubToken.ifBlank { com.filtertube.app.BuildConfig.BUG_REPORT_TOKEN }
-                        if (token.isBlank()) { copy(); return@TextButton }
                         sending = true
                         scope.launch {
-                            val ok = com.filtertube.app.data.BugReport.submit(token, report)
+                            val ok = com.filtertube.app.data.BugReport.submit(report)
                             sending = false
                             android.widget.Toast.makeText(
                                 context, if (ok) "הדוח נשלח ✓" else "השליחה נכשלה",

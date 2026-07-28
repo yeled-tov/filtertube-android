@@ -18,11 +18,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.filtertube.app.BuildConfig
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.BugReport
 import com.filtertube.app.data.Diagnostics
-import com.filtertube.app.data.SettingsStore
 import kotlinx.coroutines.launch
 
 /**
@@ -33,7 +31,6 @@ import kotlinx.coroutines.launch
 fun DiagnosticsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val settings = remember { SettingsStore(context) }
     var lines by remember { mutableStateOf(Diagnostics.snapshot()) }
     var sending by remember { mutableStateOf(false) }
 
@@ -90,11 +87,9 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
         ) {
             Button(
                 onClick = {
-                    val token = settings.githubToken.ifBlank { BuildConfig.BUG_REPORT_TOKEN }
-                    if (token.isBlank()) { copy(); return@Button }
                     sending = true
                     scope.launch {
-                        val ok = BugReport.submit(token, "== אבחון ==\n" + Diagnostics.text())
+                        val ok = BugReport.submit("== אבחון ==\n" + Diagnostics.text())
                         sending = false
                         android.widget.Toast.makeText(context,
                             if (ok) "נשלח ✓" else "השליחה נכשלה — הועתק במקום", android.widget.Toast.LENGTH_SHORT).show()

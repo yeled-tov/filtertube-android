@@ -1,6 +1,7 @@
 package com.filtertube.app.data
 
 import android.content.Context
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -9,118 +10,261 @@ import kotlinx.serialization.json.Json
 data class Playlist(val name: String, val videos: List<Video> = emptyList())
 
 /**
- * ספריה מקומית: "אהבתי", הורדות, אלבומים (פלייליסטים), ומטמון של "אהבתי" מיוטיוב.
- * נשמר ב-SharedPreferences כ-JSON.
+ * Local library storage. Every instance is bound to the Firebase/account-data
+ * generation that created it, so a stale coroutine cannot read or mutate the
+ * next account's SharedPreferences after sign-out or account switching.
  */
 class LibraryStore(context: Context) {
-    private val prefs = context.getSharedPreferences("filtertube_library", Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    private val prefs = appContext.getSharedPreferences(
+        "filtertube_library",
+        Context.MODE_PRIVATE,
+    )
     private val json = Json { ignoreUnknownKeys = true }
+    private val sessionUid = FirebaseAuth.getInstance().currentUser?.uid
+    private val sessionVerified =
+        FirebaseAuth.getInstance().currentUser?.isEmailVerified == true
+    private val sessionGeneration = AccountDataGuard.generation()
 
-    private fun videos(key: String): List<Video> =
-        prefs.getString(key, null)?.let { runCatching { json.decodeFromString<List<Video>>(it) }.getOrNull() } ?: emptyList()
+    private fun sessionMatches(): Boolean {
+        val current = FirebaseAuth.getInstance().currentUser
+        return AccountDataGuard.generation() == sessionGeneration &&
+            current?.uid == sessionUid &&
+            (sessionUid == null || current.isEmailVerified == sessionVerified)
+    }
 
-    private fun saveVideos(key: String, list: List<Video>) =
-        prefs.edit().putString(key, json.encodeToString(list)).apply()
+    private fun videos(key: String): List<Video> = AccountDataGuard.withLock {
+        if (!sessionMatches()) return@withLock emptyList()
+        prefs.getString(key, null)?.let {
+            runCatching { json.decodeFromString<List<Video>>(it) }.getOrNull()
+        } ?: emptyList()
+    }
 
-    // ── אהבתי (מקומי) ────────────────────────────────────────────────────
+    private fun saveVideos(key: String, list: List<Video>): Boolean =
+        AccountDataGuard.withLock {
+            if (!sessionMatches()) return@withLock false
+            prefs.edit().putString(key, json.encodeToString(list)).apply()
+            true
+        }
+
+    private fun queueCloudBackup() {
+        AccountDataGuard.withLock {
+            if (sessionMatches()) CloudSync.enqueueUpload(appContext)
+        }
+    }
+
     fun likes(): List<Video> = videos(KEY_LIKES)
+
     fun isLiked(videoId: String): Boolean = likes().any { it.id == videoId }
+
     fun toggleLike(video: Video): Boolean {
         val current = likes().toMutableList()
         val existed = current.removeAll { it.id == video.id }
         if (!existed) current.add(0, video)
-        saveVideos(KEY_LIKES, current)
+        if (!saveVideos(KEY_LIKES, current)) return false
+        queueCloudBackup()
         return !existed
     }
 
-    // ── הורדות ───────────────────────────────────────────────────────────
     fun downloads(): List<Video> = videos(KEY_DOWNLOADS)
+
     fun addDownload(video: Video) {
-        val current = videos(KEY_DOWNLOADS).toMutableList()
+        val current = downloads().toMutableList()
         current.removeAll { it.id == video.id }
         current.add(0, video)
-        saveVideos(KEY_DOWNLOADS, current)
+        if (saveVideos(KEY_DOWNLOADS, current)) queueCloudBackup()
     }
 
-    // ── אלבומים (פלייליסטים) ─────────────────────────────────────────────
-    fun playlists(): List<Playlist> =
-        prefs.getString(KEY_PLAYLISTS, null)?.let { runCatching { json.decodeFromString<List<Playlist>>(it) }.getOrNull() } ?: emptyList()
+    fun playlists(): List<Playlist> = AccountDataGuard.withLock {
+        if (!sessionMatches()) return@withLock emptyList()
+        prefs.getString(KEY_PLAYLISTS, null)?.let {
+            runCatching { json.decodeFromString<List<Playlist>>(it) }.getOrNull()
+        } ?: emptyList()
+    }
 
-    private fun savePlaylists(list: List<Playlist>) =
-        prefs.edit().putString(KEY_PLAYLISTS, json.encodeToString(list)).apply()
+    private fun savePlaylists(list: List<Playlist>): Boolean =
+        AccountDataGuard.withLock {
+            if (!sessionMatches()) return@withLock false
+            prefs.edit().putString(KEY_PLAYLISTS, json.encodeToString(list)).apply()
+            true
+        }
 
     fun createPlaylist(name: String) {
-        val n = name.trim()
-        if (n.isEmpty()) return
+        val normalized = name.trim()
+        if (normalized.isEmpty()) return
         val list = playlists()
-        if (list.any { it.name == n }) return
-        savePlaylists(list + Playlist(n))
+        if (list.any { it.name == normalized }) return
+        if (savePlaylists(list + Playlist(normalized))) queueCloudBackup()
     }
 
-    fun deletePlaylist(name: String) = savePlaylists(playlists().filter { it.name != name })
+    fun deletePlaylist(name: String) {
+        if (savePlaylists(playlists().filter { it.name != name })) {
+            queueCloudBackup()
+        }
+    }
 
     fun addToPlaylist(name: String, video: Video) {
         val list = playlists().toMutableList()
-        val idx = list.indexOfFirst { it.name == name }
-        if (idx < 0) return
-        val pl = list[idx]
-        if (pl.videos.any { it.id == video.id }) return
-        list[idx] = pl.copy(videos = pl.videos + video)
+        val index = list.indexOfFirst { it.name == name }
+        if (index < 0) return
+        val playlist = list[index]
+        if (playlist.videos.any { it.id == video.id }) return
+        list[index] = playlist.copy(videos = playlist.videos + video)
+        if (savePlaylists(list)) queueCloudBackup()
+    }
+
+    fun youtubeLikes(): List<Video> = videos(KEY_YT_LIKES)
+
+    fun setYoutubeLikes(list: List<Video>) {
+        if (saveVideos(KEY_YT_LIKES, list)) queueCloudBackup()
+    }
+
+    fun subscriptions(): List<SubChannel> = AccountDataGuard.withLock {
+        if (!sessionMatches()) return@withLock emptyList()
+        prefs.getString(KEY_SUBS, null)?.let {
+            runCatching { json.decodeFromString<List<SubChannel>>(it) }.getOrNull()
+        } ?: emptyList()
+    }
+
+    fun setSubscriptions(list: List<SubChannel>) {
+        val saved = AccountDataGuard.withLock {
+            if (!sessionMatches()) return@withLock false
+            prefs.edit().putString(KEY_SUBS, json.encodeToString(list)).apply()
+            true
+        }
+        if (saved) queueCloudBackup()
+    }
+
+    fun history(): List<Video> = videos(KEY_HISTORY)
+
+    fun setHistory(list: List<Video>) {
+        if (saveVideos(KEY_HISTORY, list)) queueCloudBackup()
+    }
+
+    fun recommendations(): List<Video> = videos(KEY_RECS)
+
+    fun setRecommendations(list: List<Video>) {
+        if (saveVideos(KEY_RECS, list)) queueCloudBackup()
+    }
+
+    fun localHistory(): List<Video> = videos(KEY_LOCAL_HISTORY)
+
+    fun addToHistory(video: Video) {
+        if (video.id.isBlank()) return
+        val current = localHistory().toMutableList()
+        current.removeAll { it.id == video.id }
+        current.add(0, video.copy(publishedAt = System.currentTimeMillis()))
+        while (current.size > HISTORY_CAP) current.removeAt(current.lastIndex)
+        if (saveVideos(KEY_LOCAL_HISTORY, current)) queueCloudBackup()
+    }
+
+    fun clearLocalHistory() {
+        if (saveVideos(KEY_LOCAL_HISTORY, emptyList())) queueCloudBackup()
+    }
+
+    fun localSubscriptions(): Set<String> = AccountDataGuard.withLock {
+        if (!sessionMatches()) return@withLock emptySet()
+        prefs.getStringSet(KEY_LOCAL_SUBS, emptySet())?.toSet() ?: emptySet()
+    }
+
+    fun isSubscribed(channelId: String): Boolean =
+        channelId in localSubscriptions()
+
+    fun toggleSubscription(channelId: String): Boolean {
+        if (channelId.isBlank()) return false
+        val result = AccountDataGuard.withLock {
+            if (!sessionMatches()) return@withLock null
+            val current =
+                prefs.getStringSet(KEY_LOCAL_SUBS, emptySet())?.toMutableSet()
+                    ?: mutableSetOf()
+            val added = if (channelId in current) {
+                current.remove(channelId)
+                false
+            } else {
+                current.add(channelId)
+                true
+            }
+            prefs.edit().putStringSet(KEY_LOCAL_SUBS, current).apply()
+            added
+        } ?: return false
+        queueCloudBackup()
+        return result
+    }
+
+    fun newVideos(): List<Video> = videos(KEY_NEW_VIDEOS)
+
+    fun addNewVideos(list: List<Video>) {
+        if (list.isEmpty()) return
+        val current = newVideos().toMutableList()
+        list.asReversed().forEach { video ->
+            current.removeAll { it.id == video.id }
+            current.add(0, video)
+        }
+        while (current.size > 50) current.removeAt(current.lastIndex)
+        if (saveVideos(KEY_NEW_VIDEOS, current)) queueCloudBackup()
+    }
+
+    fun clearNewVideos() {
+        if (saveVideos(KEY_NEW_VIDEOS, emptyList())) queueCloudBackup()
+    }
+
+    // Restore helpers intentionally do not enqueue another upload.
+    fun replaceLikes(list: List<Video>) {
+        saveVideos(KEY_LIKES, list)
+    }
+
+    fun replaceDownloads(list: List<Video>) {
+        saveVideos(KEY_DOWNLOADS, list)
+    }
+
+    fun replacePlaylists(list: List<Playlist>) {
         savePlaylists(list)
     }
 
-    // ── אהבתי מיוטיוב (מטמון של מה שנמשך מהחשבון) ────────────────────────
-    fun youtubeLikes(): List<Video> = videos(KEY_YT_LIKES)
-    fun setYoutubeLikes(list: List<Video>) = saveVideos(KEY_YT_LIKES, list)
-
-    // ── מנויים מיוטיוב (מטמון) ───────────────────────────────────────────
-    fun subscriptions(): List<SubChannel> =
-        prefs.getString(KEY_SUBS, null)?.let { runCatching { json.decodeFromString<List<SubChannel>>(it) }.getOrNull() } ?: emptyList()
-    fun setSubscriptions(list: List<SubChannel>) =
-        prefs.edit().putString(KEY_SUBS, json.encodeToString(list)).apply()
-
-    // ── היסטוריה והמלצות (InnerTube — סנכרון מלא) ────────────────────────
-    fun history(): List<Video> = videos(KEY_HISTORY)
-    fun setHistory(list: List<Video>) = saveVideos(KEY_HISTORY, list)
-    fun recommendations(): List<Video> = videos(KEY_RECS)
-    fun setRecommendations(list: List<Video>) = saveVideos(KEY_RECS, list)
-
-    // ── היסטוריית צפייה מקומית (תמיד עובדת, בלי חשבון) ───────────────────
-    // נשמרת על המכשיר בלבד. מזינה גם את "המשך לצפות" וגם את התאמת מסך הבית.
-    fun localHistory(): List<Video> = videos(KEY_LOCAL_HISTORY)
-    fun addToHistory(video: Video) {
-        if (video.id.isBlank()) return
-        val current = videos(KEY_LOCAL_HISTORY).toMutableList()
-        current.removeAll { it.id == video.id }                 // הצפייה האחרונה עולה לראש
-        current.add(0, video.copy(publishedAt = System.currentTimeMillis()))
-        while (current.size > HISTORY_CAP) current.removeAt(current.lastIndex)
-        saveVideos(KEY_LOCAL_HISTORY, current)
-    }
-    fun clearLocalHistory() = saveVideos(KEY_LOCAL_HISTORY, emptyList())
-
-    // ── מנויים מקומיים (עקוב אחרי ערוץ) ──────────────────────────────────
-    // קובע על מה מקבלים התראות ומה מופיע ב"סרטונים חדשים". ריק = כל הערוצים המאושרים.
-    fun localSubscriptions(): Set<String> =
-        prefs.getStringSet(KEY_LOCAL_SUBS, emptySet())?.toSet() ?: emptySet()
-    fun isSubscribed(channelId: String): Boolean = channelId in localSubscriptions()
-    fun toggleSubscription(channelId: String): Boolean {
-        if (channelId.isBlank()) return false
-        val cur = localSubscriptions().toMutableSet()
-        val added = if (channelId in cur) { cur.remove(channelId); false } else { cur.add(channelId); true }
-        prefs.edit().putStringSet(KEY_LOCAL_SUBS, cur).apply()
-        return added
+    fun replaceYoutubeLikes(list: List<Video>) {
+        saveVideos(KEY_YT_LIKES, list)
     }
 
-    // ── "סרטונים חדשים" (תיבת נכנס שמוזנת ע"י בדיקת הרקע) ─────────────────
-    fun newVideos(): List<Video> = videos(KEY_NEW_VIDEOS)
-    fun addNewVideos(list: List<Video>) {
-        if (list.isEmpty()) return
-        val cur = videos(KEY_NEW_VIDEOS).toMutableList()
-        list.asReversed().forEach { v -> cur.removeAll { it.id == v.id }; cur.add(0, v) }
-        while (cur.size > 50) cur.removeAt(cur.lastIndex)
-        saveVideos(KEY_NEW_VIDEOS, cur)
+    fun replaceSubscriptions(list: List<SubChannel>) {
+        AccountDataGuard.withLock {
+            if (sessionMatches()) {
+                prefs.edit().putString(KEY_SUBS, json.encodeToString(list)).apply()
+            }
+        }
     }
-    fun clearNewVideos() = saveVideos(KEY_NEW_VIDEOS, emptyList())
+
+    fun replaceHistory(list: List<Video>) {
+        saveVideos(KEY_HISTORY, list)
+    }
+
+    fun replaceRecommendations(list: List<Video>) {
+        saveVideos(KEY_RECS, list)
+    }
+
+    fun replaceLocalHistory(list: List<Video>) {
+        saveVideos(KEY_LOCAL_HISTORY, list.take(HISTORY_CAP))
+    }
+
+    fun replaceNewVideos(list: List<Video>) {
+        saveVideos(KEY_NEW_VIDEOS, list.take(50))
+    }
+
+    fun replaceLocalSubscriptions(channels: Collection<String>) {
+        AccountDataGuard.withLock {
+            if (sessionMatches()) {
+                prefs.edit().putStringSet(
+                    KEY_LOCAL_SUBS,
+                    channels.filter { it.isNotBlank() }.toSet(),
+                ).apply()
+            }
+        }
+    }
+
+    fun clearAccountData() {
+        AccountDataGuard.withLock {
+            if (sessionMatches()) prefs.edit().clear().apply()
+        }
+    }
 
     companion object {
         private const val KEY_LIKES = "likes"

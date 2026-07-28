@@ -1,0 +1,169 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function verifiedOwner(uid) {
+      return request.auth != null
+        && request.auth.uid == uid
+        && request.auth.token.email_verified == true;
+    }
+
+    function validUserDocument() {
+      return request.resource.data.keys().hasOnly([
+          'email',
+          'updatedAt',
+        ])
+        && request.resource.data.email is string
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.email.size() <= 254
+        && request.resource.data.updatedAt is int;
+    }
+
+    function validProfile() {
+      return request.resource.data.keys().hasOnly([
+          'name',
+          'email',
+          'gender',
+          'filterLevel',
+          'onboardingDone',
+          'updatedAtMillis',
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 80
+        && request.resource.data.email is string
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.gender in ['male', 'female']
+        && request.resource.data.filterLevel is int
+        && request.resource.data.filterLevel >= 1
+        && request.resource.data.filterLevel <= 3
+        && request.resource.data.onboardingDone is bool
+        && request.resource.data.updatedAtMillis is int;
+    }
+
+    function validLibraryState() {
+      return request.resource.data.keys().hasOnly([
+          'schemaVersion',
+          'searchHistory',
+          'localSubscriptions',
+          'youtubeSubscriptions',
+          'updatedAtMillis',
+        ])
+        && request.resource.data.schemaVersion == 2
+        && request.resource.data.searchHistory is list
+        && request.resource.data.searchHistory.size() <= 20
+        && request.resource.data.localSubscriptions is list
+        && request.resource.data.localSubscriptions.size() <= 500
+        && request.resource.data.youtubeSubscriptions is list
+        && request.resource.data.youtubeSubscriptions.size() <= 250
+        && request.resource.data.updatedAtMillis is int;
+    }
+
+    function validVideo(video) {
+      return video is map
+        && video.keys().hasOnly([
+          'id',
+          'title',
+          'channelName',
+          'channelId',
+          'thumbnailUrl',
+          'publishedAt',
+        ])
+        && video.id is string
+        && video.id.size() > 0
+        && video.id.size() <= 64
+        && video.title is string
+        && video.title.size() <= 500
+        && video.channelName is string
+        && video.channelName.size() <= 200
+        && video.channelId is string
+        && video.channelId.size() <= 100
+        && video.thumbnailUrl is string
+        && video.thumbnailUrl.size() <= 2048
+        && video.publishedAt is int;
+    }
+
+    function validLibraryItem() {
+      return request.resource.data.keys().hasOnly([
+          'kind',
+          'video',
+          'updatedAtMillis',
+        ])
+        && request.resource.data.kind in [
+          'likes',
+          'downloads',
+          'localHistory',
+          'youtubeLikes',
+          'youtubeHistory',
+          'recommendations',
+          'newVideos',
+        ]
+        && validVideo(request.resource.data.video)
+        && request.resource.data.updatedAtMillis is int;
+    }
+
+    function validPlaylist() {
+      return request.resource.data.keys().hasOnly([
+          'name',
+          'videos',
+          'updatedAtMillis',
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.videos is list
+        && request.resource.data.videos.size() <= 250
+        && request.resource.data.updatedAtMillis is int;
+    }
+
+    match /users/{uid} {
+      allow read: if verifiedOwner(uid);
+      allow create, update: if verifiedOwner(uid) && validUserDocument();
+      allow delete: if false;
+
+      // Subscription state is always server-only. The Android app receives a
+      // deliberately redacted view through the authenticated HTTPS endpoint.
+      match /billing/{document=**} {
+        allow read, write: if false;
+      }
+
+      match /profile/main {
+        allow read: if verifiedOwner(uid);
+        allow create, update: if verifiedOwner(uid) && validProfile();
+        allow delete: if false;
+      }
+
+      match /library/state {
+        allow read: if verifiedOwner(uid);
+        allow create, update: if verifiedOwner(uid) && validLibraryState();
+        allow delete: if false;
+      }
+
+      match /library/items/entries/{entryId} {
+        allow read: if verifiedOwner(uid);
+        allow create, update: if verifiedOwner(uid) && validLibraryItem();
+        allow delete: if false;
+      }
+
+      match /library/playlists/entries/{playlistId} {
+        allow read: if verifiedOwner(uid);
+        allow create, update: if verifiedOwner(uid) && validPlaylist();
+        allow delete: if false;
+      }
+    }
+
+    // Operational queues and subscription/customer state are server-only.
+    match /channelRequests/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /bugReports/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /stripeCustomers/{document=**} {
+      allow read, write: if false;
+    }
+
+    // Any path not matched above is denied by default.
+  }
+}
