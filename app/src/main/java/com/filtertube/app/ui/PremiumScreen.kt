@@ -1,17 +1,13 @@
 package com.filtertube.app.ui
 
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MusicNote
@@ -27,34 +23,49 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import com.filtertube.app.ThemeState
-import com.filtertube.app.data.ServerBilling
+import com.filtertube.app.data.FirebaseBilling
 import com.filtertube.app.data.SettingsStore
 import kotlinx.coroutines.launch
 
-/**
- * מסך FilterTube Premium — שער תשלום מעוצב. לאחר 60 ימי הניסיון נחסמים הורדות,
- * ניגון ברקע וחלון צף עד רכישת מנוי. *עיבוד התשלום בפועל מתבצע בשרת מאובטח* —
- * הלקוח רק פותח את ה-Checkout ומאמת זכאות מול השרת (אסור לסמוך על הלקוח).
- */
+/** Premium checkout backed by Firebase Functions and Stripe Checkout. */
 @Composable
 fun PremiumScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val settings = remember { SettingsStore(context) }
     val scope = rememberCoroutineScope()
-    val daysLeft = settings.trialDaysLeft
-    val active = settings.premiumActive
-    var plan by remember { mutableStateOf("year") }   // "month" / "year"
-    var method by remember { mutableStateOf("card") }  // "card" / "paypal"
-    var serverUrl by remember { mutableStateOf(settings.serverBaseUrl) }
-    var apiKey by remember { mutableStateOf(settings.serverApiKey) }
-    var status by remember { mutableStateOf("התחבר לשרת התשלומים כדי לאמת רכישה מאובטחת") }
+    var plan by remember { mutableStateOf("year") }
+    var paidActive by remember { mutableStateOf(settings.premiumServerActive) }
+    var canManage by remember { mutableStateOf(settings.premiumCanManage) }
+    var status by remember { mutableStateOf("בודק את מצב המנוי…") }
     var loading by remember { mutableStateOf(false) }
+
+    fun refreshBilling() {
+        scope.launch {
+            val result = FirebaseBilling.refresh(settings)
+            paidActive = settings.premiumServerActive
+            canManage = settings.premiumCanManage
+            status = result.message
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        refreshBilling()
+    }
+    val lifecycleOwner = context as? LifecycleOwner
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refreshBilling()
+        }
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+        onDispose { lifecycleOwner?.lifecycle?.removeObserver(observer) }
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar("FilterTube Premium", onBack)
@@ -62,19 +73,22 @@ fun PremiumScreen(onBack: () -> Unit) {
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                 .padding(horizontal = 18.dp).padding(bottom = 28.dp),
         ) {
-            // כתר + סטטוס
             Spacer(Modifier.height(8.dp))
             Box(
                 modifier = Modifier.size(76.dp).clip(RoundedCornerShape(50))
                     .background(Brush.linearGradient(ThemeState.accentColors))
                     .align(Alignment.CenterHorizontally),
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Default.WorkspacePremium, null, tint = Color.White, modifier = Modifier.size(42.dp)) }
+            ) {
+                Icon(Icons.Default.WorkspacePremium, null, tint = Color.White, modifier = Modifier.size(42.dp))
+            }
             Spacer(Modifier.height(14.dp))
             Text(
-                if (settings.premiumPurchased) "אתה מנוי Premium 🎉"
-                else if (active) "נותרו $daysLeft ימי ניסיון חינם"
-                else "הניסיון הסתיים",
+                when {
+                    paidActive -> "אתה מנוי Premium 🎉"
+                    settings.premiumActive -> "נותרו ${settings.trialDaysLeft} ימי ניסיון חינם"
+                    else -> "הניסיון הסתיים"
+                },
                 color = ThemeState.text, fontSize = 21.sp, fontWeight = FontWeight.ExtraBold,
                 modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
             )
@@ -86,80 +100,39 @@ fun PremiumScreen(onBack: () -> Unit) {
             )
 
             Spacer(Modifier.height(22.dp))
-            Perk(Icons.Default.Download, "הורדות לצפייה לא־מקוונת")
+            Perk(Icons.Default.Download, "הורדות לצפייה ללא חיבור")
             Perk(Icons.Default.MusicNote, "ניגון ברקע ובמסך כבוי")
             Perk(Icons.Default.PictureInPictureAlt, "חלון צף (Picture-in-Picture)")
 
-            if (!settings.premiumPurchased) {
+            if (!paidActive) {
                 Spacer(Modifier.height(24.dp))
                 PlanCard(
                     title = "שנתי", price = "₪70", per = "לשנה",
-                    note = "חיסכון 42% · ₪5.8 לחודש בלבד", best = true, selected = plan == "year",
+                    note = "החיסכון הטוב ביותר", best = true, selected = plan == "year",
                 ) { plan = "year" }
                 Spacer(Modifier.height(11.dp))
                 PlanCard(
                     title = "חודשי", price = "₪10", per = "לחודש",
-                    note = "ביטול בכל עת", best = false, selected = plan == "month",
+                    note = "ניתן לבטל בכל עת", best = false, selected = plan == "month",
                 ) { plan = "month" }
 
-                Spacer(Modifier.height(22.dp))
-                Text("אמצעי תשלום", color = ThemeState.subtext2, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-                    PayMethod("כרטיס אשראי", Icons.Default.CreditCard, method == "card", Modifier.weight(1f)) { method = "card" }
-                    PayMethod("PayPal", null, method == "paypal", Modifier.weight(1f)) { method = "paypal" }
-                }
-
-                Spacer(Modifier.height(16.dp))
-                OutlinedTextField(
-                    value = serverUrl,
-                    onValueChange = {
-                        serverUrl = it
-                        settings.serverBaseUrl = it
-                    },
-                    label = { Text("כתובת שרת תשלומים") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = ThemeState.text,
-                        unfocusedTextColor = ThemeState.text,
-                        focusedBorderColor = ThemeState.accent,
-                        unfocusedBorderColor = ThemeState.divider,
-                    ),
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = {
-                        apiKey = it
-                        settings.serverApiKey = it
-                    },
-                    label = { Text("API Key") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = ThemeState.text,
-                        unfocusedTextColor = ThemeState.text,
-                        focusedBorderColor = ThemeState.accent,
-                        unfocusedBorderColor = ThemeState.divider,
-                    ),
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    "התשלום מתבצע בדף Stripe מאובטח. פרטי אשראי אינם עוברים דרך האפליקציה.",
+                    color = ThemeState.subtext2, fontSize = 12.sp,
                 )
                 Spacer(Modifier.height(12.dp))
-                Text(status, color = if (status.contains("✅") || status.contains("הושלם")) Color(0xFF22C55E) else ThemeState.subtext2, fontSize = 12.sp)
+                Text(status, color = if (paidActive) Color(0xFF22C55E) else ThemeState.subtext2, fontSize = 12.sp)
                 Spacer(Modifier.height(12.dp))
                 Button(
                     onClick = {
                         loading = true
-                        status = "שולח בקשת תשלום לשרת…"
+                        status = "פותח תשלום מאובטח…"
                         scope.launch {
-                            val result = ServerBilling.createCheckout(settings, plan, method)
+                            val result = FirebaseBilling.createCheckout(plan)
                             loading = false
                             status = result.message
-                            if (result.checkoutUrl != null) {
-                                Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
-                            }
+                            result.url?.let { FirebaseBilling.openBrowser(context, it) }
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(54.dp).clip(RoundedCornerShape(16.dp)),
@@ -175,29 +148,85 @@ fun PremiumScreen(onBack: () -> Unit) {
                 OutlinedButton(
                     onClick = {
                         loading = true
-                        status = "מאמת תשלום עם השרת…"
+                        status = "בודק את מצב המנוי…"
                         scope.launch {
-                            val result = ServerBilling.verifyPurchase(settings, plan, method)
+                            val result = FirebaseBilling.refresh(settings)
                             loading = false
                             status = result.message
-                            if (result.ok) {
-                                settings.premiumPurchased = true
-                                Toast.makeText(context, "האימות הושלם", Toast.LENGTH_SHORT).show()
-                            }
+                            paidActive = settings.premiumServerActive
+                            canManage = settings.premiumCanManage
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(46.dp),
                     enabled = !loading,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = ThemeState.accent),
-                ) {
-                    Text("אמת רכישה")
+                ) { Text("רענן מצב מנוי") }
+                if (canManage) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            loading = true
+                            scope.launch {
+                                val result = FirebaseBilling.createCustomerPortal()
+                                loading = false
+                                status = result.message
+                                result.url?.let { FirebaseBilling.openBrowser(context, it) }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(46.dp),
+                        enabled = !loading,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = ThemeState.accent),
+                    ) { Text("ניהול או ביטול המנוי") }
                 }
                 Spacer(Modifier.height(12.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Icon(Icons.Default.Lock, null, tint = ThemeState.subtext2, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("תשלום מאובטח · הצפנת SSL · איננו שומרים פרטי אשראי",
-                        color = ThemeState.subtext2, fontSize = 11.sp, textAlign = TextAlign.Center)
+                    Text(
+                        "תשלום מאובטח על־ידי Stripe · איננו שומרים פרטי אשראי",
+                        color = ThemeState.subtext2, fontSize = 11.sp, textAlign = TextAlign.Center,
+                    )
+                }
+            }
+            if (paidActive) {
+                Spacer(Modifier.height(22.dp))
+                Text(status, color = Color(0xFF22C55E), fontSize = 12.sp)
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = {
+                        loading = true
+                        scope.launch {
+                            val result = FirebaseBilling.refresh(settings)
+                            loading = false
+                            status = result.message
+                            paidActive = settings.premiumServerActive
+                            canManage = settings.premiumCanManage
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    enabled = !loading,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = ThemeState.accent),
+                ) { Text("רענן מצב מנוי") }
+                if (canManage) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            loading = true
+                            scope.launch {
+                                val result = FirebaseBilling.createCustomerPortal()
+                                loading = false
+                                status = result.message
+                                result.url?.let { FirebaseBilling.openBrowser(context, it) }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(46.dp),
+                        enabled = !loading,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = ThemeState.accent),
+                    ) { Text("ניהול או ביטול המנוי") }
                 }
             }
         }
@@ -240,21 +269,5 @@ private fun PlanCard(title: String, price: String, per: String, note: String, be
             Text(price, color = ThemeState.text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
             Text(per, color = ThemeState.subtext2, fontSize = 11.sp)
         }
-    }
-}
-
-@Composable
-private fun PayMethod(label: String, icon: ImageVector?, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    Row(
-        modifier = modifier.clip(RoundedCornerShape(14.dp)).background(ThemeState.card)
-            .border(if (selected) 2.dp else 1.dp, if (selected) ThemeState.accent else ThemeState.divider, RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick).padding(vertical = 14.dp),
-        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (icon != null) {
-            Icon(icon, null, tint = if (selected) ThemeState.accent else ThemeState.text, modifier = Modifier.size(19.dp))
-            Spacer(Modifier.width(8.dp))
-        }
-        Text(label, color = if (selected) ThemeState.accent else ThemeState.text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     }
 }

@@ -9,6 +9,13 @@
 .cxx
 local.properties
 *.apk
+/functions/.env*
+/functions/.secret.local
+/functions/node_modules/
+/.npm-cache/
+/firebase-debug.log
+.firebase/
+service-account*.json
 /gradle/wrapper/gradle-wrapper.jar
 gradlew
 gradlew.bat

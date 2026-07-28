@@ -1,42 +1,46 @@
-# FilterTube — Android
+# FilterTube Android
 
-אפליקציית YouTube מסונן לאנדרואיד, מציגה רק תוכן מערוצים מאושרים.
+אפליקציית YouTube מסוננת לאנדרואיד שמציגה תוכן מערוצים מאושרים.
 
-> 🚧 **גרסה 0.1.0 (MVP)** — בשלב זה רק "Hello World" שמוודא שהבנייה האוטומטית עובדת. הפיצ'רים האמיתיים מגיעים בגרסאות הבאות.
+במאגר קיימות שתי גרסאות נפרדות:
 
-## איך מורידים את ה-APK
+- אפליקציית Android הראשית בתיקיית השורש — הגרסה המסוננת המבוססת על
+  NewPipe/InnerTube ומיועדת להפצה ישירה כ‑APK.
+- `flutter_app/` — גרסת החנות הנפרדת, המבוססת על ה‑API הרשמי.
 
-1. עבור ל-[Releases](https://github.com/yeled-tov/filtertube-android/releases)
-2. בחר את הגרסה האחרונה
-3. הורד את `FilterTube-debug.apk`
+## הורדה והתקנה
 
-## איך מתקינים על הטלפון
+1. פתח את [Releases](https://github.com/yeled-tov/filtertube-android/releases).
+2. בחר את הגרסה האחרונה והורד `FilterTube.apk`.
+3. העבר את הקובץ לטלפון ואפשר התקנה מהמקור שממנו פתחת אותו.
 
-1. העבר את ה-APK לטלפון (USB / Gmail / Drive / Telegram וכו')
-2. בטלפון: הגדרות → אבטחה → אפשר התקנה ממקורות לא ידועים (לאפליקציה שמורידה את הקובץ)
-3. פתח את הקובץ במנהל הקבצים ולחץ "התקן"
+## חשבון, גיבוי ו‑Premium
 
-## פיתוח
+- הכניסה מתבצעת עם Firebase Email/Password ודורשת אימות כתובת המייל.
+- סיסמת החשבון משמשת גם כסיסמת ההורים. היא אינה נשמרת כטקסט גלוי במכשיר
+  או ב‑Firestore.
+- הפרופיל, היסטוריות, לייקים, הורדות, מנויים ורשימות נשמרים ב‑Firestore
+  ומשוחזרים לאחר התחברות.
+- תשלום Premium מתבצע ב‑Stripe Checkout. רק Firebase Functions מחזיק את
+  מפתחות Stripe; פרטי כרטיס אינם מגיעים לאפליקציה.
+- הוראות פריסה מאובטחות נמצאות ב‑[`FIREBASE_DEPLOY.md`](FIREBASE_DEPLOY.md).
 
-האפליקציה נבנית אוטומטית ע"י GitHub Actions בכל push ל-main. אין צורך להתקין Android Studio מקומית.
+## בנייה אוטומטית
 
-```
-git push origin main → GitHub Actions בונה APK → APK זמין ב-Releases
-```
+GitHub Actions בודק את Firebase Functions ובונה APK חתום מסוג Release בכל
+push ל‑`main` או לענף `codex/**`.
+
+- ענף `codex/**` יוצר Artifact לבדיקה בלבד.
+- `main` יוצר גם GitHub Release עם `FilterTube.apk`.
+- לוג של בנייה שנכשלה נשמר כ‑Artifact ואינו נכתב חזרה למאגר.
+
+מטעמי אבטחה אין PAT של GitHub או מפתח Stripe בתוך ה‑APK.
 
 ## טכנולוגיות
 
-- Kotlin 2.0
-- Jetpack Compose (Material 3)
-- ExoPlayer / Media3 (לנגן וידאו)
-- minSdk 24 (Android 7.0) → tomers 99% מהמכשירים
-- targetSdk 34 (Android 14)
-
-## רוד מאפ
-
-- [x] שלב 1: MVP "Hello World" + CI build
-- [ ] שלב 2: חיבור ל-Supabase + רשימת ערוצים
-- [ ] שלב 3: NewPipeExtractor + נגן וידאו
-- [ ] שלב 4: הורדות + ניגון ברקע
-- [ ] שלב 5: חיפוש + Profile + Shorts
-- [ ] שלב 6: שחרור ב-F-Droid
+- Kotlin 2.0 ו‑Jetpack Compose
+- Media3 / ExoPlayer
+- NewPipeExtractor ו‑InnerTube
+- Firebase Authentication ו‑Cloud Firestore
+- Firebase Functions ו‑Stripe Checkout
+- minSdk 24, targetSdk 34

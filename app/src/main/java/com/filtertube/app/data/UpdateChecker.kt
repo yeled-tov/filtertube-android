@@ -10,7 +10,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
@@ -21,7 +20,8 @@ object UpdateChecker {
 
     // רשימת ה-Releases (לא /latest) — כי ב-repo יש גם Releases של גרסת Flutter (flutter-N),
     // ואנחנו צריכים את האחרון מסוג build-N דווקא.
-    private const val LIST_URL = "https://api.github.com/repos/yeled-tov/filtertube-android/releases?per_page=20"
+    private const val LIST_URL =
+        "https://api.github.com/repos/yeled-tov/filtertube-android/releases?per_page=100"
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -46,30 +46,31 @@ object UpdateChecker {
             http.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) return@use null
                 val arr = org.json.JSONArray(resp.body?.string() ?: return@use null)
-                // הרשימה ממוינת מהחדש לישן — מוצאים את הראשון עם תג build-N
+                var latest: Update? = null
                 for (i in 0 until arr.length()) {
                     val json = arr.optJSONObject(i) ?: continue
                     if (json.optBoolean("draft")) continue
                     val tag = json.optString("tag_name")              // build-N / flutter-N
                     if (!tag.startsWith("build-")) continue           // מתעלמים מגרסת Flutter
                     val build = tag.removePrefix("build-").toIntOrNull() ?: continue
+                    if (build <= (latest?.build ?: -1)) continue
                     var apkUrl: String? = null
                     json.optJSONArray("assets")?.let { assets ->
                         for (j in 0 until assets.length()) {
                             val a = assets.optJSONObject(j) ?: continue
-                            if (a.optString("name").endsWith(".apk", true)) {
+                            if (a.optString("name") == "FilterTube.apk") {
                                 apkUrl = a.optString("browser_download_url"); break
                             }
                         }
                     }
-                    return@use Update(
+                    latest = Update(
                         build = build,
                         name = json.optString("name", tag),
                         changelog = json.optString("body", "").trim(),
                         apkUrl = apkUrl,
                     )
                 }
-                null
+                latest
             }
         }.getOrNull()
     }

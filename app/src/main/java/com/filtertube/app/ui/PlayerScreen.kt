@@ -1311,16 +1311,34 @@ private fun ToggleRow(title: String, sub: String, checked: Boolean, onChange: (B
 
 private fun syncLikeToYoutube(context: Context, scope: CoroutineScope, videoId: String, like: Boolean) {
     if (videoId.isEmpty()) return
+    val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        ?.takeIf { it.isEmailVerified }
+        ?: return
+    val expectedUid = firebaseUser.uid
+    val generation = com.filtertube.app.data.AccountDataGuard.generation()
     val accountStore = com.filtertube.app.data.AccountStore(context)
+    fun sessionCurrent(): Boolean {
+        val current = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        return current?.uid == expectedUid &&
+            current.isEmailVerified &&
+            com.filtertube.app.data.AccountDataGuard.generation() == generation
+    }
     scope.launch {
         runCatching {
+            if (!sessionCurrent()) return@runCatching
             if (accountStore.isLoggedIn) {
                 // סנכרון מלא דרך InnerTube (cookies)
-                com.filtertube.app.data.InnerTube.rate(accountStore.cookies, videoId, like)
+                val cookies = accountStore.cookies
+                if (!sessionCurrent()) return@runCatching
+                com.filtertube.app.data.InnerTube.rate(cookies, videoId, like)
             } else {
                 // נפילה ל-OAuth הרשמי
-                val acct = GoogleAuth.lastAccount(context)?.account ?: return@runCatching
-                val token = GoogleAuth.accessToken(context, acct)
+                val signedIn = GoogleAuth.lastAccount(context) ?: return@runCatching
+                val acct = signedIn.account ?: return@runCatching
+                val googleSession =
+                    GoogleAuth.session(context, signedIn) ?: return@runCatching
+                val token = GoogleAuth.accessToken(context, acct, googleSession)
+                if (!sessionCurrent()) return@runCatching
                 YouTubeAccountRepository.rate(token, videoId, like)
             }
         }

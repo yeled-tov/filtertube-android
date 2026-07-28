@@ -44,12 +44,18 @@ import androidx.compose.ui.unit.sp
 import com.filtertube.app.BuildConfig
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.CloudSync
+import com.filtertube.app.data.FirebaseAccount
 import com.filtertube.app.data.GoogleAuth
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.UpdateChecker
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import kotlinx.coroutines.launch
+
+private enum class SettingsGateTarget {
+    FILTER,
+    ADMIN,
+}
 
 @Composable
 fun SettingsScreen(
@@ -68,7 +74,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val settings = remember { SettingsStore(context) }
 
-    var showGate by remember { mutableStateOf(false) }
+    var gateTarget by remember { mutableStateOf<SettingsGateTarget?>(null) }
     var showFilter by remember { mutableStateOf(false) }
     var showChangePw by remember { mutableStateOf(false) }
     var showDisplay by remember { mutableStateOf(false) }
@@ -77,7 +83,7 @@ fun SettingsScreen(
     var showNotify by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var showCloud by remember { mutableStateOf(false) }
-    var adminUnlocked by remember { mutableStateOf(settings.adminUnlocked) }
+    var adminUnlocked by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier.fillMaxSize().background(ThemeState.bg)
@@ -100,7 +106,9 @@ fun SettingsScreen(
 
         SettingsSectionHeader("סינון וניגון")
         SettingsRow(Icons.Default.FilterAlt, Color(0xFFFFAA00), "הגדרות סינון 🔒",
-            "רמת סינון והצגת Shorts — מוגן בסיסמה") { showGate = true }
+            "רמת סינון והצגת Shorts — מוגן בסיסמה") {
+            gateTarget = SettingsGateTarget.FILTER
+        }
         SettingsRow(Icons.Default.MusicNote, Color(0xFF10B981), "נגן ושמע",
             "עיצוב הנגן ואיכות") { showPlayerAudio = true }
 
@@ -121,18 +129,28 @@ fun SettingsScreen(
             SettingsRow(Icons.Default.Speed, Color(0xFF00BFA5), "אבחון מהירות/עצירות",
                 "מה איטי או נתקע בניגון — ושליחה אליי") { onOpenDiag() }
             SettingsRow(Icons.Default.AdminPanelSettings, Color(0xFFFFAA00), "ניהול ערוצים",
-                "הוספה/הסרה של ערוצים מהרשימה הלבנה") { onOpenAdmin() }
+                "הוספה/הסרה של ערוצים מהרשימה הלבנה") {
+                gateTarget = SettingsGateTarget.ADMIN
+            }
         }
         // מרווח תחתון כדי שהפריט האחרון יהיה מעל סרגל הניווט הצף
         Spacer(Modifier.height(110.dp))
     }
 
 
-    if (showGate) FilterGateDialog(
-        settings = settings,
-        onUnlock = { showGate = false; showFilter = true },
-        onDismiss = { showGate = false },
-    )
+    gateTarget?.let { target ->
+        FilterGateDialog(
+            settings = settings,
+            onUnlock = {
+                gateTarget = null
+                when (target) {
+                    SettingsGateTarget.FILTER -> showFilter = true
+                    SettingsGateTarget.ADMIN -> onOpenAdmin()
+                }
+            },
+            onDismiss = { gateTarget = null },
+        )
+    }
 
     if (showFilter) FilterSettingsDialog(
         filterLevel = filterLevel,
@@ -160,7 +178,7 @@ fun SettingsScreen(
     if (showNotify) NotificationsDialog(settings = settings, onDismiss = { showNotify = false })
 
     if (showAbout) AboutDialog(
-        onUnlock = { settings.adminUnlocked = true; adminUnlocked = true },
+        onUnlock = { adminUnlocked = true },
         onDismiss = { showAbout = false },
     )
 
@@ -170,6 +188,7 @@ fun SettingsScreen(
 // ── שורת הגדרה ───────────────────────────────────────────────────────────
 @Composable
 private fun CloudSyncDialog(settings: SettingsStore, onDismiss: () -> Unit) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var email by remember { mutableStateOf(settings.cloudEmail) }
     var password by remember { mutableStateOf("") }
@@ -177,7 +196,7 @@ private fun CloudSyncDialog(settings: SettingsStore, onDismiss: () -> Unit) {
     var loading by remember { mutableStateOf(false) }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!loading) onDismiss() },
         title = { Text(if (settings.cloudEmail.isNotBlank()) "סנכרון ענן" else "התחברות לענן") },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -227,9 +246,12 @@ private fun CloudSyncDialog(settings: SettingsStore, onDismiss: () -> Unit) {
                 loading = true
                 status = ""
                 scope.launch {
-                    val ok = CloudSync.signInOrRegister(email, password, settings)
+                    val alreadySignedIn = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser != null
+                    val authenticated = alreadySignedIn ||
+                        CloudSync.signInOrRegister(email, password, settings)
+                    val ok = authenticated && CloudSync.synchronize(context, settings)
                     loading = false
-                    status = if (ok) "הצלחה — הפרופיל סונכרן לענן" else "התחברות נכשלה. בדוק אימייל/סיסמה"
+                    status = if (ok) "הצלחה — הנתונים סונכרנו לענן" else "התחברות נכשלה. בדוק אימייל/סיסמה"
                 }
             }, enabled = !loading) {
                 Text(if (loading) "עובד..." else if (settings.cloudEmail.isNotBlank()) "סנכרן" else "התחבר")
@@ -238,12 +260,12 @@ private fun CloudSyncDialog(settings: SettingsStore, onDismiss: () -> Unit) {
         dismissButton = {
             Row {
                 if (settings.cloudEmail.isNotBlank()) {
-                    TextButton(onClick = {
-                        scope.launch { CloudSync.signOut(settings) }
+                    TextButton(enabled = !loading, onClick = {
+                        CloudSync.signOut(context, settings)
                         onDismiss()
                     }) { Text("התנתק") }
                 }
-                TextButton(onClick = onDismiss) { Text("סגור") }
+                TextButton(onClick = onDismiss, enabled = !loading) { Text("סגור") }
             }
         },
         containerColor = ThemeState.surface,
@@ -285,10 +307,12 @@ private fun SettingsRow(icon: ImageVector, accent: Color, title: String, subtitl
 // ── שער סיסמה לסינון ─────────────────────────────────────────────────────
 @Composable
 private fun FilterGateDialog(settings: SettingsStore, onUnlock: () -> Unit, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
     val isSetup = !settings.hasFilterPassword
     var pw by remember { mutableStateOf("") }
     var pw2 by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
+    var checking by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Lock, null, tint = Color(0xFFFFAA00)) },
@@ -296,8 +320,8 @@ private fun FilterGateDialog(settings: SettingsStore, onUnlock: () -> Unit, onDi
         text = {
             Column {
                 Text(
-                    if (isSetup) "קבע סיסמה שתידרש כל פעם שמשנים את רמת הסינון או את הצגת ה-Shorts."
-                    else "נדרשת סיסמה כדי לשנות את הגדרות הסינון.",
+                    if (isSetup) "הזן את סיסמת החשבון כדי להפעיל מחדש את סיסמת ההורים במכשיר זה."
+                    else "הזן את סיסמת החשבון כדי לשנות את הגדרות הסינון. האימות דורש חיבור לאינטרנט.",
                     color = ThemeState.subtext2, fontSize = 12.sp,
                 )
                 Spacer(Modifier.height(12.dp))
@@ -316,14 +340,26 @@ private fun FilterGateDialog(settings: SettingsStore, onUnlock: () -> Unit, onDi
             TextButton(onClick = {
                 if (isSetup) {
                     when {
-                        pw.trim().length < 3 -> error = "סיסמה קצרה מדי (לפחות 3 תווים)"
+                        pw.length < 6 -> error = "סיסמה קצרה מדי (לפחות 6 תווים)"
                         pw != pw2 -> error = "הסיסמאות אינן תואמות"
-                        else -> { settings.filterPassword = pw.trim(); onUnlock() }
+                        else -> {
+                            checking = true
+                            scope.launch {
+                                val result = FirebaseAccount.verifyPasswordAndSetParentGate(pw, settings)
+                                checking = false
+                                if (result.ok) onUnlock() else error = result.message
+                            }
+                        }
                     }
                 } else {
-                    if (settings.checkFilterPassword(pw)) onUnlock() else error = "סיסמה שגויה"
+                    checking = true
+                    scope.launch {
+                        val result = FirebaseAccount.verifyPasswordAndSetParentGate(pw, settings)
+                        checking = false
+                        if (result.ok) onUnlock() else error = result.message
+                    }
                 }
-            }) { Text(if (isSetup) "שמור והמשך" else "אישור") }
+            }, enabled = !checking) { Text(if (checking) "מאמת…" else if (isSetup) "שמור והמשך" else "אישור") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("בטל") } },
         containerColor = ThemeState.surface,
@@ -333,14 +369,21 @@ private fun FilterGateDialog(settings: SettingsStore, onUnlock: () -> Unit, onDi
 
 @Composable
 private fun ChangePasswordDialog(settings: SettingsStore, onDone: () -> Unit, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var current by remember { mutableStateOf("") }
     var pw by remember { mutableStateOf("") }
     var pw2 by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
+    var saving by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("שינוי סיסמה") },
         text = {
             Column {
+                Text("סיסמת החשבון וסיסמת ההורים יתעדכנו יחד.", color = ThemeState.subtext2, fontSize = 12.sp)
+                Spacer(Modifier.height(8.dp))
+                PwField(current, { current = it; error = "" }, "סיסמה נוכחית")
+                Spacer(Modifier.height(8.dp))
                 PwField(pw, { pw = it; error = "" }, "סיסמה חדשה")
                 Spacer(Modifier.height(8.dp))
                 PwField(pw2, { pw2 = it; error = "" }, "אימות סיסמה")
@@ -353,11 +396,19 @@ private fun ChangePasswordDialog(settings: SettingsStore, onDone: () -> Unit, on
         confirmButton = {
             TextButton(onClick = {
                 when {
-                    pw.trim().length < 3 -> error = "סיסמה קצרה מדי (לפחות 3 תווים)"
+                    current.isBlank() -> error = "יש להזין את הסיסמה הנוכחית"
+                    pw.length < 6 -> error = "סיסמה קצרה מדי (לפחות 6 תווים)"
                     pw != pw2 -> error = "הסיסמאות אינן תואמות"
-                    else -> { settings.filterPassword = pw.trim(); onDone() }
+                    else -> {
+                        saving = true
+                        scope.launch {
+                            val result = FirebaseAccount.updatePassword(current, pw, settings)
+                            saving = false
+                            if (result.ok) onDone() else error = result.message
+                        }
+                    }
                 }
-            }) { Text("שמור") }
+            }, enabled = !saving) { Text(if (saving) "מעדכן…" else "שמור") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("בטל") } },
         containerColor = ThemeState.surface,
