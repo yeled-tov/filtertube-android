@@ -72,10 +72,6 @@ android {
     }
 }
 
-configurations.configureEach {
-    exclude(group = "com.google.protobuf", module = "protobuf-javalite")
-}
-
 dependencies {
     // Core library desugaring — תיקון קריסות NewPipe באנדרואיד < 13
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
@@ -124,6 +120,8 @@ implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
     // Firebase — סנכרון ענן/פרופיל
     implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
     implementation("com.google.firebase:firebase-auth")
+    // Firestore loads com.google.protobuf.ByteString when its local store starts.
+    // Keep its protobuf-javalite transitive dependency in the APK.
     implementation("com.google.firebase:firebase-firestore")
 
     testImplementation("junit:junit:4.13.2")
