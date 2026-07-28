@@ -189,6 +189,8 @@ fun AppRoot() {
             user != null && user.isEmailVerified && settings.cloudUid == user.uid,
         )
     }
+    var onboarded by remember { mutableStateOf(settings.onboardingDone) }
+    var profileRequired by remember { mutableStateOf(!settings.onboardingDone) }
     DisposableEffect(firebaseAuth) {
         val listener = com.google.firebase.auth.FirebaseAuth.AuthStateListener { auth ->
             // A non-null user is not enough: account initialization must finish
@@ -201,24 +203,31 @@ fun AppRoot() {
         firebaseAuth.addAuthStateListener(listener)
         onDispose { firebaseAuth.removeAuthStateListener(listener) }
     }
-    if (settings.onboardingDone && !accountReady) {
-        com.filtertube.app.ui.FirebaseAccountScreen(onDone = {
+    // Every user starts at a clear account choice. Profile personalisation is
+    // shown only after sign-in/registration and email verification complete.
+    if (!accountReady) {
+        com.filtertube.app.ui.FirebaseAccountScreen(onDone = { needsProfile ->
             val user = firebaseAuth.currentUser
             val ready =
                 user != null && user.isEmailVerified && settings.cloudUid == user.uid
             accountReady = ready
+            if (ready) {
+                profileRequired = needsProfile
+                onboarded = settings.onboardingDone && !needsProfile
+            }
         })
         return
     }
 
-    // ── הרשמה ראשונית — מוצגת לפני כל שאר האפליקציה בהפעלה הראשונה ──
-    var onboarded by remember { mutableStateOf(settings.onboardingDone) }
-    if (!onboarded) {
+    // The setup wizard contains profile/filter choices only; authentication
+    // never happens on its final button.
+    if (!onboarded || profileRequired) {
         com.filtertube.app.ui.OnboardingScreen(onDone = {
             val user = firebaseAuth.currentUser
             accountReady =
                 user != null && user.isEmailVerified && settings.cloudUid == user.uid
             onboarded = true
+            profileRequired = false
         })
         return
     }

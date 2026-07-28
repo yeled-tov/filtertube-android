@@ -14,6 +14,7 @@ import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseAuthWeakPasswordException
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
@@ -32,6 +33,96 @@ object FirebaseAccount {
         val verificationPending: Boolean = false,
         val email: String? = null,
     )
+
+    /**
+     * Creates a new account only. Registration and sign-in are deliberately
+     * separate so the UI never surprises a user by doing the other operation.
+     */
+    suspend fun register(email: String, password: String, settings: SettingsStore): Result {
+        val normalized = email.trim().lowercase()
+        validateCredentials(normalized, password)?.let { return it }
+        val auth = FirebaseAuth.getInstance()
+        return try {
+            val user = auth.createUserWithEmailAndPassword(
+                normalized,
+                firebasePassword(normalized, password),
+            ).await().user ?: return Result(false, "לא ניתן ליצור את החשבון כרגע")
+            saveParentPasscode(settings, password)
+            if (!user.isEmailVerified) {
+                val message = try {
+                    user.sendEmailVerification().await()
+                    "החשבון נוצר. שלחנו קישור אימות ל־$normalized."
+                } catch (error: CancellationException) {
+                    invalidateAndSignOutAuthentication()
+                    throw error
+                } catch (error: Exception) {
+                    verificationErrorMessage(error)
+                }
+                return Result(
+                    ok = false,
+                    message = message,
+                    created = true,
+                    verificationPending = true,
+                    email = normalized,
+                )
+            }
+            initializeVerifiedAccount(user, normalized, settings, created = true)
+        } catch (error: FirebaseAuthUserCollisionException) {
+            invalidateAndSignOutAuthentication()
+            Result(
+                ok = false,
+                message = "כבר קיים חשבון עם המייל הזה. בחר „כניסה לחשבון”.",
+                email = normalized,
+            )
+        } catch (error: CancellationException) {
+            invalidateAndSignOutAuthentication()
+            throw error
+        } catch (error: Exception) {
+            invalidateAndSignOutAuthentication()
+            Log.e(TAG, "account registration failed", error)
+            Result(false, registrationErrorMessage(error), email = normalized)
+        }
+    }
+
+    /** Signs in to an existing account without ever creating a new one. */
+    suspend fun signIn(email: String, password: String, settings: SettingsStore): Result {
+        val normalized = email.trim().lowercase()
+        validateCredentials(normalized, password)?.let { return it }
+        val auth = FirebaseAuth.getInstance()
+        return try {
+            val firebasePassword = firebasePassword(normalized, password)
+            val user = try {
+                auth.signInWithEmailAndPassword(normalized, firebasePassword).await().user
+            } catch (derivedCredentialError: FirebaseAuthInvalidCredentialsException) {
+                // Accounts from older versions used the user-entered Firebase
+                // password directly. Migrate it once after a successful login.
+                if (password.length < LEGACY_FIREBASE_PASSWORD_MIN_LENGTH) {
+                    throw derivedCredentialError
+                }
+                val legacyUser = auth.signInWithEmailAndPassword(normalized, password).await().user
+                    ?: throw derivedCredentialError
+                legacyUser.updatePassword(firebasePassword).await()
+                legacyUser
+            } ?: return Result(false, "לא ניתן להתחבר לחשבון כרגע")
+            saveParentPasscode(settings, password)
+            if (!user.isEmailVerified) {
+                return Result(
+                    ok = false,
+                    message = "החשבון קיים, אך המייל עדיין לא אומת.",
+                    verificationPending = true,
+                    email = normalized,
+                )
+            }
+            initializeVerifiedAccount(user, normalized, settings, created = false)
+        } catch (error: CancellationException) {
+            invalidateAndSignOutAuthentication()
+            throw error
+        } catch (error: Exception) {
+            invalidateAndSignOutAuthentication()
+            Log.e(TAG, "account sign-in failed", error)
+            Result(false, signInErrorMessage(error), email = normalized)
+        }
+    }
 
     suspend fun signInOrRegister(email: String, password: String, settings: SettingsStore): Result {
         val normalized = email.trim().lowercase()
@@ -299,6 +390,16 @@ object FirebaseAccount {
     private fun accountChangedResult() =
         Result(false, "החשבון השתנה במהלך הפעולה. נסה שוב.")
 
+    private fun validateCredentials(normalizedEmail: String, password: String): Result? {
+        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(normalizedEmail).matches()) {
+            return Result(false, "כתובת אימייל לא תקינה")
+        }
+        if (password.length < PARENT_PASSCODE_MIN_LENGTH) {
+            return Result(false, "הקוד חייב להכיל לפחות 4 תווים")
+        }
+        return null
+    }
+
     /** Updates the single parent/account passcode both locally and in Firebase. */
     suspend fun updatePassword(
         currentPassword: String,
@@ -365,7 +466,17 @@ object FirebaseAccount {
         is FirebaseAuthWeakPasswordException -> "לא ניתן לשמור את הקוד כרגע. נסה שוב בעוד רגע."
         is FirebaseAuthInvalidCredentialsException,
         is FirebaseAuthInvalidUserException -> "לא ניתן להתחבר. בדוק את האימייל והקוד ונסה שוב."
+        is FirebaseFirestoreException -> firestoreErrorMessage(error)
         else -> "לא ניתן להשלים את הכניסה כרגע. נסה שוב בעוד רגע."
+    }
+
+    private fun registrationErrorMessage(error: Exception): String = when (error) {
+        is FirebaseNetworkException -> "אין חיבור לשרת. בדוק את האינטרנט ונסה שוב."
+        is FirebaseTooManyRequestsException -> "בוצעו יותר מדי ניסיונות. המתן מעט ונסה שוב."
+        is FirebaseAuthWeakPasswordException -> "לא ניתן לשמור את הקוד כרגע. נסה קוד אחר."
+        is FirebaseAuthInvalidCredentialsException -> "כתובת האימייל אינה תקינה."
+        is FirebaseFirestoreException -> firestoreErrorMessage(error)
+        else -> "לא ניתן ליצור את החשבון כרגע. נסה שוב בעוד רגע."
     }
 
     private fun verificationErrorMessage(error: Exception): String = when (error) {
@@ -382,7 +493,17 @@ object FirebaseAccount {
         is FirebaseAuthRecentLoginRequiredException ->
             "מטעמי אבטחה יש לצאת מהחשבון ולהתחבר שוב, ואז להשלים את האימות."
         is FirebaseAuthInvalidCredentialsException -> "קוד החשבון אינו מתאים לחשבון הזה."
+        is FirebaseFirestoreException -> firestoreErrorMessage(error)
         else -> "לא ניתן לבדוק כרגע אם המייל אומת. נסה שוב בעוד רגע."
+    }
+
+    private fun firestoreErrorMessage(error: FirebaseFirestoreException): String = when (error.code) {
+        FirebaseFirestoreException.Code.PERMISSION_DENIED ->
+            "החשבון אומת, אך השרת דחה את שמירת הפרופיל. נסה שוב בעוד רגע."
+        FirebaseFirestoreException.Code.UNAVAILABLE,
+        FirebaseFirestoreException.Code.DEADLINE_EXCEEDED ->
+            "החשבון אומת, אך שרת הסנכרון אינו זמין כרגע. נסה שוב."
+        else -> "החשבון אומת, אך לא ניתן להכין כרגע את הפרופיל בענן."
     }
 
     private fun passwordResetErrorMessage(error: Exception): String = when (error) {
