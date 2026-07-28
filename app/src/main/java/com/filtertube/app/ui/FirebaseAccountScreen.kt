@@ -19,9 +19,7 @@ import com.filtertube.app.ThemeState
 import com.filtertube.app.data.FirebaseAccount
 import com.filtertube.app.data.SettingsStore
 import com.google.firebase.auth.FirebaseAuth
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @Composable
 fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
@@ -65,9 +63,6 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                     message = result.message
                     messageSuccess = result.ok
                     if (result.ok) {
-                        if (password.length >= 6) {
-                            withContext(Dispatchers.Default) { settings.setFilterPassword(password) }
-                        }
                         onDone(result.created)
                     } else {
                         verificationEmail = result.email ?: verificationEmail
@@ -95,10 +90,18 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
         Text("התחברות או יצירת חשבון", color = ThemeState.text, fontSize = 21.sp)
         Spacer(Modifier.height(8.dp))
         Text("הנתונים והזכאות ל־Premium נשמרים בחשבון המאובטח שלך.", color = ThemeState.subtext2, fontSize = 13.sp, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "כאן מגדירים סיסמת חשבון חדשה של לפחות 6 תווים. זו אינה סיסמת ההורים: קוד ההורים הקיים שלך, גם אם הוא בן 4 ספרות, נשאר במכשיר ולא משתנה.",
+            color = ThemeState.subtext2,
+            fontSize = 12.sp,
+            lineHeight = 18.sp,
+            textAlign = TextAlign.Center,
+        )
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("אימייל") }, singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
         Spacer(Modifier.height(10.dp))
-        OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("סיסמת הורה") }, singleLine = true, modifier = Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+        OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("סיסמת החשבון (לפחות 6 תווים)") }, singleLine = true, modifier = Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
         Spacer(Modifier.height(12.dp))
         TextButton(
             onClick = {
@@ -111,7 +114,7 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                 }
             },
             enabled = !loading,
-        ) { Text("שכחתי סיסמה", color = ThemeState.accent) }
+        ) { Text("שכחתי סיסמת חשבון", color = ThemeState.accent) }
         if (message.isNotBlank()) {
             Text(
                 message,
@@ -139,7 +142,7 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
             enabled = !loading && email.isNotBlank() && password.length >= 6,
             modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(containerColor = ThemeState.accent),
-        ) { Text(if (loading) "מתחבר…" else "המשך") }
+        ) { Text(if (loading) "מתחבר…" else "התחבר / צור חשבון") }
     }
 }
 
@@ -174,6 +177,14 @@ fun EmailVerificationScreen(
             color = ThemeState.subtext2,
             fontSize = 13.sp,
             lineHeight = 19.sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "החשבון כבר נוצר, גם אם הודעת האימות עדיין לא הגיעה. אין צורך ליצור חשבון נוסף.",
+            color = ThemeState.subtext2,
+            fontSize = 12.sp,
+            lineHeight = 18.sp,
             textAlign = TextAlign.Center,
         )
         if (message.isNotBlank()) {

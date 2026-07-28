@@ -190,11 +190,10 @@ fun AppRoot() {
         onDispose { firebaseAuth.removeAuthStateListener(listener) }
     }
     if (settings.onboardingDone && !accountReady) {
-        com.filtertube.app.ui.FirebaseAccountScreen(onDone = { needsProfile ->
+        com.filtertube.app.ui.FirebaseAccountScreen(onDone = {
             val user = firebaseAuth.currentUser
             val ready =
                 user != null && user.isEmailVerified && settings.cloudUid == user.uid
-            if (ready && needsProfile) settings.onboardingDone = false
             accountReady = ready
         })
         return

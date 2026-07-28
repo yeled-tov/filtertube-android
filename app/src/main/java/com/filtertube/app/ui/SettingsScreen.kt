@@ -321,7 +321,7 @@ private fun FilterGateDialog(settings: SettingsStore, onUnlock: () -> Unit, onDi
             Column {
                 Text(
                     if (isSetup) "הזן את סיסמת החשבון כדי להפעיל מחדש את סיסמת ההורים במכשיר זה."
-                    else "הזן את סיסמת החשבון כדי לשנות את הגדרות הסינון. האימות דורש חיבור לאינטרנט.",
+                    else "הזן את סיסמת ההורים של המכשיר כדי לשנות את הגדרות הסינון.",
                     color = ThemeState.subtext2, fontSize = 12.sp,
                 )
                 Spacer(Modifier.height(12.dp))
@@ -351,13 +351,10 @@ private fun FilterGateDialog(settings: SettingsStore, onUnlock: () -> Unit, onDi
                             }
                         }
                     }
+                } else if (settings.checkFilterPassword(pw)) {
+                    onUnlock()
                 } else {
-                    checking = true
-                    scope.launch {
-                        val result = FirebaseAccount.verifyPasswordAndSetParentGate(pw, settings)
-                        checking = false
-                        if (result.ok) onUnlock() else error = result.message
-                    }
+                    error = "סיסמת ההורים שגויה"
                 }
             }, enabled = !checking) { Text(if (checking) "מאמת…" else if (isSetup) "שמור והמשך" else "אישור") }
         },
@@ -380,7 +377,7 @@ private fun ChangePasswordDialog(settings: SettingsStore, onDone: () -> Unit, on
         title = { Text("שינוי סיסמה") },
         text = {
             Column {
-                Text("סיסמת החשבון וסיסמת ההורים יתעדכנו יחד.", color = ThemeState.subtext2, fontSize = 12.sp)
+                Text("סיסמת החשבון תתעדכן. סיסמת ההורים במכשיר לא תשתנה.", color = ThemeState.subtext2, fontSize = 12.sp)
                 Spacer(Modifier.height(8.dp))
                 PwField(current, { current = it; error = "" }, "סיסמה נוכחית")
                 Spacer(Modifier.height(8.dp))
@@ -402,7 +399,7 @@ private fun ChangePasswordDialog(settings: SettingsStore, onDone: () -> Unit, on
                     else -> {
                         saving = true
                         scope.launch {
-                            val result = FirebaseAccount.updatePassword(current, pw, settings)
+                            val result = FirebaseAccount.updatePassword(current, pw)
                             saving = false
                             if (result.ok) onDone() else error = result.message
                         }

@@ -66,11 +66,7 @@ object FirebaseAccount {
                     email = normalized,
                 )
             }
-            val result = initializeVerifiedAccount(user, normalized, settings, created)
-            if (result.ok) {
-                withContext(Dispatchers.Default) { settings.setFilterPassword(password) }
-            }
-            result
+            initializeVerifiedAccount(user, normalized, settings, created)
         } catch (error: CancellationException) {
             invalidateAndSignOutAuthentication()
             throw error
@@ -246,8 +242,8 @@ object FirebaseAccount {
     private fun accountChangedResult() =
         Result(false, "החשבון השתנה במהלך הפעולה. נסה שוב.")
 
-    /** Keeps the Firebase account password and the local parent gate in sync. */
-    suspend fun updatePassword(currentPassword: String, newPassword: String, settings: SettingsStore): Result {
+    /** Updates only the Firebase account password; the device parent gate remains separate. */
+    suspend fun updatePassword(currentPassword: String, newPassword: String): Result {
         if (newPassword.length < 6) return Result(false, "הסיסמה החדשה חייבת להכיל לפחות 6 תווים")
         val user = FirebaseAuth.getInstance().currentUser
             ?: return Result(false, "יש להתחבר לחשבון לפני שינוי הסיסמה")
@@ -262,7 +258,6 @@ object FirebaseAccount {
             if (FirebaseAuth.getInstance().currentUser?.uid != user.uid) {
                 return Result(false, "החשבון השתנה במהלך עדכון הסיסמה")
             }
-            withContext(Dispatchers.Default) { settings.setFilterPassword(newPassword) }
             Result(true, "הסיסמה עודכנה")
         } catch (error: CancellationException) {
             throw error
