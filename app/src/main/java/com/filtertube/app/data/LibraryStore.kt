@@ -30,7 +30,7 @@ class LibraryStore(context: Context) {
         val current = FirebaseAuth.getInstance().currentUser
         return AccountDataGuard.generation() == sessionGeneration &&
             current?.uid == sessionUid &&
-            (sessionUid == null || current.isEmailVerified == sessionVerified)
+            (sessionUid == null || current?.isEmailVerified == sessionVerified)
     }
 
     private fun videos(key: String): List<Video> = AccountDataGuard.withLock {

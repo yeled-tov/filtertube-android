@@ -33,19 +33,21 @@ object FirebaseBilling {
     data class Result(val ok: Boolean, val message: String, val url: String? = null)
     private data class UserToken(val uid: String, val token: String)
 
-    private suspend fun userToken(): UserToken? = try {
-        val user = FirebaseAuth.getInstance().currentUser
-            ?.takeIf { it.isEmailVerified }
-            ?: return null
-        val token = user.getIdToken(false).await().token ?: return null
-        val current = FirebaseAuth.getInstance().currentUser
-        if (current?.uid != user.uid || !current.isEmailVerified) return null
-        UserToken(user.uid, token)
-    } catch (error: CancellationException) {
-        throw error
-    } catch (error: Exception) {
-        Log.e(TAG, "Firebase ID token retrieval failed", error)
-        null
+    private suspend fun userToken(): UserToken? {
+        return try {
+            val user = FirebaseAuth.getInstance().currentUser
+                ?.takeIf { it.isEmailVerified }
+                ?: return null
+            val token = user.getIdToken(false).await().token ?: return null
+            val current = FirebaseAuth.getInstance().currentUser
+            if (current?.uid != user.uid || !current.isEmailVerified) return null
+            UserToken(user.uid, token)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Log.e(TAG, "Firebase ID token retrieval failed", error)
+            null
+        }
     }
 
     suspend fun createCheckout(plan: String): Result = withContext(Dispatchers.IO) {
