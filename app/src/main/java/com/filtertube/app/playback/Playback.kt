@@ -21,7 +21,7 @@ import com.google.firebase.auth.FirebaseAuth
  * לוגיקת ניגון משותפת — בניית פריטי מדיה, תור "רדיו" אוטומטי, ומטמון StreamData
  * (כדי שמעבר איכות/אודיו יעבוד גם על פריטים שהתור הוסיף אוטומטית).
  */
-@OptIn(UnstableApi::class)
+@UnstableApi
 object Playback {
 
     const val EXTRA_IS_AUDIO = "filtertube_is_audio"

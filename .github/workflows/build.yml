@@ -71,6 +71,15 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      - name: Upload Android lint report on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-lint-report
+          path: app/build/intermediates/lint_intermediate_text_report/release/lintReportRelease/lint-results-release.txt
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Rename APK
         run: |
           mkdir -p artifacts
