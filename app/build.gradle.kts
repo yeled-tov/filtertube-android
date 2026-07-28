@@ -66,6 +66,10 @@ android {
         compose = true
         buildConfig = true
     }
+
+    lint {
+        lintConfig = file("lint.xml")
+    }
 }
 
 configurations.configureEach {
