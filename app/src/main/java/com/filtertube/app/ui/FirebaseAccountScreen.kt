@@ -46,6 +46,12 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
             message = message,
             messageSuccess = messageSuccess,
             busy = loading,
+            passcode = password,
+            onPasscodeChange = {
+                password = it
+                message = ""
+                messageSuccess = false
+            },
             onResend = {
                 loading = true
                 scope.launch {
@@ -56,16 +62,21 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                 }
             },
             onCheck = {
-                loading = true
-                scope.launch {
-                    val result = FirebaseAccount.checkEmailVerification(settings)
-                    loading = false
-                    message = result.message
-                    messageSuccess = result.ok
-                    if (result.ok) {
-                        onDone(result.created)
-                    } else {
-                        verificationEmail = result.email ?: verificationEmail
+                if (password.length < 4) {
+                    message = "הזן את הקוד לחשבון ולהורים (לפחות 4 תווים)."
+                    messageSuccess = false
+                } else {
+                    loading = true
+                    scope.launch {
+                        val result = FirebaseAccount.checkEmailVerification(settings, password)
+                        loading = false
+                        message = result.message
+                        messageSuccess = result.ok
+                        if (result.ok) {
+                            onDone(result.created)
+                        } else {
+                            verificationEmail = result.email ?: verificationEmail
+                        }
                     }
                 }
             },
@@ -92,7 +103,7 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
         Text("הנתונים והזכאות ל־Premium נשמרים בחשבון המאובטח שלך.", color = ThemeState.subtext2, fontSize = 13.sp, textAlign = TextAlign.Center)
         Spacer(Modifier.height(6.dp))
         Text(
-            "כאן מגדירים סיסמת חשבון חדשה של לפחות 6 תווים. זו אינה סיסמת ההורים: קוד ההורים הקיים שלך, גם אם הוא בן 4 ספרות, נשאר במכשיר ולא משתנה.",
+            "כאן מגדירים קוד אחד לחשבון ולהורים, של לפחות 4 תווים. אותו קוד יגן גם על ההגדרות הרגישות במכשיר וגם על החשבון שלך.",
             color = ThemeState.subtext2,
             fontSize = 12.sp,
             lineHeight = 18.sp,
@@ -101,7 +112,7 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("אימייל") }, singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
         Spacer(Modifier.height(10.dp))
-        OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("סיסמת החשבון (לפחות 6 תווים)") }, singleLine = true, modifier = Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+        OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("קוד החשבון וההורים (לפחות 4 תווים)") }, singleLine = true, modifier = Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
         Spacer(Modifier.height(12.dp))
         TextButton(
             onClick = {
@@ -114,7 +125,7 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                 }
             },
             enabled = !loading,
-        ) { Text("שכחתי סיסמת חשבון", color = ThemeState.accent) }
+        ) { Text("שכחתי קוד חשבון", color = ThemeState.accent) }
         if (message.isNotBlank()) {
             Text(
                 message,
@@ -139,7 +150,7 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                     }
                 }
             },
-            enabled = !loading && email.isNotBlank() && password.length >= 6,
+            enabled = !loading && email.isNotBlank() && password.length >= 4,
             modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(containerColor = ThemeState.accent),
         ) { Text(if (loading) "מתחבר…" else "התחבר / צור חשבון") }
@@ -152,6 +163,8 @@ fun EmailVerificationScreen(
     message: String,
     messageSuccess: Boolean,
     busy: Boolean,
+    passcode: String? = null,
+    onPasscodeChange: ((String) -> Unit)? = null,
     onResend: () -> Unit,
     onCheck: () -> Unit,
     onChangeEmail: () -> Unit,
@@ -187,6 +200,25 @@ fun EmailVerificationScreen(
             lineHeight = 18.sp,
             textAlign = TextAlign.Center,
         )
+        if (onPasscodeChange != null) {
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "כדי לסיים את האימות, הזן שוב את הקוד האחיד לחשבון ולהורים.",
+                color = ThemeState.subtext2,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = passcode.orEmpty(),
+                onValueChange = onPasscodeChange,
+                label = { Text("קוד החשבון וההורים (לפחות 4 תווים)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            )
+        }
         if (message.isNotBlank()) {
             Spacer(Modifier.height(14.dp))
             Text(
@@ -199,7 +231,7 @@ fun EmailVerificationScreen(
         Spacer(Modifier.height(22.dp))
         Button(
             onClick = onCheck,
-            enabled = !busy,
+            enabled = !busy && (onPasscodeChange == null || passcode.orEmpty().length >= 4),
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(containerColor = ThemeState.accent),

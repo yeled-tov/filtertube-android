@@ -101,7 +101,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
 
     fun canProceed(): Boolean = when (step) {
         0 -> name.isNotBlank() && email.contains("@") && email.contains(".") && gender.isNotEmpty()
-        1 -> password.length >= 6 && password == confirm
+        1 -> password.length >= 4 && password == confirm
         else -> true
     }
 
@@ -113,7 +113,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
             verifiedEmail.isNotBlank() &&
             email.trim().lowercase() == verifiedEmail &&
             gender in setOf("male", "female") &&
-            password.length >= 6 &&
+            password.length >= 4 &&
             password == confirm &&
             level in 1..3
     }
@@ -219,33 +219,35 @@ fun OnboardingScreen(onDone: () -> Unit) {
                 }
             },
             onCheck = {
-                saving = true
-                scope.launch {
-                    val result = FirebaseAccount.checkEmailVerification(settings)
-                    accountError = result.message
-                    accountMessageSuccess = result.ok
-                    if (result.ok) {
-                        if (password.length >= 6) {
-                            withContext(Dispatchers.Default) { settings.setFilterPassword(password) }
-                        }
-                        verificationWasCreated = verificationWasCreated || result.created
-                        val userId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
-                        if (userId == null) {
-                            accountError = "יש להתחבר מחדש כדי להשלים את הכניסה."
-                            accountMessageSuccess = false
-                        } else if (verificationWasCreated) {
-                            if (!validNewProfileDraft()) {
-                                returnToProfileWizard(result.email)
+                if (password.length < 4) {
+                    accountError = "הזן קוד לחשבון ולהורים, של לפחות 4 תווים."
+                    accountMessageSuccess = false
+                } else {
+                    saving = true
+                    scope.launch {
+                        val result = FirebaseAccount.checkEmailVerification(settings, password)
+                        accountError = result.message
+                        accountMessageSuccess = result.ok
+                        if (result.ok) {
+                            verificationWasCreated = verificationWasCreated || result.created
+                            val userId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                            if (userId == null) {
+                                accountError = "יש להתחבר מחדש כדי להשלים את הכניסה."
+                                accountMessageSuccess = false
+                            } else if (verificationWasCreated) {
+                                if (!validNewProfileDraft()) {
+                                    returnToProfileWizard(result.email)
+                                } else {
+                                    finishNewProfile()
+                                }
                             } else {
-                                finishNewProfile()
+                                finishExistingProfile(userId)
                             }
                         } else {
-                            finishExistingProfile(userId)
+                            verificationEmail = result.email ?: verificationEmail
                         }
-                    } else {
-                        verificationEmail = result.email ?: verificationEmail
+                        saving = false
                     }
-                    saving = false
                 }
             },
             onChangeEmail = {
@@ -396,22 +398,22 @@ private fun StepPassword(
     confirm: String, onConfirm: (String) -> Unit,
     onForgotPassword: () -> Unit,
 ) {
-    StepHeader("סיסמת הורים 🔒", "הסיסמה הזו תגן על שינוי רמת הסינון, Shorts והגדרות רגישות. בחר/י סיסמה שילדים לא ינחשו.")
-    OnbField(password, onPassword, "סיסמה (לפחות 6 תווים)", Icons.Default.Lock, password = true, keyboard = KeyboardType.Password)
+    StepHeader("קוד לחשבון ולהורים 🔒", "אותו קוד יגן על החשבון, שינוי רמת הסינון, Shorts והגדרות רגישות. בחר/י קוד שילדים לא ינחשו.")
+    OnbField(password, onPassword, "קוד לחשבון ולהורים (לפחות 4 תווים)", Icons.Default.Lock, password = true, keyboard = KeyboardType.Password)
     Spacer(Modifier.height(12.dp))
-    OnbField(confirm, onConfirm, "אישור סיסמה", Icons.Default.Lock, password = true, keyboard = KeyboardType.Password)
+    OnbField(confirm, onConfirm, "אישור קוד", Icons.Default.Lock, password = true, keyboard = KeyboardType.Password)
     if (confirm.isNotEmpty() && confirm != password) {
         Spacer(Modifier.height(8.dp))
-        Text("הסיסמאות אינן תואמות", color = ThemeState.accent2, fontSize = 12.sp)
+        Text("הקודים אינם תואמים", color = ThemeState.accent2, fontSize = 12.sp)
     }
     TextButton(onClick = onForgotPassword, modifier = Modifier.fillMaxWidth()) {
-        Text("שכחתי סיסמה", color = ThemeState.accent)
+        Text("שכחתי קוד", color = ThemeState.accent)
     }
 }
 
 @Composable
 private fun StepLevel(level: Int, onLevel: (Int) -> Unit) {
-    StepHeader("רמת סינון 🛡️", "אפשר לשנות בכל רגע (עם סיסמת ההורים).")
+    StepHeader("רמת סינון 🛡️", "אפשר לשנות בכל רגע (עם קוד ההורים).")
     LevelCard(1, "מחמיר", "מוזיקה נשמעת כאודיו בלבד · ערוצי ״דתי לייט״ מוסתרים", level == 1) { onLevel(1) }
     Spacer(Modifier.height(10.dp))
     LevelCard(2, "רגיל", "הכל וידאו · ערוצי ״דתי לייט״ מוסתרים", level == 2) { onLevel(2) }
@@ -474,7 +476,7 @@ private fun StepWelcome(name: String) {
         Spacer(Modifier.height(20.dp))
         PerkRow(Icons.Default.Download, "הורדות מהירות לצפייה לא־מקוונת")
         PerkRow(Icons.Default.MusicNote, "ניגון ברקע ומסך כבוי")
-        PerkRow(Icons.Default.Shield, "סינון מותאם אישית עם סיסמת הורים")
+        PerkRow(Icons.Default.Shield, "סינון מותאם אישית עם קוד הורים")
         PerkRow(Icons.Default.Face, "בית מותאם אישית לפי מה שאהבת")
     }
 }

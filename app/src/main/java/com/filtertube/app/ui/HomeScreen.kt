@@ -100,7 +100,7 @@ fun HomeScreen(
                 val videos = YouTubeRepository.fetchAllChannelsFeed(chans)
                 if (videos.isNotEmpty()) {
                     FeedCache.saveFeed(context, videos)   // שומרים גולמי; מתאימים אישית בתצוגה
-                    state = HomeState.Success(personalizeFeed(videos, store.localHistory()))
+                    state = HomeState.Success(sanitizeFeed(personalizeFeed(videos, store.localHistory())))
                 } else if (state !is HomeState.Success) {
                     state = HomeState.Error("לא נמצאו סרטונים בערוצים המאושרים")
                 }
@@ -116,7 +116,9 @@ fun HomeScreen(
     LaunchedEffect(Unit) {
         runCatching { channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel, settings.userGender) }
         val cached = FeedCache.loadFeed(context)
-        if (!cached.isNullOrEmpty()) state = HomeState.Success(personalizeFeed(cached, store.localHistory()))
+        if (!cached.isNullOrEmpty()) {
+            state = HomeState.Success(sanitizeFeed(personalizeFeed(cached, store.localHistory())))
+        }
         refresh(showSpinner = cached.isNullOrEmpty())
     }
 
@@ -232,6 +234,13 @@ fun HomeScreen(
         }
     }
 }
+
+/** A stale cache or a repeated upstream item must never create duplicate LazyColumn keys. */
+private fun sanitizeFeed(videos: List<Video>): List<Video> =
+    videos.asSequence()
+        .filter { it.id.isNotBlank() }
+        .distinctBy { it.id }
+        .toList()
 
 @Composable
 private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {

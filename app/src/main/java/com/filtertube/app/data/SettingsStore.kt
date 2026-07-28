@@ -21,24 +21,29 @@ class SettingsStore(context: Context) {
         appContext.getSharedPreferences("filtertube_settings", Context.MODE_PRIVATE)
 
     init {
-        // Older builds persisted sensitive authentication/admin state. Remove
-        // it eagerly; only a salted password verifier may remain on disk.
-        if (
-            prefs.contains(KEY_FILTER_PW_LEGACY) ||
-            prefs.contains(KEY_GH_TOKEN_LEGACY) ||
-            prefs.contains(KEY_ADMIN_UNLOCKED_LEGACY) ||
-            prefs.contains(KEY_CLOUD_TOKEN_LEGACY) ||
-            prefs.contains(KEY_SERVER_API_KEY_LEGACY) ||
-            prefs.contains(KEY_SERVER_BASE_URL_LEGACY)
+        // Keep the parent's existing device PIN during the one-time security
+        // migration. Earlier builds stored it as plaintext; it must be turned
+        // into a salted verifier before removing the legacy value.
+        val legacyParentPassword = prefs.getString(KEY_FILTER_PW_LEGACY, null)
+        val parentPasswordMigrated = if (
+            !legacyParentPassword.isNullOrEmpty() && !hasFilterPassword
         ) {
-            prefs.edit()
-                .remove(KEY_FILTER_PW_LEGACY)
-                .remove(KEY_GH_TOKEN_LEGACY)
-                .remove(KEY_ADMIN_UNLOCKED_LEGACY)
-                .remove(KEY_CLOUD_TOKEN_LEGACY)
-                .remove(KEY_SERVER_API_KEY_LEGACY)
-                .remove(KEY_SERVER_BASE_URL_LEGACY)
-                .apply()
+            runCatching { setFilterPassword(legacyParentPassword) }.isSuccess
+        } else {
+            true
+        }
+
+        // Other retired credentials must never remain on the device. The old
+        // parent PIN is removed only after it was safely migrated.
+        prefs.edit()
+            .remove(KEY_GH_TOKEN_LEGACY)
+            .remove(KEY_ADMIN_UNLOCKED_LEGACY)
+            .remove(KEY_CLOUD_TOKEN_LEGACY)
+            .remove(KEY_SERVER_API_KEY_LEGACY)
+            .remove(KEY_SERVER_BASE_URL_LEGACY)
+            .apply()
+        if (parentPasswordMigrated) {
+            prefs.edit().remove(KEY_FILTER_PW_LEGACY).apply()
         }
     }
 
@@ -309,10 +314,6 @@ class SettingsStore(context: Context) {
                 .remove(KEY_TRIAL_START_LEGACY)
                 .remove(KEY_HISTORY)
                 .remove(KEY_LEVEL)
-                .remove(KEY_FILTER_PW_LEGACY)
-                .remove(KEY_FILTER_PW_SALT)
-                .remove(KEY_FILTER_PW_VERIFIER)
-                .remove(KEY_FILTER_PW_KDF)
                 .remove(KEY_GH_TOKEN_LEGACY)
                 .remove(KEY_ADMIN_UNLOCKED_LEGACY)
                 .remove(KEY_CLOUD_TOKEN_LEGACY)
