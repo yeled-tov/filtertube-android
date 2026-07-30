@@ -1397,6 +1397,43 @@ export const createCustomerPortal = onRequest({
   }
 });
 
+/**
+ * Fast entitlement snapshot that does not call Stripe.
+ *
+ * A new account's 60-day trial must not depend on Stripe availability or
+ * configuration. Paid fields come only from the server-owned billing document;
+ * billingStatus remains the authoritative Stripe reconciliation endpoint.
+ */
+export const trialStatus = onRequest({
+  ...STATUS_HTTP_OPTIONS,
+}, async (req, res) => {
+  if (handleCors(req, res)) return;
+  if (req.method !== "GET") {
+    return res.status(405).json({ ok: false, message: "GET required" });
+  }
+  const decoded = await requireUser(req, res);
+  if (!decoded) return;
+  if (!requireVerifiedEmail(decoded, res)) return;
+  res.set("Cache-Control", "private, no-store");
+  try {
+    const snapshot = await billingRef(decoded.uid).get();
+    const trial = await ensureTrialState(
+      decoded.uid,
+      snapshot.data() || {},
+    );
+    return res.json({
+      ok: true,
+      billing: publicBillingStatus(trial.billing, trial),
+    });
+  } catch (error) {
+    console.error("trialStatus failed", error);
+    return res.status(502).json({
+      ok: false,
+      message: "Unable to initialize trial entitlement",
+    });
+  }
+});
+
 export const billingStatus = onRequest({
   ...STATUS_HTTP_OPTIONS,
   secrets: [stripeSecret],

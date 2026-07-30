@@ -28,6 +28,8 @@ object FirebaseBilling {
         "https://europe-west1-filter-tube-52d8e.cloudfunctions.net/createCustomerPortal"
     private const val BILLING_STATUS =
         "https://europe-west1-filter-tube-52d8e.cloudfunctions.net/billingStatus"
+    private const val TRIAL_STATUS =
+        "https://europe-west1-filter-tube-52d8e.cloudfunctions.net/trialStatus"
     private val client = OkHttpClient()
 
     data class Result(val ok: Boolean, val message: String, val url: String? = null)
@@ -102,53 +104,70 @@ object FirebaseBilling {
         if (settings.cloudUid != auth.uid) {
             return@withContext Result(false, "יש להשלים את טעינת החשבון לפני בדיקת הזכאות")
         }
-        val request = Request.Builder().url(BILLING_STATUS)
-            .header("Authorization", "Bearer ${auth.token}").get().build()
-        runCatching {
-            client.newCall(request).execute().use { response ->
-                val json = JSONObject(response.body?.string().orEmpty())
-                val current = FirebaseAuth.getInstance().currentUser
-                if (
-                    current?.uid != auth.uid ||
-                    !current.isEmailVerified ||
-                    settings.cloudUid != auth.uid
-                ) {
-                    return@withContext Result(false, "החשבון השתנה במהלך בדיקת הזכאות")
-                }
-                if (!response.isSuccessful || !json.optBoolean("ok", false)) {
-                    return@withContext Result(false, json.optString("message", "לא ניתן לבדוק זכאות"))
-                }
-                val billing = json.optJSONObject("billing")
-                    ?: run {
-                        settings.clearPremiumEntitlement()
-                        return@withContext Result(false, "השרת החזיר תשובת זכאות לא תקינה")
-                    }
-                val cached = settings.updatePremiumEntitlement(
-                    expectedUid = auth.uid,
-                    active = billing.optBoolean("active", false),
-                    status = billing.optString("status", ""),
-                    canManage = billing.optBoolean("canManage", false),
-                    currentPeriodEndEpochSeconds = billing.optLong("currentPeriodEnd", 0L),
-                    trialActive = billing.optBoolean("trialActive", false),
-                    trialEndsAtEpochSeconds = billing.optLong("trialEndsAt", 0L),
-                    serverNowEpochSeconds = billing.optLong("serverNow", 0L),
-                )
-                if (!cached) {
-                    return@withContext Result(false, "השרת החזיר זמן זכאות לא תקין")
-                }
-                Result(
-                    ok = true,
-                    message = when {
-                        settings.premiumServerActive -> "מנוי Premium פעיל ✓"
-                        settings.trialDaysLeft > 0 ->
-                            "תקופת הניסיון פעילה — נותרו ${settings.trialDaysLeft} ימים"
-                        else -> "לא נמצא מנוי פעיל ותקופת הניסיון הסתיימה"
-                    },
-                )
+        val reconciledBilling = runCatching {
+            fetchBillingSnapshot(BILLING_STATUS, auth)
+        }.onFailure {
+            Log.e(TAG, "billing reconciliation failed", it)
+        }.getOrNull()
+        val usedTrialFallback = reconciledBilling == null
+        val billing = reconciledBilling ?: runCatching {
+            // Trial initialization is independent from Stripe. It also returns
+            // the last server-owned paid snapshot without contacting Stripe.
+            fetchBillingSnapshot(TRIAL_STATUS, auth)
+        }.onFailure {
+            Log.e(TAG, "trial entitlement refresh failed", it)
+        }.getOrNull()
+
+        val current = FirebaseAuth.getInstance().currentUser
+        if (
+            current?.uid != auth.uid ||
+            !current.isEmailVerified ||
+            settings.cloudUid != auth.uid
+        ) {
+            return@withContext Result(false, "החשבון השתנה במהלך בדיקת הזכאות")
+        }
+        if (billing == null) {
+            return@withContext Result(false, "לא ניתן לבדוק את מצב המנוי כרגע")
+        }
+        val cached = settings.updatePremiumEntitlement(
+            expectedUid = auth.uid,
+            active = billing.optBoolean("active", false),
+            status = billing.optString("status", ""),
+            canManage = billing.optBoolean("canManage", false),
+            currentPeriodEndEpochSeconds = billing.optLong("currentPeriodEnd", 0L),
+            trialActive = billing.optBoolean("trialActive", false),
+            trialEndsAtEpochSeconds = billing.optLong("trialEndsAt", 0L),
+            serverNowEpochSeconds = billing.optLong("serverNow", 0L),
+        )
+        if (!cached) {
+            return@withContext Result(false, "השרת החזיר זמן זכאות לא תקין")
+        }
+        Result(
+            ok = true,
+            message = when {
+                settings.premiumServerActive -> "מנוי Premium פעיל ✓"
+                settings.trialDaysLeft > 0 && usedTrialFallback ->
+                    "תקופת הניסיון פעילה — נותרו ${settings.trialDaysLeft} ימים"
+                settings.trialDaysLeft > 0 ->
+                    "תקופת הניסיון פעילה — נותרו ${settings.trialDaysLeft} ימים"
+                else -> "לא נמצא מנוי פעיל ותקופת הניסיון הסתיימה"
+            },
+        )
+    }
+
+    private fun fetchBillingSnapshot(url: String, auth: UserToken): JSONObject? {
+        val request = Request.Builder().url(url)
+            .header("Authorization", "Bearer ${auth.token}")
+            .get()
+            .build()
+        return client.newCall(request).execute().use { response ->
+            val json = runCatching {
+                JSONObject(response.body?.string().orEmpty())
+            }.getOrNull() ?: return@use null
+            if (!response.isSuccessful || !json.optBoolean("ok", false)) {
+                return@use null
             }
-        }.getOrElse {
-            Log.e(TAG, "refresh failed", it)
-            Result(false, "לא ניתן לבדוק את מצב המנוי כרגע")
+            json.optJSONObject("billing")
         }
     }
 

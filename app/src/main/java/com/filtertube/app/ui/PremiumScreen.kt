@@ -44,6 +44,7 @@ fun PremiumScreen(onBack: () -> Unit) {
     var paidActive by remember { mutableStateOf(settings.premiumServerActive) }
     var canManage by remember { mutableStateOf(settings.premiumCanManage) }
     var status by remember { mutableStateOf("בודק את מצב המנוי…") }
+    var entitlementReady by remember { mutableStateOf(settings.premiumActive) }
     var loading by remember { mutableStateOf(false) }
 
     fun refreshBilling() {
@@ -52,6 +53,7 @@ fun PremiumScreen(onBack: () -> Unit) {
             paidActive = settings.premiumServerActive
             canManage = settings.premiumCanManage
             status = result.message
+            entitlementReady = result.ok
         }
     }
 
@@ -85,9 +87,10 @@ fun PremiumScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(14.dp))
             Text(
                 when {
+                    !entitlementReady -> "מכין את הזכאות שלך…"
                     paidActive -> "אתה מנוי Premium 🎉"
                     settings.premiumActive -> "נותרו ${settings.trialDaysLeft} ימי ניסיון חינם"
-                    else -> "הניסיון הסתיים"
+                    else -> "FilterTube Premium"
                 },
                 color = ThemeState.text, fontSize = 21.sp, fontWeight = FontWeight.ExtraBold,
                 modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
@@ -155,6 +158,7 @@ fun PremiumScreen(onBack: () -> Unit) {
                             status = result.message
                             paidActive = settings.premiumServerActive
                             canManage = settings.premiumCanManage
+                            entitlementReady = result.ok
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(46.dp),
@@ -205,6 +209,7 @@ fun PremiumScreen(onBack: () -> Unit) {
                             status = result.message
                             paidActive = settings.premiumServerActive
                             canManage = settings.premiumCanManage
+                            entitlementReady = result.ok
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(46.dp),
