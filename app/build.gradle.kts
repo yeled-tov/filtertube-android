@@ -72,10 +72,6 @@ android {
     }
 }
 
-configurations.configureEach {
-    exclude(group = "com.google.protobuf", module = "protobuf-javalite")
-}
-
 dependencies {
     // Core library desugaring — תיקון קריסות NewPipe באנדרואיד < 13
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
@@ -124,6 +120,15 @@ implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
     // Firebase — סנכרון ענן/פרופיל
     implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
     implementation("com.google.firebase:firebase-auth")
+    // Firestore loads com.google.protobuf.ByteString when its local store starts.
+    // grpc-protobuf-lite 1.57.2 (used by Firestore 25.0.0) is built against
+    // 3.22.3. A newer 4.x version also contains descriptors already packaged
+    // by Firebase and causes duplicate classes, while excluding it entirely
+    // causes the runtime crash. Keep the exact compatible lite runtime.
+    implementation("com.google.protobuf:protobuf-javalite") {
+        version { strictly("3.22.3") }
+        because("Firestore 25.0.0 requires the compatible protobuf lite runtime")
+    }
     implementation("com.google.firebase:firebase-firestore")
 
     testImplementation("junit:junit:4.13.2")

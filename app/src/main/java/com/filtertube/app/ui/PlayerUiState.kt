@@ -64,33 +64,58 @@ fun rememberPlayerUiState(controller: MediaController?): PlayerUiState {
     DisposableEffect(controller) {
         val c = controller ?: return@DisposableEffect onDispose {}
         fun sync() {
-            state.hasMedia = c.mediaItemCount > 0
-            state.isPlaying = c.isPlaying
-            state.buffering = c.playbackState == Player.STATE_BUFFERING
-            val mm = c.mediaMetadata
-            state.title = mm.title?.toString() ?: ""
-            state.artist = mm.artist?.toString() ?: ""
-            state.artworkUri = mm.artworkUri
-            state.mediaId = c.currentMediaItem?.mediaId
-            state.isAudio = c.currentMediaItem?.requestMetadata?.extras?.getBoolean(Playback.EXTRA_IS_AUDIO) ?: false
-            state.duration = c.duration.coerceAtLeast(0L)
-            state.hasNext = c.hasNextMediaItem()
-            state.hasPrev = c.hasPreviousMediaItem()
-            state.queueVersion++
+            // The media service may disappear while a callback is already in
+            // flight. Reading a released controller used to let that race take
+            // down the whole Compose tree.
+            try {
+                state.hasMedia = c.mediaItemCount > 0
+                state.isPlaying = c.isPlaying
+                state.buffering = c.playbackState == Player.STATE_BUFFERING
+                val mm = c.mediaMetadata
+                state.title = mm.title?.toString() ?: ""
+                state.artist = mm.artist?.toString() ?: ""
+                state.artworkUri = mm.artworkUri
+                state.mediaId = c.currentMediaItem?.mediaId
+                state.isAudio = c.currentMediaItem?.requestMetadata?.extras?.getBoolean(Playback.EXTRA_IS_AUDIO) ?: false
+                state.duration = c.duration.coerceAtLeast(0L)
+                state.hasNext = c.hasNextMediaItem()
+                state.hasPrev = c.hasPreviousMediaItem()
+                state.queueVersion++
+            } catch (_: IllegalStateException) {
+                // The next controller callback will repopulate the state.
+            }
         }
         val listener = object : Player.Listener {
             override fun onEvents(player: Player, events: Player.Events) = sync()
         }
-        c.addListener(listener)
-        sync()
-        onDispose { c.removeListener(listener) }
+        var listenerAttached = false
+        try {
+            c.addListener(listener)
+            listenerAttached = true
+            sync()
+        } catch (_: IllegalStateException) {
+            // The connection was released before the UI could attach.
+        }
+        onDispose {
+            if (listenerAttached) {
+                try {
+                    c.removeListener(listener)
+                } catch (_: IllegalStateException) {
+                    // Already released by the service.
+                }
+            }
+        }
     }
 
     LaunchedEffect(controller) {
         while (true) {
             controller?.let {
-                state.position = it.currentPosition
-                state.duration = it.duration.coerceAtLeast(0L)
+                try {
+                    state.position = it.currentPosition
+                    state.duration = it.duration.coerceAtLeast(0L)
+                } catch (_: IllegalStateException) {
+                    // Controller was released between Compose frames.
+                }
             }
             delay(500)
         }

@@ -21,24 +21,29 @@ class SettingsStore(context: Context) {
         appContext.getSharedPreferences("filtertube_settings", Context.MODE_PRIVATE)
 
     init {
-        // Older builds persisted sensitive authentication/admin state. Remove
-        // it eagerly; only a salted password verifier may remain on disk.
-        if (
-            prefs.contains(KEY_FILTER_PW_LEGACY) ||
-            prefs.contains(KEY_GH_TOKEN_LEGACY) ||
-            prefs.contains(KEY_ADMIN_UNLOCKED_LEGACY) ||
-            prefs.contains(KEY_CLOUD_TOKEN_LEGACY) ||
-            prefs.contains(KEY_SERVER_API_KEY_LEGACY) ||
-            prefs.contains(KEY_SERVER_BASE_URL_LEGACY)
+        // Keep the parent's existing device PIN during the one-time security
+        // migration. Earlier builds stored it as plaintext; it must be turned
+        // into a salted verifier before removing the legacy value.
+        val legacyParentPassword = prefs.getString(KEY_FILTER_PW_LEGACY, null)
+        val parentPasswordMigrated = if (
+            !legacyParentPassword.isNullOrEmpty() && !hasFilterPassword
         ) {
-            prefs.edit()
-                .remove(KEY_FILTER_PW_LEGACY)
-                .remove(KEY_GH_TOKEN_LEGACY)
-                .remove(KEY_ADMIN_UNLOCKED_LEGACY)
-                .remove(KEY_CLOUD_TOKEN_LEGACY)
-                .remove(KEY_SERVER_API_KEY_LEGACY)
-                .remove(KEY_SERVER_BASE_URL_LEGACY)
-                .apply()
+            runCatching { setFilterPassword(legacyParentPassword) }.isSuccess
+        } else {
+            true
+        }
+
+        // Other retired credentials must never remain on the device. The old
+        // parent PIN is removed only after it was safely migrated.
+        prefs.edit()
+            .remove(KEY_GH_TOKEN_LEGACY)
+            .remove(KEY_ADMIN_UNLOCKED_LEGACY)
+            .remove(KEY_CLOUD_TOKEN_LEGACY)
+            .remove(KEY_SERVER_API_KEY_LEGACY)
+            .remove(KEY_SERVER_BASE_URL_LEGACY)
+            .apply()
+        if (parentPasswordMigrated) {
+            prefs.edit().remove(KEY_FILTER_PW_LEGACY).apply()
         }
     }
 
@@ -309,10 +314,6 @@ class SettingsStore(context: Context) {
                 .remove(KEY_TRIAL_START_LEGACY)
                 .remove(KEY_HISTORY)
                 .remove(KEY_LEVEL)
-                .remove(KEY_FILTER_PW_LEGACY)
-                .remove(KEY_FILTER_PW_SALT)
-                .remove(KEY_FILTER_PW_VERIFIER)
-                .remove(KEY_FILTER_PW_KDF)
                 .remove(KEY_GH_TOKEN_LEGACY)
                 .remove(KEY_ADMIN_UNLOCKED_LEGACY)
                 .remove(KEY_CLOUD_TOKEN_LEGACY)
@@ -341,13 +342,13 @@ class SettingsStore(context: Context) {
             return premiumServerActive || serverTrialActive
         }
 
-    /** Remaining server-authoritative trial days, rounded up for display. */
+    /** Remaining trial days, capped by the current client policy. */
     val trialDaysLeft: Int
         get() {
             if (!hasVerifiedAccount()) return 0
             val serverNow = cachedServerNowEpochSeconds() ?: return 0
             if (!prefs.getBoolean(KEY_TRIAL_SERVER_ACTIVE, false)) return 0
-            val trialEndsAt = prefs.getLong(KEY_TRIAL_END_SECONDS, 0L)
+            val trialEndsAt = effectiveTrialEndsAtEpochSeconds()
             val remainingSeconds = trialEndsAt - serverNow
             if (remainingSeconds <= 0L) return 0
             return ((remainingSeconds + SECONDS_PER_DAY - 1L) / SECONDS_PER_DAY)
@@ -359,8 +360,27 @@ class SettingsStore(context: Context) {
         get() {
             if (!prefs.getBoolean(KEY_TRIAL_SERVER_ACTIVE, false)) return false
             val serverNow = cachedServerNowEpochSeconds() ?: return false
-            return serverNow < prefs.getLong(KEY_TRIAL_END_SECONDS, 0L)
+            return serverNow < effectiveTrialEndsAtEpochSeconds()
         }
+
+    /**
+     * Never let an older server response extend a trial beyond the policy in
+     * this build. Server time is still used for the comparison, so changing
+     * the device clock cannot extend the entitlement.
+     */
+    private fun effectiveTrialEndsAtEpochSeconds(): Long {
+        val serverTrialEnd = prefs.getLong(KEY_TRIAL_END_SECONDS, 0L)
+        if (serverTrialEnd <= 0L) return 0L
+        val creationMillis = FirebaseAuth.getInstance()
+            .currentUser
+            ?.metadata
+            ?.creationTimestamp
+            ?: return serverTrialEnd
+        if (creationMillis <= 0L) return serverTrialEnd
+        val policyTrialEnd = creationMillis / 1000L +
+            TRIAL_DURATION_DAYS * SECONDS_PER_DAY
+        return minOf(serverTrialEnd, policyTrialEnd)
+    }
 
     private fun hasVerifiedAccount(expectedUid: String? = null): Boolean {
         val user = FirebaseAuth.getInstance().currentUser
@@ -526,6 +546,6 @@ class SettingsStore(context: Context) {
         private const val PREMIUM_CACHE_TTL_MILLIS = 24L * 60L * 60L * 1000L
         private const val MAX_SERVER_EPOCH_SECONDS = 10_000_000_000L
         private const val SECONDS_PER_DAY = 24L * 60L * 60L
-        private const val TRIAL_DURATION_DAYS = 60L
+        private const val TRIAL_DURATION_DAYS = 30L
     }
 }

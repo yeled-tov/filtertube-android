@@ -163,8 +163,20 @@ object InboxNav {
 
 @Composable
 fun AppRoot() {
-    val navController = rememberNavController()
     val context = androidx.compose.ui.platform.LocalContext.current
+    // A crash must not trap the user in a launch/crash loop. Show the stored
+    // report before starting playback, cloud sync, or any other optional work.
+    var crashReport by remember { mutableStateOf(com.filtertube.app.data.CrashLog.lastCrash(context)) }
+    val savedCrashReport = crashReport
+    if (savedCrashReport != null) {
+        CrashReportDialog(savedCrashReport) {
+            com.filtertube.app.data.CrashLog.clear(context)
+            crashReport = null
+        }
+        return
+    }
+
+    val navController = rememberNavController()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val settings = remember { SettingsStore(context) }
 
@@ -177,6 +189,8 @@ fun AppRoot() {
             user != null && user.isEmailVerified && settings.cloudUid == user.uid,
         )
     }
+    var onboarded by remember { mutableStateOf(settings.onboardingDone) }
+    var profileRequired by remember { mutableStateOf(!settings.onboardingDone) }
     DisposableEffect(firebaseAuth) {
         val listener = com.google.firebase.auth.FirebaseAuth.AuthStateListener { auth ->
             // A non-null user is not enough: account initialization must finish
@@ -189,25 +203,31 @@ fun AppRoot() {
         firebaseAuth.addAuthStateListener(listener)
         onDispose { firebaseAuth.removeAuthStateListener(listener) }
     }
-    if (settings.onboardingDone && !accountReady) {
+    // Every user starts at a clear account choice. Profile personalisation is
+    // shown only after sign-in/registration and email verification complete.
+    if (!accountReady) {
         com.filtertube.app.ui.FirebaseAccountScreen(onDone = { needsProfile ->
             val user = firebaseAuth.currentUser
             val ready =
                 user != null && user.isEmailVerified && settings.cloudUid == user.uid
-            if (ready && needsProfile) settings.onboardingDone = false
             accountReady = ready
+            if (ready) {
+                profileRequired = needsProfile
+                onboarded = settings.onboardingDone && !needsProfile
+            }
         })
         return
     }
 
-    // ── הרשמה ראשונית — מוצגת לפני כל שאר האפליקציה בהפעלה הראשונה ──
-    var onboarded by remember { mutableStateOf(settings.onboardingDone) }
-    if (!onboarded) {
+    // The setup wizard contains profile/filter choices only; authentication
+    // never happens on its final button.
+    if (!onboarded || profileRequired) {
         com.filtertube.app.ui.OnboardingScreen(onDone = {
             val user = firebaseAuth.currentUser
             accountReady =
                 user != null && user.isEmailVerified && settings.cloudUid == user.uid
             onboarded = true
+            profileRequired = false
         })
         return
     }
@@ -215,25 +235,42 @@ fun AppRoot() {
     var shortsEnabled by remember { mutableStateOf(settings.shortsEnabled) }
     var filterLevel by remember { mutableStateOf(settings.filterLevel) }
     var userGender by remember { mutableStateOf(settings.userGender) }
-    var crashReport by remember { mutableStateOf(com.filtertube.app.data.CrashLog.lastCrash(context)) }
     var pendingUpdate by remember { mutableStateOf<com.filtertube.app.data.UpdateChecker.Update?>(null) }
     LaunchedEffect(accountReady) {
         if (!accountReady) return@LaunchedEffect
         val user = firebaseAuth.currentUser ?: return@LaunchedEffect
         if (!user.isEmailVerified || settings.cloudUid != user.uid) return@LaunchedEffect
-        val userId = user.uid
-        val verifiedEmail = user.email?.trim() ?: return@LaunchedEffect
-        settings.bindAccountDataOwner(userId, verifiedEmail)
-        val synchronized = com.filtertube.app.data.CloudSync.synchronize(context, settings)
-        if (synchronized) {
-            filterLevel = settings.filterLevel
-            userGender = settings.userGender
+        try {
+            // CloudSync binds the local data owner itself. Keeping this work
+            // isolated means an unavailable backend can never prevent entry
+            // into the app after a successful account verification.
+            val synchronized = com.filtertube.app.data.CloudSync.synchronize(context, settings)
+            if (synchronized) {
+                filterLevel = settings.filterLevel
+                userGender = settings.userGender
+            }
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            android.util.Log.e("FilterTubeStartup", "Initial cloud sync failed", error)
         }
-        com.filtertube.app.data.FirebaseBilling.refresh(settings)
+        try {
+            com.filtertube.app.data.FirebaseBilling.refresh(settings)
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            android.util.Log.e("FilterTubeStartup", "Initial billing refresh failed", error)
+        }
     }
     LaunchedEffect(Unit) {
-        val u = com.filtertube.app.data.UpdateChecker.check()
-        if (u != null && u.isNewer) pendingUpdate = u
+        try {
+            val u = com.filtertube.app.data.UpdateChecker.check()
+            if (u != null && u.isNewer) pendingUpdate = u
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            android.util.Log.e("FilterTubeStartup", "Update check failed", error)
+        }
     }
 
     val controller by com.filtertube.app.ui.rememberMediaController()
@@ -244,7 +281,15 @@ fun AppRoot() {
     DisposableEffect(lifecycleActivity, controller) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_START && accountReady) {
-                scope.launch { com.filtertube.app.data.FirebaseBilling.refresh(settings) }
+                scope.launch {
+                    try {
+                        com.filtertube.app.data.FirebaseBilling.refresh(settings)
+                    } catch (error: kotlinx.coroutines.CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        android.util.Log.e("FilterTubeStartup", "Resume billing refresh failed", error)
+                    }
+                }
             }
             if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && !PipState.inPip) {
                 val s = com.filtertube.app.data.SettingsStore(context)
@@ -433,14 +478,6 @@ fun AppRoot() {
         }
     }
 
-    // דיווח קריסה — מציג את השגיאה האחרונה כדי שאפשר יהיה לאבחן ולשלוח אליי
-    crashReport?.let { report ->
-        CrashReportDialog(report) {
-            com.filtertube.app.data.CrashLog.clear(context)
-            crashReport = null
-        }
-    }
-
     pendingUpdate?.let { u ->
         AlertDialog(
             onDismissRequest = { pendingUpdate = null },
@@ -484,10 +521,11 @@ private fun CrashReportDialog(report: String, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("נמצא באג") },
+        title = { Text("האפליקציה התאוששה מקריסה") },
         text = {
             Column(modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
-                Text("אפשר לשלוח את הדוח בצורה מאובטחת דרך החשבון המחובר.",
+                Text(
+                    "עצרנו לפני טעינת המסך הראשי כדי למנוע קריסה חוזרת. אפשר להעתיק או לשלוח את הדוח, ואז להמשיך בלי למחוק את הנתונים שלך.",
                     color = ThemeState.subtext2, fontSize = 12.sp)
                 Spacer(Modifier.height(8.dp))
                 Text(report, color = Color(0xFF999999), fontSize = 11.sp)
@@ -513,7 +551,7 @@ private fun CrashReportDialog(report: String, onDismiss: () -> Unit) {
                 TextButton(onClick = { copy() }) { Text("העתק") }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("מחק") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("המשך לאפליקציה") } },
         containerColor = Color(0xFF1F1F1F),
         titleContentColor = Color.White,
         textContentColor = Color.White,

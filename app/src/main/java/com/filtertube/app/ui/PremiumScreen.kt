@@ -34,7 +34,7 @@ import com.filtertube.app.data.FirebaseBilling
 import com.filtertube.app.data.SettingsStore
 import kotlinx.coroutines.launch
 
-/** Premium checkout backed by Firebase Functions and Stripe Checkout. */
+/** Premium checkout backed by Firebase Functions and Creem Checkout. */
 @Composable
 fun PremiumScreen(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -44,6 +44,7 @@ fun PremiumScreen(onBack: () -> Unit) {
     var paidActive by remember { mutableStateOf(settings.premiumServerActive) }
     var canManage by remember { mutableStateOf(settings.premiumCanManage) }
     var status by remember { mutableStateOf("בודק את מצב המנוי…") }
+    var entitlementReady by remember { mutableStateOf(settings.premiumActive) }
     var loading by remember { mutableStateOf(false) }
 
     fun refreshBilling() {
@@ -52,6 +53,7 @@ fun PremiumScreen(onBack: () -> Unit) {
             paidActive = settings.premiumServerActive
             canManage = settings.premiumCanManage
             status = result.message
+            entitlementReady = result.ok
         }
     }
 
@@ -85,9 +87,10 @@ fun PremiumScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(14.dp))
             Text(
                 when {
+                    !entitlementReady -> "מכין את הזכאות שלך…"
                     paidActive -> "אתה מנוי Premium 🎉"
                     settings.premiumActive -> "נותרו ${settings.trialDaysLeft} ימי ניסיון חינם"
-                    else -> "הניסיון הסתיים"
+                    else -> "FilterTube Premium"
                 },
                 color = ThemeState.text, fontSize = 21.sp, fontWeight = FontWeight.ExtraBold,
                 modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
@@ -107,18 +110,18 @@ fun PremiumScreen(onBack: () -> Unit) {
             if (!paidActive) {
                 Spacer(Modifier.height(24.dp))
                 PlanCard(
-                    title = "שנתי", price = "₪70", per = "לשנה",
+                    title = "שנתי", price = "$22.89", per = "לשנה",
                     note = "החיסכון הטוב ביותר", best = true, selected = plan == "year",
                 ) { plan = "year" }
                 Spacer(Modifier.height(11.dp))
                 PlanCard(
-                    title = "חודשי", price = "₪10", per = "לחודש",
+                    title = "חודשי", price = "$3.27", per = "לחודש",
                     note = "ניתן לבטל בכל עת", best = false, selected = plan == "month",
                 ) { plan = "month" }
 
                 Spacer(Modifier.height(18.dp))
                 Text(
-                    "התשלום מתבצע בדף Stripe מאובטח. פרטי אשראי אינם עוברים דרך האפליקציה.",
+                    "התשלום מתבצע בדף Creem מאובטח. פרטי אשראי אינם עוברים דרך האפליקציה.",
                     color = ThemeState.subtext2, fontSize = 12.sp,
                 )
                 Spacer(Modifier.height(12.dp))
@@ -140,7 +143,7 @@ fun PremiumScreen(onBack: () -> Unit) {
                     enabled = !loading,
                 ) {
                     Text(
-                        if (plan == "year") "המשך לתשלום מאובטח · ₪70/שנה" else "המשך לתשלום מאובטח · ₪10/חודש",
+                        if (plan == "year") "המשך לתשלום מאובטח · $22.89/שנה" else "המשך לתשלום מאובטח · $3.27/חודש",
                         fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = Color.White,
                     )
                 }
@@ -155,6 +158,7 @@ fun PremiumScreen(onBack: () -> Unit) {
                             status = result.message
                             paidActive = settings.premiumServerActive
                             canManage = settings.premiumCanManage
+                            entitlementReady = result.ok
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(46.dp),
@@ -187,7 +191,7 @@ fun PremiumScreen(onBack: () -> Unit) {
                     Icon(Icons.Default.Lock, null, tint = ThemeState.subtext2, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        "תשלום מאובטח על־ידי Stripe · איננו שומרים פרטי אשראי",
+                        "תשלום מאובטח על־ידי Creem · איננו שומרים פרטי אשראי",
                         color = ThemeState.subtext2, fontSize = 11.sp, textAlign = TextAlign.Center,
                     )
                 }
@@ -205,6 +209,7 @@ fun PremiumScreen(onBack: () -> Unit) {
                             status = result.message
                             paidActive = settings.premiumServerActive
                             canManage = settings.premiumCanManage
+                            entitlementReady = result.ok
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(46.dp),
