@@ -15,10 +15,10 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
-/** Billing client for the Firebase Functions Stripe integration.
+/** Billing client for the Firebase Functions Creem integration.
  *
- * No Stripe secret is present here. The app sends a Firebase ID token to the
- * function, and only the server talks to Stripe.
+ * No Creem secret is present here. The app sends a Firebase ID token to the
+ * function, and only the server talks to Creem.
  */
 object FirebaseBilling {
     private const val TAG = "FirebaseBilling"
@@ -111,8 +111,8 @@ object FirebaseBilling {
         }.getOrNull()
         val usedTrialFallback = reconciledBilling == null
         val billing = reconciledBilling ?: runCatching {
-            // Trial initialization is independent from Stripe. It also returns
-            // the last server-owned paid snapshot without contacting Stripe.
+            // Trial initialization is independent from Creem. It also returns
+            // the last server-owned paid snapshot without contacting Creem.
             fetchBillingSnapshot(TRIAL_STATUS, auth)
         }.onFailure {
             Log.e(TAG, "trial entitlement refresh failed", it)
