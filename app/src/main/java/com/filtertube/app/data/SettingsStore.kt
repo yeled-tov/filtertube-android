@@ -342,13 +342,13 @@ class SettingsStore(context: Context) {
             return premiumServerActive || serverTrialActive
         }
 
-    /** Remaining server-authoritative trial days, rounded up for display. */
+    /** Remaining trial days, capped by the current client policy. */
     val trialDaysLeft: Int
         get() {
             if (!hasVerifiedAccount()) return 0
             val serverNow = cachedServerNowEpochSeconds() ?: return 0
             if (!prefs.getBoolean(KEY_TRIAL_SERVER_ACTIVE, false)) return 0
-            val trialEndsAt = prefs.getLong(KEY_TRIAL_END_SECONDS, 0L)
+            val trialEndsAt = effectiveTrialEndsAtEpochSeconds()
             val remainingSeconds = trialEndsAt - serverNow
             if (remainingSeconds <= 0L) return 0
             return ((remainingSeconds + SECONDS_PER_DAY - 1L) / SECONDS_PER_DAY)
@@ -360,8 +360,27 @@ class SettingsStore(context: Context) {
         get() {
             if (!prefs.getBoolean(KEY_TRIAL_SERVER_ACTIVE, false)) return false
             val serverNow = cachedServerNowEpochSeconds() ?: return false
-            return serverNow < prefs.getLong(KEY_TRIAL_END_SECONDS, 0L)
+            return serverNow < effectiveTrialEndsAtEpochSeconds()
         }
+
+    /**
+     * Never let an older server response extend a trial beyond the policy in
+     * this build. Server time is still used for the comparison, so changing
+     * the device clock cannot extend the entitlement.
+     */
+    private fun effectiveTrialEndsAtEpochSeconds(): Long {
+        val serverTrialEnd = prefs.getLong(KEY_TRIAL_END_SECONDS, 0L)
+        if (serverTrialEnd <= 0L) return 0L
+        val creationMillis = FirebaseAuth.getInstance()
+            .currentUser
+            ?.metadata
+            ?.creationTimestamp
+            ?: return serverTrialEnd
+        if (creationMillis <= 0L) return serverTrialEnd
+        val policyTrialEnd = creationMillis / 1000L +
+            TRIAL_DURATION_DAYS * SECONDS_PER_DAY
+        return minOf(serverTrialEnd, policyTrialEnd)
+    }
 
     private fun hasVerifiedAccount(expectedUid: String? = null): Boolean {
         val user = FirebaseAuth.getInstance().currentUser
