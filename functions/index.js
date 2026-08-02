@@ -37,7 +37,7 @@ const PORTAL_LOCK_MS = 30_000;
 const CHANNEL_REQUEST_COOLDOWN_MS = 5 * 60 * 1000;
 const BUG_REPORT_COOLDOWN_MS = 10 * 60 * 1000;
 const BILLING_RECONCILE_MAX_ATTEMPTS = 3;
-const TRIAL_DURATION_MS = 60 * 24 * 60 * 60 * 1000;
+const TRIAL_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 const CHANNEL_REQUEST_CATEGORIES = new Set([
   "torah",
   "torah_study",
@@ -209,8 +209,11 @@ function managedSubscriptionPlan(subscription) {
 }
 
 function managedBillingEntitled(billing = {}) {
-  return Boolean(normalizePlan(billing.plan))
-    && Boolean(billing.active);
+  return Boolean(billing.manualPremiumActive)
+    || (
+      Boolean(normalizePlan(billing.plan))
+      && Boolean(billing.active)
+    );
 }
 
 function billingRef(uid) {
@@ -700,9 +703,10 @@ async function saveBilling(uid, data, event, expectedRevision) {
 }
 
 function publicBillingStatus(data = {}, trial = {}) {
+  const manualPremiumActive = Boolean(data.manualPremiumActive);
   return {
-    active: Boolean(data.active),
-    status: data.status || "inactive",
+    active: manualPremiumActive || Boolean(data.active),
+    status: manualPremiumActive ? "complimentary" : (data.status || "inactive"),
     plan: data.plan || null,
     currentPeriodEnd: data.currentPeriodEnd || null,
     cancelAtPeriodEnd: Boolean(data.cancelAtPeriodEnd),
@@ -1224,8 +1228,7 @@ export const createCheckout = onRequest({
     billing = reconciliation.billing;
     if (
       reconciliation.blockingSubscriptions.length > 0
-      || (!reconciliation.authoritative
-        && managedBillingEntitled(billing))
+      || managedBillingEntitled(billing)
     ) {
       return subscriptionConflict(res, reconciliation, billing);
     }
@@ -1400,7 +1403,7 @@ export const createCustomerPortal = onRequest({
 /**
  * Fast entitlement snapshot that does not call Stripe.
  *
- * A new account's 60-day trial must not depend on Stripe availability or
+ * A new account's 30-day trial must not depend on Stripe availability or
  * configuration. Paid fields come only from the server-owned billing document;
  * billingStatus remains the authoritative Stripe reconciliation endpoint.
  */

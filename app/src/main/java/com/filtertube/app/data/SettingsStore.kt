@@ -527,6 +527,6 @@ class SettingsStore(context: Context) {
         private const val PREMIUM_CACHE_TTL_MILLIS = 24L * 60L * 60L * 1000L
         private const val MAX_SERVER_EPOCH_SECONDS = 10_000_000_000L
         private const val SECONDS_PER_DAY = 24L * 60L * 60L
-        private const val TRIAL_DURATION_DAYS = 60L
+        private const val TRIAL_DURATION_DAYS = 30L
     }
 }

@@ -100,7 +100,7 @@ fun SettingsScreen(
         SettingsRow(Icons.Default.AccountCircle, Color(0xFF2563EB), "סנכרון ענן",
             if (settings.cloudEmail.isNotBlank()) "מחובר: ${settings.cloudEmail}" else "החשבון נדרש בכניסה לאפליקציה") { showCloud = true }
         SettingsRow(Icons.Default.WorkspacePremium, Color(0xFFFFC107), "FilterTube Premium",
-            "הורדות וניגון ברקע — ניסיון חינם 60 יום") { onOpenPremium() }
+            "הורדות וניגון ברקע — ניסיון חינם 30 יום") { onOpenPremium() }
 
         SettingsSectionHeader("סינון וניגון")
         SettingsRow(Icons.Default.FilterAlt, Color(0xFFFFAA00), "הגדרות סינון 🔒",

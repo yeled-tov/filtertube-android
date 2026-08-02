@@ -6,8 +6,9 @@
     "node": "22"
   },
   "scripts": {
-    "lint": "node --check index.js && node --check scripts/set-admin.mjs",
-    "set-admin": "node scripts/set-admin.mjs"
+    "lint": "node --check index.js && node --check scripts/set-admin.mjs && node --check scripts/set-premium.mjs",
+    "set-admin": "node scripts/set-admin.mjs",
+    "set-premium": "node scripts/set-premium.mjs"
   },
   "dependencies": {
     "firebase-admin": "^13.4.0",

@@ -339,7 +339,7 @@ private fun StepWelcome(name: String) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "קיבלת 60 ימי ניסיון חינם לכל הפיצ'רים המתקדמים:",
+            "קיבלת 30 ימי ניסיון חינם לכל הפיצ'רים המתקדמים:",
             color = ThemeState.subtext2, fontSize = 14.sp,
             modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
         )
