@@ -34,8 +34,13 @@ const STATUS_REFRESH_LOCK_MS = 30_000;
 const PORTAL_COOLDOWN_MS = 15_000;
 const PORTAL_LOCK_MS = 30_000;
 const CHANNEL_REQUEST_COOLDOWN_MS = 5 * 60 * 1000;
+const PREMIUM_REQUEST_COOLDOWN_MS = 10 * 60 * 1000;
 const BUG_REPORT_COOLDOWN_MS = 10 * 60 * 1000;
 const TRIAL_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+const MANUAL_PLAN_DETAILS = Object.freeze({
+  month: Object.freeze({ priceUsd: "$3.27", label: "חודשי", period: "לחודש" }),
+  year: Object.freeze({ priceUsd: "$22.89", label: "שנתי", period: "לשנה" }),
+});
 const CHANNEL_REQUEST_CATEGORIES = new Set([
   "torah",
   "torah_study",
@@ -54,18 +59,21 @@ const CHANNEL_REQUEST_CATEGORIES = new Set([
 ]);
 const PAYMENT_HTTP_OPTIONS = {
   region: REGION,
+  cpu: 1,
   maxInstances: 10,
   concurrency: 20,
   timeoutSeconds: 30,
 };
 const STATUS_HTTP_OPTIONS = {
   region: REGION,
+  cpu: 1,
   maxInstances: 10,
   concurrency: 40,
   timeoutSeconds: 30,
 };
 const WEBHOOK_HTTP_OPTIONS = {
   region: REGION,
+  cpu: 1,
   maxInstances: 10,
   concurrency: 40,
   timeoutSeconds: 60,
@@ -363,6 +371,31 @@ async function acquireBugReportAttempt(uid) {
   });
 }
 
+async function acquirePremiumRequestAttempt(uid) {
+  const reference = db.collection("users").doc(uid)
+    .collection("serverState").doc("premiumRequest");
+  const now = Date.now();
+  return db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(reference);
+    const lastAttemptAt = positiveMillis(snapshot.get("lastAttemptAtMillis"));
+    if (
+      lastAttemptAt
+      && now >= lastAttemptAt
+      && now - lastAttemptAt < PREMIUM_REQUEST_COOLDOWN_MS
+    ) {
+      return {
+        acquired: false,
+        retryAfterMs: PREMIUM_REQUEST_COOLDOWN_MS - (now - lastAttemptAt),
+      };
+    }
+    transaction.set(reference, {
+      lastAttemptAtMillis: now,
+      lastAttemptAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return { acquired: true };
+  });
+}
+
 function cleanSingleLine(value, maxLength) {
   return String(value || "")
     .replace(/[\u0000-\u001f\u007f]+/g, " ")
@@ -557,6 +590,200 @@ export const submitChannelRequest = onRequest({
       ok: false,
       message: "Unable to save the channel request",
     });
+  }
+});
+
+// Manual Premium requests are intentionally server-owned. The Android client
+// can submit a request, but only an administrator can view or resolve it.
+export const submitPremiumRequest = onRequest({
+  ...PAYMENT_HTTP_OPTIONS,
+  maxInstances: 5,
+}, async (req, res) => {
+  if (handleCors(req, res)) return;
+  if (req.method !== "POST") {
+    return res.status(405).json({ ok: false, message: "POST required" });
+  }
+  const decoded = await requireUser(req, res);
+  if (!decoded) return;
+  if (!requireVerifiedEmail(decoded, res)) return;
+
+  const name = cleanSingleLine(req.body?.name, 120);
+  const phone = cleanSingleLine(req.body?.phone, 40);
+  const contactEmail = cleanSingleLine(req.body?.contactEmail, 254).toLowerCase();
+  const plan = normalizePlan(cleanSingleLine(req.body?.plan, 16));
+  const accountEmail = cleanSingleLine(decoded.email, 254).toLowerCase();
+  if (
+    !name
+    || !phone
+    || !plan
+    || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)
+    || !accountEmail
+  ) {
+    return res.status(400).json({
+      ok: false,
+      message: "יש למלא שם, טלפון, כתובת מייל ומסלול תקינים",
+    });
+  }
+
+  try {
+    const rateLimit = await acquirePremiumRequestAttempt(decoded.uid);
+    if (!rateLimit.acquired) {
+      res.set(
+        "Retry-After",
+        String(Math.max(1, Math.ceil(rateLimit.retryAfterMs / 1000))),
+      );
+      return res.status(429).json({
+        ok: false,
+        code: "PREMIUM_REQUEST_RATE_LIMITED",
+        message: "כבר נשלחה בקשה לאחרונה. נסה שוב בעוד כמה דקות",
+      });
+    }
+
+    const requestRef = db.collection("premiumRequests").doc(decoded.uid);
+    const existing = await requestRef.get();
+    if (existing.exists && existing.get("status") === "pending") {
+      return res.status(409).json({
+        ok: false,
+        code: "PREMIUM_REQUEST_PENDING",
+        message: "כבר קיימת בקשת Premium ממתינה",
+      });
+    }
+    const requestVersion = randomUUID();
+    const details = MANUAL_PLAN_DETAILS[plan];
+    await requestRef.set({
+      ownerUid: decoded.uid,
+      accountEmail,
+      contactEmail,
+      name,
+      phone,
+      plan,
+      priceUsd: details.priceUsd,
+      status: "pending",
+      requestVersion,
+      submittedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return res.json({ ok: true, requestVersion });
+  } catch (error) {
+    console.error("submitPremiumRequest failed", error);
+    return res.status(502).json({
+      ok: false,
+      message: "לא ניתן לשמור את בקשת התשלום כרגע",
+    });
+  }
+});
+
+export const listPremiumRequests = onRequest({
+  ...STATUS_HTTP_OPTIONS,
+  maxInstances: 5,
+}, async (req, res) => {
+  if (handleCors(req, res)) return;
+  if (req.method !== "GET") {
+    return res.status(405).json({ ok: false, message: "GET required" });
+  }
+  const decoded = await requireUser(req, res, true);
+  if (!decoded) return;
+  if (!requireVerifiedEmail(decoded, res)) return;
+  if (!requireAdmin(decoded, res)) return;
+
+  try {
+    res.set("Cache-Control", "private, no-store");
+    // Sort in memory so the endpoint works without requiring a composite index.
+    const snapshot = await db.collection("premiumRequests")
+      .where("status", "==", "pending")
+      .limit(100)
+      .get();
+    const requests = snapshot.docs.map((document) => {
+      const data = document.data();
+      const submittedAt = data.submittedAt?.toDate?.();
+      return {
+        id: document.id,
+        version: cleanSingleLine(data.requestVersion, 64),
+        accountEmail: cleanSingleLine(data.accountEmail, 254),
+        contactEmail: cleanSingleLine(data.contactEmail, 254),
+        name: cleanSingleLine(data.name, 120),
+        phone: cleanSingleLine(data.phone, 40),
+        plan: normalizePlan(data.plan) || "month",
+        priceUsd: cleanSingleLine(data.priceUsd, 20),
+        requestedAt: submittedAt instanceof Date ? submittedAt.toISOString() : "",
+      };
+    }).sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+    return res.json({ ok: true, requests });
+  } catch (error) {
+    console.error("listPremiumRequests failed", error);
+    return res.status(502).json({
+      ok: false,
+      message: "לא ניתן לטעון בקשות Premium כרגע",
+    });
+  }
+});
+
+export const resolvePremiumRequest = onRequest({
+  ...STATUS_HTTP_OPTIONS,
+  maxInstances: 5,
+}, async (req, res) => {
+  if (handleCors(req, res)) return;
+  if (req.method !== "POST") {
+    return res.status(405).json({ ok: false, message: "POST required" });
+  }
+  const decoded = await requireUser(req, res, true);
+  if (!decoded) return;
+  if (!requireVerifiedEmail(decoded, res)) return;
+  if (!requireAdmin(decoded, res)) return;
+
+  const requestId = cleanSingleLine(req.body?.id, 128);
+  const requestVersion = cleanSingleLine(req.body?.version, 64);
+  const resolution = cleanSingleLine(req.body?.resolution, 16);
+  if (
+    !requestId
+    || !/^[A-Za-z0-9_-]{1,128}$/.test(requestId)
+    || !/^[0-9a-f-]{36}$/i.test(requestVersion)
+    || !["approved", "rejected"].includes(resolution)
+  ) {
+    return res.status(400).json({ ok: false, message: "בקשת Premium לא תקינה" });
+  }
+
+  try {
+    const requestRef = db.collection("premiumRequests").doc(requestId);
+    const result = await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(requestRef);
+      if (!snapshot.exists) return { found: false, versionMatches: false };
+      if (snapshot.get("requestVersion") !== requestVersion) {
+        return { found: true, versionMatches: false };
+      }
+      const status = snapshot.get("status") || "pending";
+      if (status !== "pending") {
+        return { found: true, versionMatches: true, status, alreadyResolved: status === resolution };
+      }
+      if (resolution === "approved") {
+        const ownerUid = cleanSingleLine(snapshot.get("ownerUid"), 128);
+        if (!ownerUid) throw new Error("Premium request has no owner");
+        transaction.set(billingRef(ownerUid), {
+          manualPremiumActive: true,
+          manualPremiumGrantedAt: FieldValue.serverTimestamp(),
+          manualPremiumGrantedFor: cleanSingleLine(snapshot.get("accountEmail"), 254),
+          manualPremiumPlan: normalizePlan(snapshot.get("plan")) || "month",
+          manualPremiumSource: "manual_email",
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+      transaction.update(requestRef, {
+        status: resolution,
+        resolvedAt: FieldValue.serverTimestamp(),
+        resolvedByUid: decoded.uid,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return { found: true, versionMatches: true, status: resolution, alreadyResolved: false };
+    });
+    if (!result.found) return res.status(404).json({ ok: false, message: "בקשת Premium לא נמצאה" });
+    if (!result.versionMatches) return res.status(409).json({ ok: false, message: "הבקשה השתנתה; טען מחדש" });
+    if (result.status && result.status !== resolution) {
+      return res.status(409).json({ ok: false, message: "הבקשה כבר טופלה" });
+    }
+    return res.json({ ok: true, alreadyResolved: Boolean(result.alreadyResolved) });
+  } catch (error) {
+    console.error("resolvePremiumRequest failed", error);
+    return res.status(502).json({ ok: false, message: "לא ניתן לעדכן את בקשת Premium" });
   }
 });
 

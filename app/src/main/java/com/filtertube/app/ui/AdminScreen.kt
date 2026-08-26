@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import com.filtertube.app.data.Channel
 import com.filtertube.app.data.ChannelAdmin
 import com.filtertube.app.data.ChannelRequests
+import com.filtertube.app.data.ManualPremiumRequests
 import com.filtertube.app.data.categoryLabels
 import kotlinx.coroutines.launch
 
@@ -42,6 +43,8 @@ fun AdminScreen(onBack: () -> Unit) {
     var loading by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
     var requests by remember { mutableStateOf<List<ChannelRequests.Req>>(emptyList()) }
+    var premiumRequests by remember { mutableStateOf<List<ManualPremiumRequests.RequestItem>>(emptyList()) }
+    var premiumLoading by remember { mutableStateOf(false) }
 
     // שדות הוספה
     var newChannelInput by remember { mutableStateOf("") }
@@ -62,6 +65,37 @@ fun AdminScreen(onBack: () -> Unit) {
             } catch (e: Exception) {
                 status = "שגיאה: ${e.message}"
             } finally { loading = false }
+        }
+    }
+
+    fun loadPremiumRequests() {
+        premiumLoading = true
+        status = "טוען בקשות Premium..."
+        scope.launch {
+            try {
+                premiumRequests = ManualPremiumRequests.list()
+                status = "${premiumRequests.size} בקשות Premium ממתינות"
+            } catch (e: Exception) {
+                status = "שגיאה בטעינת Premium: ${e.message}"
+            } finally { premiumLoading = false }
+        }
+    }
+
+    fun resolvePremiumRequest(request: ManualPremiumRequests.RequestItem, resolution: String) {
+        if (busy) return
+        busy = true
+        status = if (resolution == "approved") "מאשר Premium..." else "דוחה בקשה..."
+        scope.launch {
+            try {
+                if (ManualPremiumRequests.resolve(request.id, request.version, resolution)) {
+                    premiumRequests = ManualPremiumRequests.list()
+                    status = if (resolution == "approved") "Premium הופעל עבור ${request.accountEmail} ✓" else "הבקשה נדחתה ✓"
+                } else {
+                    status = "עדכון בקשת Premium נכשל"
+                }
+            } catch (e: Exception) {
+                status = "שגיאה: ${e.message}"
+            } finally { busy = false }
         }
     }
 
@@ -158,7 +192,7 @@ fun AdminScreen(onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = ThemeState.text) }
-            Text("פאנל ניהול ערוצים", color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("פאנל ניהול", color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
         HorizontalDivider(color = ThemeState.divider)
 
@@ -183,10 +217,51 @@ fun AdminScreen(onBack: () -> Unit) {
                     colors = ButtonDefaults.buttonColors(containerColor = ThemeState.divider)) {
                     Text(if (loading) "טוען..." else "טען ערוצים")
                 }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { loadPremiumRequests() }, modifier = Modifier.fillMaxWidth(),
+                    enabled = !premiumLoading && !busy,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7B1FA2)),
+                ) {
+                    Text(if (premiumLoading) "טוען בקשות Premium..." else "טען בקשות Premium")
+                }
 
                 if (status.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     Text(status, color = Color(0xFFFFAA00), fontSize = 12.sp)
+                }
+
+                if (premiumRequests.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    Text("בקשות Premium ממתינות (${premiumRequests.size})", color = Color(0xFFCE93D8), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    premiumRequests.forEach { request ->
+                        Column(
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                .background(ThemeState.card).padding(12.dp),
+                        ) {
+                            Text(request.name, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text("חשבון: ${request.accountEmail}", color = ThemeState.subtext, fontSize = 11.sp)
+                            Text("יצירת קשר: ${request.contactEmail}", color = ThemeState.subtext, fontSize = 11.sp)
+                            Text("טלפון: ${request.phone}", color = ThemeState.subtext, fontSize = 11.sp)
+                            Text(
+                                if (request.plan == "year") "מסלול שנתי · ${request.priceUsd}" else "מסלול חודשי · ${request.priceUsd}",
+                                color = Color(0xFFCE93D8), fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Button(
+                                    onClick = { resolvePremiumRequest(request, "approved") }, enabled = !busy,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                ) { Text("אשר Premium") }
+                                Spacer(Modifier.width(8.dp))
+                                OutlinedButton(onClick = { resolvePremiumRequest(request, "rejected") }, enabled = !busy) {
+                                    Text("דחה", color = ThemeState.text)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
                 }
 
                 if (requests.isNotEmpty()) {

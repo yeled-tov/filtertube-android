@@ -1,5 +1,8 @@
 package com.filtertube.app.ui
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,6 +26,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,6 +36,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.FirebaseBilling
+import com.filtertube.app.data.ManualPremiumRequests
 import com.filtertube.app.data.SettingsStore
 import kotlinx.coroutines.launch
 
@@ -46,6 +52,7 @@ fun PremiumScreen(onBack: () -> Unit) {
     var status by remember { mutableStateOf("בודק את מצב המנוי…") }
     var entitlementReady by remember { mutableStateOf(settings.premiumActive) }
     var loading by remember { mutableStateOf(false) }
+    var showPaymentForm by remember { mutableStateOf(false) }
 
     fun refreshBilling() {
         scope.launch {
@@ -121,29 +128,20 @@ fun PremiumScreen(onBack: () -> Unit) {
 
                 Spacer(Modifier.height(18.dp))
                 Text(
-                    "התשלום מתבצע בדף Creem מאובטח. פרטי אשראי אינם עוברים דרך האפליקציה.",
+                    "התשלום מוסדר ידנית מול צוות FilterTube. לאחר התשלום נפעיל את המנוי בחשבון שלך.",
                     color = ThemeState.subtext2, fontSize = 12.sp,
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(status, color = if (paidActive) Color(0xFF22C55E) else ThemeState.subtext2, fontSize = 12.sp)
                 Spacer(Modifier.height(12.dp))
                 Button(
-                    onClick = {
-                        loading = true
-                        status = "פותח תשלום מאובטח…"
-                        scope.launch {
-                            val result = FirebaseBilling.createCheckout(plan)
-                            loading = false
-                            status = result.message
-                            result.url?.let { FirebaseBilling.openBrowser(context, it) }
-                        }
-                    },
+                    onClick = { showPaymentForm = true },
                     modifier = Modifier.fillMaxWidth().height(54.dp).clip(RoundedCornerShape(16.dp)),
                     colors = ButtonDefaults.buttonColors(containerColor = ThemeState.accent),
                     enabled = !loading,
                 ) {
                     Text(
-                        if (plan == "year") "המשך לתשלום מאובטח · $22.89/שנה" else "המשך לתשלום מאובטח · $3.27/חודש",
+                        if (plan == "year") "פנייה להסדרת תשלום · $22.89/שנה" else "פנייה להסדרת תשלום · $3.27/חודש",
                         fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = Color.White,
                     )
                 }
@@ -191,7 +189,7 @@ fun PremiumScreen(onBack: () -> Unit) {
                     Icon(Icons.Default.Lock, null, tint = ThemeState.subtext2, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        "תשלום מאובטח על־ידי Creem · איננו שומרים פרטי אשראי",
+                        "לא שולחים פרטי אשראי במייל · התשלום מוסדר מולנו ישירות",
                         color = ThemeState.subtext2, fontSize = 11.sp, textAlign = TextAlign.Center,
                     )
                 }
@@ -236,6 +234,93 @@ fun PremiumScreen(onBack: () -> Unit) {
             }
         }
     }
+
+    if (showPaymentForm) {
+        ManualPaymentDialog(
+            plan = plan,
+            loading = loading,
+            onDismiss = { if (!loading) showPaymentForm = false },
+            onSubmit = { name, phone, email ->
+                loading = true
+                scope.launch {
+                    val result = ManualPremiumRequests.submit(name, phone, email, plan)
+                    val price = if (plan == "year") "$22.89" else "$3.27"
+                    val period = if (plan == "year") "שנתי" else "חודשי"
+                    val subject = "בקשה להצטרפות ל-FilterTube Premium ($period)"
+                    val body = """
+                        שלום,
+
+                        אני פונה בנושא FilterTube Premium במסלול $period ($price).
+                        שם: ${name.trim()}
+                        טלפון: ${phone.trim()}
+                        מייל ליצירת קשר: ${email.trim()}
+                        מייל החשבון באפליקציה: ${com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email.orEmpty()}
+
+                        אשמח להסדיר את התשלום ולקבל אישור Premium.
+                    """.trimIndent()
+                    val mailto = Uri.Builder().scheme("mailto").path(ManualPremiumRequests.SUPPORT_EMAIL)
+                        .appendQueryParameter("subject", subject)
+                        .appendQueryParameter("body", body)
+                        .build()
+                    try {
+                        context.startActivity(Intent(Intent.ACTION_SENDTO, mailto))
+                        status = if (result.ok) "הבקשה נשמרה ונפתחה הודעת מייל מוכנה" else "נפתחה הודעת מייל; ${result.message}"
+                    } catch (_: ActivityNotFoundException) {
+                        status = "אין אפליקציית מייל מותקנת במכשיר"
+                    }
+                    loading = false
+                    showPaymentForm = false
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ManualPaymentDialog(
+    plan: String,
+    loading: Boolean,
+    onDismiss: () -> Unit,
+    onSubmit: (String, String, String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    var email by remember {
+        mutableStateOf(com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email.orEmpty())
+    }
+    val valid = name.trim().isNotEmpty() && phone.trim().isNotEmpty() &&
+        android.util.Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("פרטי פנייה לתשלום", color = ThemeState.text) },
+        text = {
+            Column {
+                Text(
+                    if (plan == "year") "מסלול שנתי · $22.89" else "מסלול חודשי · $3.27",
+                    color = ThemeState.subtext2, fontSize = 13.sp,
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("שם מלא") }, singleLine = true)
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = phone, onValueChange = { phone = it }, label = { Text("מספר טלפון") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = email, onValueChange = { email = it }, label = { Text("מייל ליצירת קשר") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSubmit(name, phone, email) }, enabled = valid && !loading) {
+                Text(if (loading) "שולח…" else "שלח פנייה")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !loading) { Text("ביטול") } },
+        containerColor = ThemeState.card,
+    )
 }
 
 @Composable
