@@ -122,11 +122,10 @@ object ChannelRequests {
             .build()
         runCatching {
             http.newCall(request).execute().use { response ->
-                if (!sameUser(session.uid) || !response.isSuccessful) {
-                    return@use SubmitResult(false, "החשבון השתנה במהלך השליחה")
-                }
                 val json = JSONObject(response.body?.string().orEmpty())
-                if (response.isSuccessful && json.optBoolean("ok", false)) {
+                if (!sameUser(session.uid)) {
+                    SubmitResult(false, "החשבון השתנה במהלך השליחה")
+                } else if (response.isSuccessful && json.optBoolean("ok", false)) {
                     SubmitResult(true, "הבקשה נשלחה")
                 } else {
                     SubmitResult(false, json.optString("message", "השרת דחה את הבקשה (${response.code})"))
@@ -228,15 +227,17 @@ object ChannelRequests {
 
     private suspend fun verifiedSession(forceRefresh: Boolean): Session? {
         val auth = FirebaseAuth.getInstance()
-        val user = auth.currentUser
-            ?.takeIf { it.isEmailVerified }
-            ?: return null
-        val token = runCatching { user.getIdToken(forceRefresh).await().token }
+        val user = auth.currentUser ?: return null
+        // Refresh the local Firebase user so a verification completed in the
+        // browser is picked up without forcing the person to sign out and in.
+        runCatching { user.reload().await() }
+        val refreshedUser = auth.currentUser?.takeIf { it.isEmailVerified } ?: return null
+        val token = runCatching { refreshedUser.getIdToken(forceRefresh).await().token }
             .getOrNull()
             ?.takeIf { it.isNotBlank() }
             ?: return null
-        return if (auth.currentUser?.uid == user.uid) {
-            Session(user.uid, token)
+        return if (auth.currentUser?.uid == refreshedUser.uid) {
+            Session(refreshedUser.uid, token)
         } else {
             null
         }

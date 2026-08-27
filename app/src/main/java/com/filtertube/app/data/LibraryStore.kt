@@ -113,6 +113,30 @@ class LibraryStore(context: Context) {
         if (savePlaylists(list)) queueCloudBackup()
     }
 
+    /** Removes a video from all local library collections and syncs the change. */
+    fun removeVideo(video: Video) {
+        var changed = false
+        fun removeFrom(key: String) {
+            val current = videos(key)
+            val filtered = current.filterNot { it.id == video.id }
+            if (filtered.size != current.size) {
+                changed = true
+                saveVideos(key, filtered)
+            }
+        }
+        listOf(KEY_LIKES, KEY_DOWNLOADS, KEY_HISTORY, KEY_LOCAL_HISTORY, KEY_RECS, KEY_NEW_VIDEOS, KEY_YT_LIKES)
+            .forEach(::removeFrom)
+        val updatedPlaylists = playlists().map { playlist ->
+            val filtered = playlist.videos.filterNot { it.id == video.id }
+            if (filtered.size != playlist.videos.size) changed = true
+            playlist.copy(videos = filtered)
+        }
+        if (changed) {
+            savePlaylists(updatedPlaylists)
+            queueCloudBackup()
+        }
+    }
+
     fun youtubeLikes(): List<Video> = videos(KEY_YT_LIKES)
 
     fun setYoutubeLikes(list: List<Video>) {

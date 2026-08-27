@@ -21,9 +21,17 @@ object NotificationRegistration {
 
     suspend fun registerIfPossible() = withContext(Dispatchers.IO) {
         val user = FirebaseAuth.getInstance().currentUser?.takeIf { it.isEmailVerified } ?: return@withContext
+        val token = runCatching { FirebaseMessaging.getInstance().token.await() }
+            .onFailure { Log.w(TAG, "unable to retrieve push token", it) }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+            ?: return@withContext
+        val idToken = runCatching { user.getIdToken(false).await().token }
+            .onFailure { Log.w(TAG, "unable to retrieve Firebase ID token", it) }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+            ?: return@withContext
         runCatching {
-            val token = FirebaseMessaging.getInstance().token.await()
-            val idToken = user.getIdToken(false).await().token ?: return@runCatching
             val request = Request.Builder().url(API)
                 .header("Authorization", "Bearer $idToken")
                 .post(JSONObject().put("token", token).toString().toRequestBody("application/json".toMediaType()))

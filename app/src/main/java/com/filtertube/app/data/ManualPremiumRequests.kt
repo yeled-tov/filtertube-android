@@ -142,10 +142,12 @@ object ManualPremiumRequests {
 
     private suspend fun verifiedSession(forceRefresh: Boolean): Session? {
         val auth = FirebaseAuth.getInstance()
-        val user = auth.currentUser?.takeIf { it.isEmailVerified } ?: return null
-        val token = runCatching { user.getIdToken(forceRefresh).await().token }
+        val user = auth.currentUser ?: return null
+        runCatching { user.reload().await() }
+        val refreshedUser = auth.currentUser?.takeIf { it.isEmailVerified } ?: return null
+        val token = runCatching { refreshedUser.getIdToken(forceRefresh).await().token }
             .getOrNull()?.takeIf { it.isNotBlank() } ?: return null
-        return if (auth.currentUser?.uid == user.uid) Session(user.uid, token) else null
+        return if (auth.currentUser?.uid == refreshedUser.uid) Session(refreshedUser.uid, token) else null
     }
 
     private fun sameUser(expectedUid: String): Boolean =

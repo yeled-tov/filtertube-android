@@ -16,6 +16,8 @@ import com.filtertube.app.data.StreamRepository
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.audioOnlyCategories
 import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * לוגיקת ניגון משותפת — בניית פריטי מדיה, תור "רדיו" אוטומטי, ומטמון StreamData
@@ -29,6 +31,8 @@ object Playback {
     private const val RADIO_SIZE = 14
 
     private val dataCache = LinkedHashMap<String, StreamData>()
+    private val pendingNext = ArrayDeque<Video>()
+    @Volatile private var activeController: MediaController? = null
 
     fun cachedData(videoId: String?): StreamData? = videoId?.let { dataCache[it] }
 
@@ -37,6 +41,49 @@ object Playback {
         while (dataCache.size > CACHE_CAP) {
             val oldest = dataCache.keys.firstOrNull() ?: break
             dataCache.remove(oldest)
+        }
+    }
+
+    /** Add a video after the current item, or remember it for the next session. */
+    suspend fun enqueueNext(context: Context, video: Video): Boolean {
+        val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull()
+        if (data == null) {
+            synchronized(pendingNext) { pendingNext.removeAll { it.id == video.id }; pendingNext.addLast(video) }
+            return false
+        }
+        cache(video.id, data)
+        val controller = activeController
+        if (controller == null) {
+            synchronized(pendingNext) { pendingNext.removeAll { it.id == video.id }; pendingNext.addLast(video) }
+            return true
+        }
+        return runCatching {
+            val settings = SettingsStore(context)
+            val item = buildItem(data, video.id, forcedAudio(null, settings.filterLevel), defaultQuality(data, settings.preferredQuality))
+            withContext(Dispatchers.Main) {
+                val index = (controller.currentMediaItemIndex + 1).coerceAtMost(controller.mediaItemCount)
+                controller.addMediaItem(index, item)
+            }
+            true
+        }.getOrElse {
+            synchronized(pendingNext) { pendingNext.removeAll { it.id == video.id }; pendingNext.addLast(video) }
+            false
+        }
+    }
+
+    private suspend fun addPendingNext(context: Context, controller: MediaController) {
+        val requested = synchronized(pendingNext) {
+            val copy = pendingNext.toList(); pendingNext.clear(); copy
+        }.take(10)
+        if (requested.isEmpty()) return
+        val settings = SettingsStore(context)
+        for (video in requested) {
+            val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull() ?: continue
+            cache(video.id, data)
+            val item = buildItem(data, video.id, forcedAudio(null, settings.filterLevel), defaultQuality(data, settings.preferredQuality))
+            withContext(Dispatchers.Main) {
+                controller.addMediaItem((controller.currentMediaItemIndex + 1).coerceAtMost(controller.mediaItemCount), item)
+            }
         }
     }
 
@@ -96,6 +143,7 @@ object Playback {
      */
     suspend fun start(context: Context, controller: MediaController?, video: Video) {
         val c = controller ?: return
+        activeController = c
         val firebaseUser = FirebaseAuth.getInstance().currentUser
             ?.takeIf { it.isEmailVerified }
             ?: return
@@ -138,6 +186,7 @@ object Playback {
         c.setMediaItem(firstItem)
         c.prepare()
         c.play()
+        addPendingNext(context, c)
 
         // תן לסרטון הנוכחי "ראש" גדול (6ש') לבנות buffer לפני שמתחילים עבודת רקע,
         // אחרת חילוץ התור גוזל רוחב פס והניגון נתקע אחרי כמה שניות (התסמין שדווח).

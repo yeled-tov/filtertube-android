@@ -3,6 +3,7 @@ package com.filtertube.app.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -16,6 +17,14 @@ import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,11 +43,14 @@ import coil.compose.AsyncImage
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.Channel
 import com.filtertube.app.data.ChannelsRepository
+import com.filtertube.app.data.BugReport
+import com.filtertube.app.data.DownloadEngine
 import com.filtertube.app.data.FeedCache
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeRepository
+import com.filtertube.app.playback.Playback
 import com.filtertube.app.data.categoryLabelHe
 import com.filtertube.app.data.forLevel
 import com.filtertube.app.data.personalizeFeed
@@ -294,8 +306,12 @@ fun CenteredError(message: String, onRetry: () -> Unit) {
 
 @Composable
 fun VideoRow(video: Video, onClick: () -> Unit) {
+    var showActions by remember(video.id) { mutableStateOf(false) }
     Column(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+        modifier = Modifier.fillMaxWidth().combinedClickable(
+            onClick = onClick,
+            onLongClick = { showActions = true },
+        )
             .padding(horizontal = 12.dp).padding(bottom = 18.dp),
     ) {
         Box(
@@ -346,6 +362,119 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
             }
         }
     }
+    if (showActions) VideoActionMenu(video, onDismiss = { showActions = false })
+}
+
+@Composable
+private fun VideoActionMenu(video: Video, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val store = remember { LibraryStore(context) }
+    var playlistOpen by remember { mutableStateOf(false) }
+    var reportOpen by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("פעולות לסרטון", color = ThemeState.text) },
+        text = {
+            Column {
+                VideoAction("הבא בתור", Icons.Default.QueueMusic) {
+                    busy = true
+                    scope.launch {
+                        val immediate = Playback.enqueueNext(context, video)
+                        busy = false; onDismiss()
+                        android.widget.Toast.makeText(context, if (immediate) "נוסף לתור הבא" else "נשמר לתור הבא", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+                VideoAction("הורד סרטון", Icons.Default.Download) {
+                    busy = true
+                    scope.launch {
+                        val ok = DownloadEngine.enqueueByVideo(context, video, isAudio = false)
+                        busy = false; onDismiss()
+                        android.widget.Toast.makeText(context, if (ok) "ההורדה התחילה" else "לא ניתן להתחיל הורדה", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+                val liked = store.isLiked(video.id)
+                VideoAction(if (liked) "הסר מסרטונים שאהבתי" else "הוסף לסרטונים שאהבתי", if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder) {
+                    store.toggleLike(video); onDismiss()
+                }
+                VideoAction("שתף סרטון", Icons.Default.Share) {
+                    val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, "https://www.youtube.com/watch?v=${video.id}")
+                    }
+                    context.startActivity(android.content.Intent.createChooser(share, "שתף סרטון")); onDismiss()
+                }
+                VideoAction("הוסף לפלייליסט", Icons.Default.PlaylistAdd) { playlistOpen = true }
+                VideoAction("דווח על הסרטון", Icons.Default.Flag) { reportOpen = true }
+                VideoAction("הסר סרטון", Icons.Default.Delete) {
+                    store.removeVideo(video); onDismiss()
+                    android.widget.Toast.makeText(context, "הסרטון הוסר מהספרייה", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("ביטול") } },
+    )
+    if (playlistOpen) PlaylistPicker(video, store, onDismiss = { playlistOpen = false })
+    if (reportOpen) ReportVideoDialog(video, onDismiss = { reportOpen = false })
+}
+
+@Composable
+private fun VideoAction(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Icon(icon, null, tint = ThemeState.accent)
+        Spacer(Modifier.width(12.dp))
+        Text(label, color = ThemeState.text, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun PlaylistPicker(video: Video, store: LibraryStore, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var newName by remember { mutableStateOf("") }
+    val playlists by remember { mutableStateOf(store.playlists()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("הוסף לפלייליסט", color = ThemeState.text) },
+        text = {
+            Column {
+                OutlinedTextField(newName, { newName = it }, label = { Text("פלייליסט חדש") }, singleLine = true)
+                playlists.forEach { playlist ->
+                    TextButton(onClick = { store.addToPlaylist(playlist.name, video); onDismiss(); android.widget.Toast.makeText(context, "נוסף לפלייליסט", android.widget.Toast.LENGTH_SHORT).show() }, modifier = Modifier.fillMaxWidth()) {
+                        Text(playlist.name, color = ThemeState.text, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { if (newName.isNotBlank()) { store.createPlaylist(newName); store.addToPlaylist(newName.trim(), video); onDismiss() } }) { Text("צור והוסף") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ביטול") } },
+    )
+}
+
+@Composable
+private fun ReportVideoDialog(video: Video, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var reason by remember { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = { if (!sending) onDismiss() },
+        title = { Text("דיווח על סרטון", color = ThemeState.text) },
+        text = { OutlinedTextField(reason, { reason = it }, label = { Text("מה הבעיה בסרטון?") }, minLines = 3) },
+        confirmButton = {
+            TextButton(enabled = !sending && reason.isNotBlank(), onClick = {
+                sending = true
+                scope.launch {
+                    val ok = BugReport.submit("דיווח על סרטון ${video.id}\nכותרת: ${video.title}", reason.trim())
+                    sending = false; onDismiss()
+                    android.widget.Toast.makeText(context, if (ok) "הדיווח נשלח" else "שליחת הדיווח נכשלה", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }) { Text(if (sending) "שולח…" else "שלח") }
+        },
+        dismissButton = { TextButton(enabled = !sending, onClick = onDismiss) { Text("ביטול") } },
+    )
 }
 
 fun channelColor(name: String): Color {

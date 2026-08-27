@@ -45,6 +45,7 @@ const MANUAL_PLAN_DETAILS = Object.freeze({
 });
 const CHANNELS_SOURCE_URL =
   "https://raw.githubusercontent.com/yeled-tov/filtertube-android/main/channels.json";
+const CHANNEL_CATALOG_SEED_VERSION = 2;
 const CHANNEL_REQUEST_CATEGORIES = new Set([
   "torah",
   "torah_study",
@@ -410,27 +411,43 @@ function cleanSingleLine(value, maxLength) {
 }
 
 async function ensureApprovedChannelsSeeded() {
+  const markerRef = db.collection("channelCatalogMeta").doc("seed");
+  const marker = await markerRef.get();
+  if (marker.get("version") === CHANNEL_CATALOG_SEED_VERSION) return;
   const collection = db.collection("approvedChannels");
-  const current = await collection.limit(1).get();
-  if (!current.empty) return;
   const response = await fetch(`${CHANNELS_SOURCE_URL}?seed=${Date.now()}`);
   if (!response.ok) throw new Error(`Unable to seed channels (${response.status})`);
   const source = await response.json();
-  if (!Array.isArray(source) || source.length === 0) return;
+  if (!Array.isArray(source) || source.length === 0) {
+    await markerRef.set({
+      version: CHANNEL_CATALOG_SEED_VERSION,
+      seededAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return;
+  }
   const batch = db.batch();
   for (const item of source.slice(0, 500)) {
     const id = cleanSingleLine(item?.youtubeChannelId || item?.youtube_channel_id, 100);
     const name = cleanSingleLine(item?.name, 200);
-    const category = cleanSingleLine(item?.category, 40);
-    const gender = cleanSingleLine(item?.gender, 16) || "all";
-    if (!/^UC[A-Za-z0-9_-]{20,}$/.test(id) || !name
-      || !CHANNEL_REQUEST_CATEGORIES.has(category)
-      || !["all", "male", "female"].includes(gender)) continue;
+    const requestedCategory = cleanSingleLine(item?.category, 40);
+    const category = CHANNEL_REQUEST_CATEGORIES.has(requestedCategory)
+      ? requestedCategory
+      : "general";
+    const requestedGender = cleanSingleLine(item?.gender, 16);
+    const gender = ["all", "male", "female"].includes(requestedGender)
+      ? requestedGender
+      : "all";
+    if (!/^UC[A-Za-z0-9_-]{20,}$/.test(id) || !name) continue;
     batch.set(collection.doc(id), {
       youtubeChannelId: id, name, category, gender,
       seededFromGithubAt: FieldValue.serverTimestamp(),
     }, { merge: true });
   }
+  batch.set(markerRef, {
+    version: CHANNEL_CATALOG_SEED_VERSION,
+    sourceCount: source.length,
+    seededAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
   await batch.commit();
 }
 
@@ -601,7 +618,7 @@ export const submitChannelRequest = onRequest({
   ) {
     return res.status(400).json({
       ok: false,
-      message: "Invalid channel request",
+      message: "יש למלא שם ערוץ, קישור YouTube, קטגוריה ומגדר תקינים",
     });
   }
 
@@ -615,7 +632,7 @@ export const submitChannelRequest = onRequest({
       return res.status(429).json({
         ok: false,
         code: "CHANNEL_REQUEST_RATE_LIMITED",
-        message: "Please wait before sending another channel request",
+        message: "כבר נשלחה בקשה לאחרונה. נסה שוב בעוד חצי דקה",
       });
     }
 
@@ -637,7 +654,7 @@ export const submitChannelRequest = onRequest({
     console.error("submitChannelRequest failed", error);
     return res.status(502).json({
       ok: false,
-      message: "Unable to save the channel request",
+      message: "לא ניתן לשמור את בקשת הערוץ כרגע",
     });
   }
 });
