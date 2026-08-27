@@ -168,6 +168,12 @@
         "category": "kids"
     },
     {
+        "youtube_channel_id": "UCGwuWQ_oCQfQ4lPASPbCvYg",
+        "name": "Idan Raichel - עידן רייכל",
+        "category": "dati_light",
+        "gender": "all"
+    },
+    {
         "youtube_channel_id": "UCYONKpA1KLr3GA2nKt0jZgg",
         "name": "Jewish Educational Media | הרבי מליובאוויטש",
         "category": "torah",
@@ -198,6 +204,12 @@
         "category": "music"
     },
     {
+        "youtube_channel_id": "UCfCXJRdTBCCM2Vtgo_SxauQ",
+        "name": "Maya",
+        "category": "music",
+        "gender": "all"
+    },
+    {
         "youtube_channel_id": "UCKwQa5DB_VR98ac_r-Wyl-g",
         "name": "Mercaz Daf Yomi by R' Eli Stefansky ",
         "category": "torah"
@@ -216,6 +228,17 @@
         "youtube_channel_id": "UCB7BryuXaMe1pUMznYAq4Jg",
         "name": "MotivationGrid",
         "category": "music"
+    },
+    {
+        "youtube_channel_id": "UCjqb4UDtNkqxmhS5H85B5YA",
+        "name": "Motti Wiesel - מוטי ויזל",
+        "category": "music",
+        "gender": "all"
+    },
+    {
+        "youtube_channel_id": "UCDPk9MG2RexnOMGTD-YnSnA",
+        "name": "Nat Geo Animals",
+        "gender": "all"
     },
     {
         "youtube_channel_id": "UCAnRqJ-SIowmwBnBVemb_zA",
@@ -271,6 +294,12 @@
         "category": "music"
     },
     {
+        "youtube_channel_id": "UCaSs5F26wYkoirLRfsA1Upg",
+        "name": "Shloime Daskal - Topic",
+        "category": "music",
+        "gender": "all"
+    },
+    {
         "youtube_channel_id": "UCl76vrtVLcPPnOSIHVs8HMg",
         "name": "Sonic Electronix",
         "category": "diy"
@@ -284,6 +313,12 @@
         "youtube_channel_id": "UC_1FwTxmP2tzatEK2FM9pdg",
         "name": "TzionGolanOfficial",
         "category": "music"
+    },
+    {
+        "youtube_channel_id": "UCyeh8REPh9Vs8sXKe5v39_g",
+        "name": "YEEDLE | יידל",
+        "category": "music",
+        "gender": "all"
     },
     {
         "youtube_channel_id": "UC-iTQfrv8pVLjlErZquyJ6Q",
@@ -339,6 +374,12 @@
         "category": "diy"
     },
     {
+        "youtube_channel_id": "UCdmrPjdNRKCdWYmLd3xi5nw",
+        "name": "אבי אילסון הערוץ הרשמי Avi Ilson Official Channel",
+        "category": "music",
+        "gender": "all"
+    },
+    {
         "youtube_channel_id": "UCojWjHpsimQY0IYbWCaNyLQ",
         "name": "אהרן רזאל - Aaron Razel",
         "category": "music"
@@ -370,6 +411,12 @@
         "category": "music"
     },
     {
+        "youtube_channel_id": "UCA4ppEOMHRG9WnGwjneGRaw",
+        "name": "איציק וינגרטן הערוץ הרשמי itzik Weingarten",
+        "category": "music",
+        "gender": "all"
+    },
+    {
         "youtube_channel_id": "UCKw5dh0Q1Y_SvsW4nXnLjcg",
         "name": "איתי לוי - הערוץ הרשמי",
         "category": "dati_light"
@@ -380,8 +427,20 @@
         "category": "music"
     },
     {
+        "youtube_channel_id": "UCSl99xUq46UqhmF8MQ5mFeA",
+        "name": "אליה והב הערוץ הרשמי",
+        "category": "music",
+        "gender": "all"
+    },
+    {
         "youtube_channel_id": "UCu3EnsblzJsaLa5cqNxRqeQ",
         "name": "אלייצור - הערוץ הרשמי",
+        "category": "music",
+        "gender": "all"
+    },
+    {
+        "youtube_channel_id": "UC7M6GHmUZsvQxV1fB1ojSpw",
+        "name": "ארי היל | Ari Hill",
         "category": "music",
         "gender": "all"
     },
@@ -616,6 +675,12 @@
         "category": "music"
     },
     {
+        "youtube_channel_id": "UCjw1gV2d-m2hsRUqYdxPbFQ",
+        "name": "יצחק בן ארזה - Yitzhak Benarza",
+        "category": "music",
+        "gender": "all"
+    },
+    {
         "youtube_channel_id": "UCHwxQ7twj_VWIPMcJ3Zdyqg",
         "name": "ישי ריבו | Ishay Ribo",
         "category": "music"
@@ -768,6 +833,24 @@
         "youtube_channel_id": "UCqvWt8C9EwztYQMvhRUe-xA",
         "name": "שולי רנד",
         "category": "music"
+    },
+    {
+        "youtube_channel_id": "UCXol4hFdCOUUMEQj16KWPvQ",
+        "name": "שלמה כהן | Shlomo Cohen",
+        "category": "music",
+        "gender": "all"
+    },
+    {
+        "youtube_channel_id": "UCyP3aICnR50STRXcUaSyuqg",
+        "name": "שמואל - Shmuel",
+        "category": "music",
+        "gender": "all"
+    },
+    {
+        "youtube_channel_id": "UCMVMTCJnx00WapqLGJle_dA",
+        "name": "שמוליק סוכות | Shmulik Sukkot",
+        "category": "music",
+        "gender": "all"
     },
     {
         "youtube_channel_id": "UCehDC9d0itf_4Ylpknlh8iA",
