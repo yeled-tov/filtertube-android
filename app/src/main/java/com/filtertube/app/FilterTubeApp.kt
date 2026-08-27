@@ -29,8 +29,8 @@ class FilterTubeApp : Application() {
         )
         // מושכים את קונפיג הענן בהפעלה — "עדכון API בלי קוד" (נופל לברירת מחדל אם נכשל)
         CoroutineScope(Dispatchers.IO).launch { RemoteConfig.refresh() }
-        FirebaseAuth.getInstance().addAuthStateListener { user ->
-            if (user?.isEmailVerified == true) {
+        FirebaseAuth.getInstance().addAuthStateListener { auth ->
+            if (auth.currentUser?.isEmailVerified == true) {
                 CoroutineScope(Dispatchers.IO).launch { NotificationRegistration.registerIfPossible() }
             }
         }
