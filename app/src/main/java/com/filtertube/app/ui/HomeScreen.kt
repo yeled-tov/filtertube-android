@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -304,6 +305,7 @@ fun CenteredError(message: String, onRetry: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VideoRow(video: Video, onClick: () -> Unit) {
     var showActions by remember(video.id) { mutableStateOf(false) }
@@ -365,6 +367,7 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
     if (showActions) VideoActionMenu(video, onDismiss = { showActions = false })
 }
 
+@OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 private fun VideoActionMenu(video: Video, onDismiss: () -> Unit) {
     val context = LocalContext.current
