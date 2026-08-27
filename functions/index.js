@@ -3,7 +3,8 @@ import { defineSecret, defineString } from "firebase-functions/params";
 import { initializeApp, getApps } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { getMessaging } from "firebase-admin/messaging";
 import {
   createCreemCheckout,
   createCreemCustomerPortal,
@@ -34,7 +35,7 @@ const STATUS_REFRESH_COOLDOWN_MS = 15_000;
 const STATUS_REFRESH_LOCK_MS = 30_000;
 const PORTAL_COOLDOWN_MS = 15_000;
 const PORTAL_LOCK_MS = 30_000;
-const CHANNEL_REQUEST_COOLDOWN_MS = 5 * 60 * 1000;
+const CHANNEL_REQUEST_COOLDOWN_MS = 30 * 1000;
 const PREMIUM_REQUEST_COOLDOWN_MS = 10 * 60 * 1000;
 const BUG_REPORT_COOLDOWN_MS = 10 * 60 * 1000;
 const TRIAL_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -42,6 +43,8 @@ const MANUAL_PLAN_DETAILS = Object.freeze({
   month: Object.freeze({ priceUsd: "$3.27", label: "חודשי", period: "לחודש" }),
   year: Object.freeze({ priceUsd: "$22.89", label: "שנתי", period: "לשנה" }),
 });
+const CHANNELS_SOURCE_URL =
+  "https://raw.githubusercontent.com/yeled-tov/filtertube-android/main/channels.json";
 const CHANNEL_REQUEST_CATEGORIES = new Set([
   "torah",
   "torah_study",
@@ -406,6 +409,49 @@ function cleanSingleLine(value, maxLength) {
     .slice(0, maxLength);
 }
 
+async function ensureApprovedChannelsSeeded() {
+  const collection = db.collection("approvedChannels");
+  const current = await collection.limit(1).get();
+  if (!current.empty) return;
+  const response = await fetch(`${CHANNELS_SOURCE_URL}?seed=${Date.now()}`);
+  if (!response.ok) throw new Error(`Unable to seed channels (${response.status})`);
+  const source = await response.json();
+  if (!Array.isArray(source) || source.length === 0) return;
+  const batch = db.batch();
+  for (const item of source.slice(0, 500)) {
+    const id = cleanSingleLine(item?.youtubeChannelId || item?.youtube_channel_id, 100);
+    const name = cleanSingleLine(item?.name, 200);
+    const category = cleanSingleLine(item?.category, 40);
+    const gender = cleanSingleLine(item?.gender, 16) || "all";
+    if (!/^UC[A-Za-z0-9_-]{20,}$/.test(id) || !name
+      || !CHANNEL_REQUEST_CATEGORIES.has(category)
+      || !["all", "male", "female"].includes(gender)) continue;
+    batch.set(collection.doc(id), {
+      youtubeChannelId: id, name, category, gender,
+      seededFromGithubAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }
+  await batch.commit();
+}
+
+async function sendAdminPush(title, body) {
+  try {
+    const admin = await auth.getUserByEmail(ADMIN_EMAIL);
+    const snapshot = await db.collection("users").doc(admin.uid)
+      .collection("notificationTokens").limit(20).get();
+    const tokens = snapshot.docs.map((doc) => doc.get("token"))
+      .filter((token) => typeof token === "string" && token.length > 20);
+    if (tokens.length === 0) return;
+    await getMessaging().sendEachForMulticast({
+      tokens,
+      notification: { title, body },
+      data: { type: "admin_request" },
+    });
+  } catch (error) {
+    console.error("sendAdminPush failed", error);
+  }
+}
+
 function normalizeYoutubeChannelUrl(value) {
   const raw = String(value || "").trim().slice(0, 2_048);
   if (/^@[A-Za-z0-9._-]{3,64}$/.test(raw)) {
@@ -585,6 +631,7 @@ export const submitChannelRequest = onRequest({
       status: "pending",
       submittedAt: FieldValue.serverTimestamp(),
     });
+    await sendAdminPush("בקשת ערוץ חדשה", `${name} ביקש/ה להוסיף ערוץ`);
     return res.json({ ok: true });
   } catch (error) {
     console.error("submitChannelRequest failed", error);
@@ -665,6 +712,7 @@ export const submitPremiumRequest = onRequest({
       submittedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
+    await sendAdminPush("בקשת Premium חדשה", `${name} ביקש/ה מסלול ${details.label}`);
     return res.json({ ok: true, requestVersion });
   } catch (error) {
     console.error("submitPremiumRequest failed", error);
@@ -800,6 +848,7 @@ export const listApprovedChannels = onRequest({
   if (!decoded) return;
   if (!requireVerifiedEmail(decoded, res)) return;
   try {
+    await ensureApprovedChannelsSeeded();
     const snapshot = await db.collection("approvedChannels").limit(500).get();
     const channels = snapshot.docs.map((document) => {
       const data = document.data();
@@ -815,6 +864,29 @@ export const listApprovedChannels = onRequest({
   } catch (error) {
     console.error("listApprovedChannels failed", error);
     return res.status(502).json({ ok: false, message: "לא ניתן לטעון ערוצים מאושרים" });
+  }
+});
+
+export const registerNotificationToken = onRequest({
+  ...STATUS_HTTP_OPTIONS,
+  maxInstances: 10,
+}, async (req, res) => {
+  if (handleCors(req, res)) return;
+  if (req.method !== "POST") return res.status(405).json({ ok: false, message: "POST required" });
+  const decoded = await requireUser(req, res);
+  if (!decoded) return;
+  if (!requireVerifiedEmail(decoded, res)) return;
+  const token = cleanSingleLine(req.body?.token, 4096);
+  if (token.length < 20) return res.status(400).json({ ok: false, message: "Token לא תקין" });
+  const id = createHash("sha256").update(token).digest("hex");
+  try {
+    await db.collection("users").doc(decoded.uid).collection("notificationTokens").doc(id).set({
+      token, updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error("registerNotificationToken failed", error);
+    return res.status(502).json({ ok: false, message: "לא ניתן לרשום התראות" });
   }
 });
 

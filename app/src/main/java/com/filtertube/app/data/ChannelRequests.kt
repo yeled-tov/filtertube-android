@@ -46,6 +46,8 @@ object ChannelRequests {
         val status: String = "pending",
     )
 
+    data class SubmitResult(val ok: Boolean, val message: String)
+
     data class Approved(
         val youtubeChannelId: String,
         val name: String,
@@ -95,9 +97,17 @@ object ChannelRequests {
         category: String,
         gender: String,
         description: String,
-    ): Boolean = withContext(Dispatchers.IO) {
+    ): Boolean = submitDetailed(name, url, category, gender, description).ok
+
+    suspend fun submitDetailed(
+        name: String,
+        url: String,
+        category: String,
+        gender: String,
+        description: String,
+    ): SubmitResult = withContext(Dispatchers.IO) {
         val session = verifiedSession(forceRefresh = false)
-            ?: return@withContext false
+            ?: return@withContext SubmitResult(false, "יש לאמת את כתובת המייל לפני שליחת בקשה")
         val payload = JSONObject().apply {
             put("name", name.trim())
             put("url", url.trim())
@@ -113,12 +123,16 @@ object ChannelRequests {
         runCatching {
             http.newCall(request).execute().use { response ->
                 if (!sameUser(session.uid) || !response.isSuccessful) {
-                    return@use false
+                    return@use SubmitResult(false, "החשבון השתנה במהלך השליחה")
                 }
-                JSONObject(response.body?.string().orEmpty())
-                    .optBoolean("ok", false)
+                val json = JSONObject(response.body?.string().orEmpty())
+                if (response.isSuccessful && json.optBoolean("ok", false)) {
+                    SubmitResult(true, "הבקשה נשלחה")
+                } else {
+                    SubmitResult(false, json.optString("message", "השרת דחה את הבקשה (${response.code})"))
+                }
             }
-        }.getOrDefault(false)
+        }.getOrElse { SubmitResult(false, "לא ניתן להתחבר לשרת כרגע") }
     }
 
     suspend fun list(history: Boolean = false): List<Req> = withContext(Dispatchers.IO) {

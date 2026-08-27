@@ -178,10 +178,10 @@ private fun ChannelRequestDialog(onDismiss: () -> Unit) {
                     onClick = {
                         sending = true
                         scope.launch {
-                            val ok = ChannelRequests.submit(name, url, category, gender, desc)
+                            val result = ChannelRequests.submitDetailed(name, url, category, gender, desc)
                             sending = false
-                            if (ok) sent = true
-                            else android.widget.Toast.makeText(context, "שליחה נכשלה — נסה שוב", android.widget.Toast.LENGTH_SHORT).show()
+                            if (result.ok) sent = true
+                            else android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_LONG).show()
                         }
                     },
                 ) { Text(if (sending) "שולח…" else "שלח בקשה", color = ThemeState.accent, fontWeight = FontWeight.Bold) }
