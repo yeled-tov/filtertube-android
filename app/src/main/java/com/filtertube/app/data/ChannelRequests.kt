@@ -24,6 +24,9 @@ object ChannelRequests {
     private const val SUBMIT_API = "$BASE_API/submitChannelRequest"
     private const val LIST_API = "$BASE_API/listChannelRequests"
     private const val RESOLVE_API = "$BASE_API/resolveChannelRequest"
+    private const val APPROVED_API = "$BASE_API/listApprovedChannels"
+    private const val UPSERT_API = "$BASE_API/upsertApprovedChannel"
+    private const val REMOVE_API = "$BASE_API/removeApprovedChannel"
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -40,6 +43,50 @@ object ChannelRequests {
         val gender: String,
         val description: String,
         val requestedAt: String,
+        val status: String = "pending",
+    )
+
+    data class Approved(
+        val youtubeChannelId: String,
+        val name: String,
+        val category: String,
+        val gender: String,
+    )
+
+    suspend fun listApproved(): List<Approved> = withContext(Dispatchers.IO) {
+        val session = verifiedSession(forceRefresh = false)
+            ?: throw IOException("נדרשת התחברות לחשבון מאומת")
+        val request = Request.Builder().url(APPROVED_API)
+            .header("Authorization", "Bearer ${session.token}").get().build()
+        http.newCall(request).execute().use { response ->
+            if (!sameUser(session.uid)) throw IOException("החשבון השתנה בזמן הבקשה")
+            val root = JSONObject(response.body?.string().orEmpty())
+            if (!response.isSuccessful || !root.optBoolean("ok", false)) {
+                throw IOException(root.optString("message", "טעינת הערוצים נכשלה"))
+            }
+            val items = root.optJSONArray("channels") ?: return@use emptyList()
+            buildList {
+                for (index in 0 until items.length()) {
+                    val item = items.optJSONObject(index) ?: continue
+                    val id = item.optString("youtubeChannelId")
+                    if (id.isNotBlank()) add(Approved(id, item.optString("name", id), item.optString("category", "general"), item.optString("gender", "all")))
+                }
+            }
+        }
+    }
+
+    suspend fun upsertApproved(channel: Approved): Boolean = adminMutation(
+        UPSERT_API,
+        JSONObject().apply {
+            put("youtubeChannelId", channel.youtubeChannelId)
+            put("name", channel.name)
+            put("category", channel.category)
+            put("gender", channel.gender)
+        },
+    )
+
+    suspend fun removeApproved(channelId: String): Boolean = adminMutation(
+        REMOVE_API, JSONObject().put("youtubeChannelId", channelId),
     )
 
     suspend fun submit(
@@ -74,11 +121,11 @@ object ChannelRequests {
         }.getOrDefault(false)
     }
 
-    suspend fun list(): List<Req> = withContext(Dispatchers.IO) {
+    suspend fun list(history: Boolean = false): List<Req> = withContext(Dispatchers.IO) {
         val session = verifiedSession(forceRefresh = true)
             ?: throw IOException("נדרשת התחברות לחשבון מנהל מאומת")
         val request = Request.Builder()
-            .url(LIST_API)
+            .url(if (history) "$LIST_API?history=1" else LIST_API)
             .header("Authorization", "Bearer ${session.token}")
             .get()
             .build()
@@ -108,6 +155,7 @@ object ChannelRequests {
                             gender = item.optString("gender", "all"),
                             description = item.optString("description"),
                             requestedAt = item.optString("requestedAt"),
+                            status = item.optString("status", "pending"),
                         ),
                     )
                 }
@@ -143,6 +191,21 @@ object ChannelRequests {
                     }
                     JSONObject(response.body?.string().orEmpty())
                         .optBoolean("ok", false)
+                }
+            }.getOrDefault(false)
+        }
+
+    private suspend fun adminMutation(url: String, payload: JSONObject): Boolean =
+        withContext(Dispatchers.IO) {
+            val session = verifiedSession(forceRefresh = true) ?: return@withContext false
+            val request = Request.Builder().url(url)
+                .header("Authorization", "Bearer ${session.token}")
+                .post(payload.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            runCatching {
+                http.newCall(request).execute().use { response ->
+                    if (!sameUser(session.uid) || !response.isSuccessful) return@use false
+                    JSONObject(response.body?.string().orEmpty()).optBoolean("ok", false)
                 }
             }.getOrDefault(false)
         }

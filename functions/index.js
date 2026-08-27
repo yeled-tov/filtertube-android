@@ -27,6 +27,7 @@ const creemSuccessUrl = defineString("CREEM_SUCCESS_URL", {
 });
 
 const REGION = "europe-west1";
+const ADMIN_EMAIL = "ywldyld@gmail.com";
 const CHECKOUT_LOCK_MS = 90_000;
 const CHECKOUT_COOLDOWN_MS = 15_000;
 const STATUS_REFRESH_COOLDOWN_MS = 15_000;
@@ -132,7 +133,8 @@ function requireVerifiedEmail(decoded, res) {
 }
 
 function requireAdmin(decoded, res) {
-  if (decoded.admin === true) return true;
+  const email = cleanSingleLine(decoded.email, 254).toLowerCase();
+  if (decoded.admin === true || email === ADMIN_EMAIL) return true;
   res.status(403).json({
     ok: false,
     code: "ADMIN_REQUIRED",
@@ -689,10 +691,10 @@ export const listPremiumRequests = onRequest({
   try {
     res.set("Cache-Control", "private, no-store");
     // Sort in memory so the endpoint works without requiring a composite index.
-    const snapshot = await db.collection("premiumRequests")
-      .where("status", "==", "pending")
-      .limit(100)
-      .get();
+    const includeHistory = String(req.query?.history || "") === "1";
+    let query = db.collection("premiumRequests");
+    if (!includeHistory) query = query.where("status", "==", "pending");
+    const snapshot = await query.limit(100).get();
     const requests = snapshot.docs.map((document) => {
       const data = document.data();
       const submittedAt = data.submittedAt?.toDate?.();
@@ -705,6 +707,7 @@ export const listPremiumRequests = onRequest({
         phone: cleanSingleLine(data.phone, 40),
         plan: normalizePlan(data.plan) || "month",
         priceUsd: cleanSingleLine(data.priceUsd, 20),
+        status: cleanSingleLine(data.status, 16) || "pending",
         requestedAt: submittedAt instanceof Date ? submittedAt.toISOString() : "",
       };
     }).sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
@@ -787,6 +790,89 @@ export const resolvePremiumRequest = onRequest({
   }
 });
 
+export const listApprovedChannels = onRequest({
+  ...STATUS_HTTP_OPTIONS,
+  maxInstances: 10,
+}, async (req, res) => {
+  if (handleCors(req, res)) return;
+  if (req.method !== "GET") return res.status(405).json({ ok: false, message: "GET required" });
+  const decoded = await requireUser(req, res);
+  if (!decoded) return;
+  if (!requireVerifiedEmail(decoded, res)) return;
+  try {
+    const snapshot = await db.collection("approvedChannels").limit(500).get();
+    const channels = snapshot.docs.map((document) => {
+      const data = document.data();
+      return {
+        youtubeChannelId: cleanSingleLine(data.youtubeChannelId || document.id, 100),
+        name: cleanSingleLine(data.name, 200),
+        category: cleanSingleLine(data.category, 40) || "general",
+        gender: cleanSingleLine(data.gender, 16) || "all",
+      };
+    }).filter((channel) => channel.youtubeChannelId && channel.name);
+    res.set("Cache-Control", "private, no-store");
+    return res.json({ ok: true, channels });
+  } catch (error) {
+    console.error("listApprovedChannels failed", error);
+    return res.status(502).json({ ok: false, message: "לא ניתן לטעון ערוצים מאושרים" });
+  }
+});
+
+export const upsertApprovedChannel = onRequest({
+  ...STATUS_HTTP_OPTIONS,
+  maxInstances: 5,
+}, async (req, res) => {
+  if (handleCors(req, res)) return;
+  if (req.method !== "POST") return res.status(405).json({ ok: false, message: "POST required" });
+  const decoded = await requireUser(req, res, true);
+  if (!decoded) return;
+  if (!requireVerifiedEmail(decoded, res)) return;
+  if (!requireAdmin(decoded, res)) return;
+  const youtubeChannelId = cleanSingleLine(req.body?.youtubeChannelId, 100);
+  const name = cleanSingleLine(req.body?.name, 200);
+  const category = cleanSingleLine(req.body?.category, 40);
+  const gender = cleanSingleLine(req.body?.gender, 16) || "all";
+  if (!/^UC[A-Za-z0-9_-]{20,}$/.test(youtubeChannelId)
+    || !name || !CHANNEL_REQUEST_CATEGORIES.has(category)
+    || !["all", "male", "female"].includes(gender)) {
+    return res.status(400).json({ ok: false, message: "פרטי ערוץ לא תקינים" });
+  }
+  try {
+    await db.collection("approvedChannels").doc(youtubeChannelId).set({
+      youtubeChannelId, name, category, gender,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedByUid: decoded.uid,
+    }, { merge: true });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error("upsertApprovedChannel failed", error);
+    return res.status(502).json({ ok: false, message: "לא ניתן לשמור את הערוץ" });
+  }
+});
+
+export const removeApprovedChannel = onRequest({
+  ...STATUS_HTTP_OPTIONS,
+  maxInstances: 5,
+}, async (req, res) => {
+  if (handleCors(req, res)) return;
+  if (req.method !== "POST") return res.status(405).json({ ok: false, message: "POST required" });
+  const decoded = await requireUser(req, res, true);
+  if (!decoded) return;
+  if (!requireVerifiedEmail(decoded, res)) return;
+  if (!requireAdmin(decoded, res)) return;
+  const youtubeChannelId = cleanSingleLine(req.body?.youtubeChannelId, 100);
+  if (!/^UC[A-Za-z0-9_-]{20,}$/.test(youtubeChannelId)) {
+    return res.status(400).json({ ok: false, message: "מזהה ערוץ לא תקין" });
+  }
+  try {
+    await db.collection("approvedChannels").doc(youtubeChannelId).delete();
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error("removeApprovedChannel failed", error);
+    return res.status(502).json({ ok: false, message: "לא ניתן להסיר את הערוץ" });
+  }
+});
+
 export const listChannelRequests = onRequest({
   ...STATUS_HTTP_OPTIONS,
   maxInstances: 5,
@@ -802,11 +888,10 @@ export const listChannelRequests = onRequest({
 
   try {
     res.set("Cache-Control", "private, no-store");
-    const snapshot = await db.collection("channelRequests")
-      .where("status", "==", "pending")
-      .orderBy("submittedAt", "desc")
-      .limit(100)
-      .get();
+    const includeHistory = String(req.query?.history || "") === "1";
+    let query = db.collection("channelRequests");
+    if (!includeHistory) query = query.where("status", "==", "pending");
+    const snapshot = await query.limit(100).get();
     const requests = snapshot.docs.map((document) => {
       const data = document.data();
       const submittedAt = data.submittedAt?.toDate?.();
@@ -818,6 +903,7 @@ export const listChannelRequests = onRequest({
         category: cleanSingleLine(data.category, 40),
         gender: cleanSingleLine(data.gender, 16),
         description: cleanSingleLine(data.description, 1_000),
+        status: cleanSingleLine(data.status, 16) || "pending",
         requestedAt: submittedAt instanceof Date
           ? submittedAt.toISOString()
           : "",

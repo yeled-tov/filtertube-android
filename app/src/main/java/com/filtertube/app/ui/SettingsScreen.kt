@@ -49,10 +49,10 @@ import com.filtertube.app.data.UpdateChecker
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import kotlinx.coroutines.launch
+import com.google.firebase.auth.FirebaseAuth
 
 private enum class SettingsGateTarget {
     FILTER,
-    ADMIN,
 }
 
 @Composable
@@ -81,7 +81,8 @@ fun SettingsScreen(
     var showNotify by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var showCloud by remember { mutableStateOf(false) }
-    var adminUnlocked by remember { mutableStateOf(false) }
+    val isAdmin = FirebaseAuth.getInstance().currentUser?.email
+        ?.equals("ywldyld@gmail.com", ignoreCase = true) == true
 
     Column(
         modifier = Modifier.fillMaxSize().background(ThemeState.bg)
@@ -122,13 +123,12 @@ fun SettingsScreen(
         SettingsRow(Icons.Default.Info, ThemeState.subtext2, "אודות",
             "FilterTube — רק ערוצים מאושרים") { showAbout = true }
 
-        // מופיעים רק אחרי 7 לחיצות על "אודות" → גרסה (חשיפת מצב ניהול)
-        if (adminUnlocked) {
+        if (isAdmin) {
             SettingsRow(Icons.Default.Speed, Color(0xFF00BFA5), "אבחון מהירות/עצירות",
                 "מה איטי או נתקע בניגון — ושליחה אליי") { onOpenDiag() }
             SettingsRow(Icons.Default.AdminPanelSettings, Color(0xFFFFAA00), "ניהול ערוצים",
                 "הוספה/הסרה של ערוצים מהרשימה הלבנה") {
-                gateTarget = SettingsGateTarget.ADMIN
+                onOpenAdmin()
             }
         }
         // מרווח תחתון כדי שהפריט האחרון יהיה מעל סרגל הניווט הצף
@@ -143,7 +143,6 @@ fun SettingsScreen(
                 gateTarget = null
                 when (target) {
                     SettingsGateTarget.FILTER -> showFilter = true
-                    SettingsGateTarget.ADMIN -> onOpenAdmin()
                 }
             },
             onDismiss = { gateTarget = null },
@@ -175,10 +174,7 @@ fun SettingsScreen(
 
     if (showNotify) NotificationsDialog(settings = settings, onDismiss = { showNotify = false })
 
-    if (showAbout) AboutDialog(
-        onUnlock = { adminUnlocked = true },
-        onDismiss = { showAbout = false },
-    )
+    if (showAbout) AboutDialog(onDismiss = { showAbout = false })
 
     if (showCloud) CloudSyncDialog(settings = settings, onDismiss = { showCloud = false })
 }
@@ -588,9 +584,8 @@ private fun DisplayDialog(settings: SettingsStore, onDismiss: () -> Unit) {
 
 // ── אודות ────────────────────────────────────────────────────────────────
 @Composable
-private fun AboutDialog(onUnlock: () -> Unit, onDismiss: () -> Unit) {
+private fun AboutDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
-    var taps by remember { mutableStateOf(0) }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Info, null, tint = Color(0xFFFF0000)) },
@@ -600,15 +595,17 @@ private fun AboutDialog(onUnlock: () -> Unit, onDismiss: () -> Unit) {
                 Text("פלטפורמת וידאו מסוננת — מציגה אך ורק ערוצים מאושרים. כל התוכן מסונן לפי רמת הסינון שנבחרה.",
                     color = ThemeState.subtext2, fontSize = 13.sp, lineHeight = 18.sp)
                 Spacer(Modifier.height(10.dp))
-                // לחיצה 7 פעמים על שורת הגרסה חושפת את ניהול הערוצים (כמו "אפשרויות מפתח")
                 Text("גרסה ${BuildConfig.VERSION_NAME}",
-                    color = ThemeState.subtext, fontSize = 13.sp,
+                    color = ThemeState.subtext, fontSize = 13.sp)
+                Spacer(Modifier.height(8.dp))
+                Text("נוצרה על־ידי FilterPhone", color = ThemeState.text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text("אתר: filterphone.com", color = ThemeState.accent, fontSize = 13.sp,
                     modifier = Modifier.clickable {
-                        taps++
-                        if (taps >= 7) {
-                            onUnlock()
-                            android.widget.Toast.makeText(context, "מצב ניהול הופעל ✓", android.widget.Toast.LENGTH_SHORT).show()
-                        }
+                        runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://filterphone.com"))) }
+                    })
+                Text("תמיכה: ywldyld@gmail.com", color = ThemeState.subtext2, fontSize = 13.sp,
+                    modifier = Modifier.clickable {
+                        runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:ywldyld@gmail.com"))) }
                     })
             }
         },

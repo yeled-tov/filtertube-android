@@ -117,12 +117,12 @@ fun PremiumScreen(onBack: () -> Unit) {
             if (!paidActive) {
                 Spacer(Modifier.height(24.dp))
                 PlanCard(
-                    title = "שנתי", price = "$22.89", per = "לשנה",
+                    title = "שנתי", price = "$22.89 · ₪70", per = "לשנה",
                     note = "החיסכון הטוב ביותר", best = true, selected = plan == "year",
                 ) { plan = "year" }
                 Spacer(Modifier.height(11.dp))
                 PlanCard(
-                    title = "חודשי", price = "$3.27", per = "לחודש",
+                    title = "חודשי", price = "$3.27 · ₪10", per = "לחודש",
                     note = "ניתן לבטל בכל עת", best = false, selected = plan == "month",
                 ) { plan = "month" }
 
@@ -141,7 +141,7 @@ fun PremiumScreen(onBack: () -> Unit) {
                     enabled = !loading,
                 ) {
                     Text(
-                        if (plan == "year") "פנייה להסדרת תשלום · $22.89/שנה" else "פנייה להסדרת תשלום · $3.27/חודש",
+                        if (plan == "year") "פנייה להסדרת תשלום · $22.89 / ₪70 לשנה" else "פנייה להסדרת תשלום · $3.27 / ₪10 לחודש",
                         fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = Color.White,
                     )
                 }
@@ -258,10 +258,9 @@ fun PremiumScreen(onBack: () -> Unit) {
 
                         אשמח להסדיר את התשלום ולקבל אישור Premium.
                     """.trimIndent()
-                    val mailto = Uri.Builder().scheme("mailto").path(ManualPremiumRequests.SUPPORT_EMAIL)
-                        .appendQueryParameter("subject", subject)
-                        .appendQueryParameter("body", body)
-                        .build()
+                    val mailto = Uri.parse(
+                        "mailto:${ManualPremiumRequests.SUPPORT_EMAIL}?subject=${Uri.encode(subject)}&body=${Uri.encode(body)}",
+                    )
                     try {
                         context.startActivity(Intent(Intent.ACTION_SENDTO, mailto))
                         status = if (result.ok) "הבקשה נשמרה ונפתחה הודעת מייל מוכנה" else "נפתחה הודעת מייל; ${result.message}"
@@ -296,7 +295,7 @@ private fun ManualPaymentDialog(
         text = {
             Column {
                 Text(
-                    if (plan == "year") "מסלול שנתי · $22.89" else "מסלול חודשי · $3.27",
+                    if (plan == "year") "מסלול שנתי · $22.89 (₪70)" else "מסלול חודשי · $3.27 (₪10)",
                     color = ThemeState.subtext2, fontSize = 13.sp,
                 )
                 Spacer(Modifier.height(10.dp))

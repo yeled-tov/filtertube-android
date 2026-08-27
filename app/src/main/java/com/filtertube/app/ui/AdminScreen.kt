@@ -19,8 +19,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,17 +34,18 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // The administrator supplies the PAT for this screen session only.
-    var token by remember { mutableStateOf("") }
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
-    var sha by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
     var requests by remember { mutableStateOf<List<ChannelRequests.Req>>(emptyList()) }
     var premiumRequests by remember { mutableStateOf<List<ManualPremiumRequests.RequestItem>>(emptyList()) }
+    var premiumHistory by remember { mutableStateOf<List<ManualPremiumRequests.RequestItem>>(emptyList()) }
+    var channelHistory by remember { mutableStateOf<List<ChannelRequests.Req>>(emptyList()) }
     var premiumLoading by remember { mutableStateOf(false) }
+    var historyLoading by remember { mutableStateOf(false) }
 
     // שדות הוספה
     var newChannelInput by remember { mutableStateOf("") }
@@ -53,15 +54,14 @@ fun AdminScreen(onBack: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
 
     fun loadChannels() {
-        if (token.isBlank()) { status = "הזן GitHub token תחילה"; return }
         loading = true; status = ""
         scope.launch {
             try {
-                val (list, currentSha) = ChannelAdmin.fetchCurrent(token)
-                channels = list.sortedBy { it.name }
-                sha = currentSha
+                channels = ChannelRequests.listApproved().map {
+                    Channel(it.youtubeChannelId, it.name, it.category, it.gender)
+                }.sortedBy { it.name }
                 requests = ChannelRequests.list()
-                status = "${list.size} ערוצים נטענו · ${requests.size} בקשות ממתינות"
+                status = "${channels.size} ערוצים נטענו · ${requests.size} בקשות ממתינות"
             } catch (e: Exception) {
                 status = "שגיאה: ${e.message}"
             } finally { loading = false }
@@ -74,6 +74,7 @@ fun AdminScreen(onBack: () -> Unit) {
         scope.launch {
             try {
                 premiumRequests = ManualPremiumRequests.list()
+                if (premiumRequests.isNotEmpty()) postAdminNotification(context, premiumRequests.size)
                 status = "${premiumRequests.size} בקשות Premium ממתינות"
             } catch (e: Exception) {
                 status = "שגיאה בטעינת Premium: ${e.message}"
@@ -99,6 +100,22 @@ fun AdminScreen(onBack: () -> Unit) {
         }
     }
 
+    fun loadHistory() {
+        historyLoading = true
+        status = "טוען היסטוריית החלטות..."
+        scope.launch {
+            try {
+                premiumHistory = ManualPremiumRequests.list(history = true)
+                    .filter { it.status != "pending" }
+                channelHistory = ChannelRequests.list(history = true)
+                    .filter { it.status != "pending" }
+                status = "היסטוריה נטענה: ${premiumHistory.size + channelHistory.size} החלטות"
+            } catch (e: Exception) {
+                status = "שגיאה בטעינת היסטוריה: ${e.message}"
+            } finally { historyLoading = false }
+        }
+    }
+
     fun approveRequest(r: ChannelRequests.Req) {
         if (busy) return
         busy = true; status = "מאשר: ${r.name}..."
@@ -108,11 +125,9 @@ fun AdminScreen(onBack: () -> Unit) {
                 if (resolved == null) { status = "לא זוהה ערוץ מהקישור של ${r.name}"; busy = false; return@launch }
                 val (cid, nm) = resolved
                 if (channels.none { it.youtubeChannelId == cid }) {
-                    val updated = (channels + Channel(cid, nm, r.category, r.gender)).sortedBy { it.name }
-                    val ok = ChannelAdmin.commit(token, updated, sha, "Add channel (request): $nm")
-                    if (!ok) { status = "שגיאה בעדכון GitHub"; busy = false; return@launch }
-                    val (list, newSha) = ChannelAdmin.fetchCurrent(token)
-                    channels = list.sortedBy { it.name }; sha = newSha
+                    val ok = ChannelRequests.upsertApproved(ChannelRequests.Approved(cid, nm, r.category, r.gender))
+                    if (!ok) { status = "שגיאה בשמירת הערוץ"; busy = false; return@launch }
+                    channels = (channels + Channel(cid, nm, r.category, r.gender)).sortedBy { it.name }
                 }
                 if (!ChannelRequests.resolve(r.id, r.version, "approved")) {
                     status = "הערוץ נוסף, אך סימון הבקשה כמאושרת נכשל"
@@ -152,15 +167,13 @@ fun AdminScreen(onBack: () -> Unit) {
                 if (channels.any { it.youtubeChannelId == channelId }) {
                     status = "הערוץ כבר קיים"; busy = false; return@launch
                 }
-                val updated = (channels + Channel(channelId, name, newCategory, newGender)).sortedBy { it.name }
-                status = "מעדכן ב-GitHub..."
-                val ok = ChannelAdmin.commit(token, updated, sha, "Add channel: $name")
+                status = "שומר את הערוץ..."
+                val ok = ChannelRequests.upsertApproved(ChannelRequests.Approved(channelId, name, newCategory, newGender))
                 if (ok) {
-                    val (list, newSha) = ChannelAdmin.fetchCurrent(token)
-                    channels = list.sortedBy { it.name }; sha = newSha
+                    channels = (channels + Channel(channelId, name, newCategory, newGender)).sortedBy { it.name }
                     newChannelInput = ""
                     status = "נוסף: $name ✓"
-                } else status = "שגיאה בעדכון GitHub"
+                } else status = "שגיאה בשמירת הערוץ"
             } catch (e: Exception) {
                 status = "שגיאה: ${e.message}"
             } finally { busy = false }
@@ -172,17 +185,20 @@ fun AdminScreen(onBack: () -> Unit) {
         busy = true; status = "מסיר..."
         scope.launch {
             try {
-                val updated = channels.filter { it.youtubeChannelId != channel.youtubeChannelId }
-                val ok = ChannelAdmin.commit(token, updated, sha, "Remove channel: ${channel.name}")
+                val ok = ChannelRequests.removeApproved(channel.youtubeChannelId)
                 if (ok) {
-                    val (list, newSha) = ChannelAdmin.fetchCurrent(token)
-                    channels = list.sortedBy { it.name }; sha = newSha
+                    channels = channels.filter { it.youtubeChannelId != channel.youtubeChannelId }
                     status = "הוסר: ${channel.name} ✓"
-                } else status = "שגיאה בעדכון"
+                } else status = "שגיאה בהסרת הערוץ"
             } catch (e: Exception) {
                 status = "שגיאה: ${e.message}"
             } finally { busy = false }
         }
+    }
+
+    LaunchedEffect(Unit) {
+        loadPremiumRequests()
+        loadChannels()
     }
 
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
@@ -199,20 +215,6 @@ fun AdminScreen(onBack: () -> Unit) {
         LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             item {
                 Spacer(Modifier.height(12.dp))
-                // GitHub token
-                OutlinedTextField(
-                    value = token,
-                    onValueChange = { token = it },
-                    label = { Text("GitHub Token", color = ThemeState.subtext) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = ThemeState.text, unfocusedTextColor = ThemeState.text,
-                        focusedBorderColor = Color(0xFFFF0000), unfocusedBorderColor = Color(0xFF333333),
-                    ),
-                )
-                Spacer(Modifier.height(8.dp))
                 Button(onClick = { loadChannels() }, modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = ThemeState.divider)) {
                     Text(if (loading) "טוען..." else "טען ערוצים")
@@ -225,6 +227,11 @@ fun AdminScreen(onBack: () -> Unit) {
                 ) {
                     Text(if (premiumLoading) "טוען בקשות Premium..." else "טען בקשות Premium")
                 }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { loadHistory() }, modifier = Modifier.fillMaxWidth(),
+                    enabled = !historyLoading && !busy,
+                ) { Text(if (historyLoading) "טוען היסטוריה..." else "הצג היסטוריית אישורים ודחיות") }
 
                 if (status.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
@@ -261,6 +268,24 @@ fun AdminScreen(onBack: () -> Unit) {
                             }
                         }
                         Spacer(Modifier.height(8.dp))
+                    }
+                }
+
+                if (premiumHistory.isNotEmpty() || channelHistory.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    Text("היסטוריית החלטות", color = ThemeState.subtext2, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    premiumHistory.forEach { item ->
+                        Text(
+                            "${if (item.status == "approved") "✓ אושר" else "✕ נדחה"} · Premium · ${item.accountEmail} · ${item.requestedAt}",
+                            color = if (item.status == "approved") Color(0xFF66BB6A) else Color(0xFFEF5350), fontSize = 11.sp,
+                        )
+                    }
+                    channelHistory.forEach { item ->
+                        Text(
+                            "${if (item.status == "approved") "✓ אושר" else "✕ נדחה"} · ערוץ ${item.name} · ${item.requestedAt}",
+                            color = if (item.status == "approved") Color(0xFF66BB6A) else Color(0xFFEF5350), fontSize = 11.sp,
+                        )
                     }
                 }
 
@@ -389,5 +414,29 @@ fun AdminScreen(onBack: () -> Unit) {
                 HorizontalDivider(color = ThemeState.card)
             }
         }
+    }
+}
+
+private fun postAdminNotification(context: android.content.Context, count: Int) {
+    if (android.os.Build.VERSION.SDK_INT >= 26) {
+        val manager = context.getSystemService(android.app.NotificationManager::class.java)
+        manager.createNotificationChannel(
+            android.app.NotificationChannel(
+                "admin_requests", "בקשות מנהל", android.app.NotificationManager.IMPORTANCE_DEFAULT,
+            ),
+        )
+    }
+    val notification = if (android.os.Build.VERSION.SDK_INT >= 26) {
+        android.app.Notification.Builder(context, "admin_requests")
+    } else {
+        @Suppress("DEPRECATION")
+        android.app.Notification.Builder(context)
+    }.setSmallIcon(com.filtertube.app.R.drawable.ic_launcher_foreground)
+        .setContentTitle("בקשות חדשות ממתינות")
+        .setContentText("$count בקשות Premium ממתינות לאישור")
+        .setAutoCancel(true)
+        .build()
+    runCatching {
+        context.getSystemService(android.app.NotificationManager::class.java).notify(7001, notification)
     }
 }

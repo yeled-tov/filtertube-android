@@ -29,9 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -953,8 +951,8 @@ private fun OnVideoPlayerScreen(
 
                     // center transport
                     Row(modifier = Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
-                        GlassCircle(46.dp, { controller.seekTo((controller.currentPosition - 10_000).coerceAtLeast(0)) }) {
-                            Icon(Icons.Default.Replay10, "אחורה 10", tint = Color.White, modifier = Modifier.size(24.dp))
+                        GlassCircle(46.dp, { controller.seekToPrevious() }) {
+                            Icon(Icons.Default.SkipPrevious, "שיר קודם", tint = Color.White, modifier = Modifier.size(26.dp))
                         }
                         Spacer(Modifier.width(30.dp))
                         Box(
@@ -968,8 +966,8 @@ private fun OnVideoPlayerScreen(
                                 tint = Color.White, modifier = Modifier.size(34.dp))
                         }
                         Spacer(Modifier.width(30.dp))
-                        GlassCircle(46.dp, { controller.seekTo(controller.currentPosition + 10_000) }) {
-                            Icon(Icons.Default.Forward10, "קדימה 10", tint = Color.White, modifier = Modifier.size(24.dp))
+                        GlassCircle(46.dp, { controller.seekToNext() }) {
+                            Icon(Icons.Default.SkipNext, "שיר הבא", tint = Color.White, modifier = Modifier.size(26.dp))
                         }
                     }
 
