@@ -39,6 +39,7 @@ object ManualPremiumRequests {
         val plan: String,
         val priceUsd: String,
         val requestedAt: String,
+        val status: String = "pending",
     )
 
     suspend fun submit(
@@ -75,11 +76,11 @@ object ManualPremiumRequests {
         }.getOrElse { SubmitResult(false, "לא ניתן להתחבר לשרת כרגע") }
     }
 
-    suspend fun list(): List<RequestItem> = withContext(Dispatchers.IO) {
+    suspend fun list(history: Boolean = false): List<RequestItem> = withContext(Dispatchers.IO) {
         val session = verifiedSession(forceRefresh = true)
             ?: throw IOException("נדרשת התחברות לחשבון מנהל מאומת")
         val request = Request.Builder()
-            .url(LIST_API)
+            .url(if (history) "$LIST_API?history=1" else LIST_API)
             .header("Authorization", "Bearer ${session.token}")
             .get()
             .build()
@@ -107,6 +108,7 @@ object ManualPremiumRequests {
                             plan = item.optString("plan", "month"),
                             priceUsd = item.optString("priceUsd"),
                             requestedAt = item.optString("requestedAt"),
+                            status = item.optString("status", "pending"),
                         ),
                     )
                 }
