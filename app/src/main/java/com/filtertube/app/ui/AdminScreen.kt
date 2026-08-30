@@ -266,10 +266,10 @@ fun AdminScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(8.dp))
                     val s = snapshot.summary
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        DashboardStat("חשבונות", s.totalAccounts)
-                        DashboardStat("מאומתים", s.verifiedAccounts)
-                        DashboardStat("Premium", s.premiumAccounts)
-                        DashboardStat("ניסיון", s.trialAccounts)
+                        DashboardStat("חשבונות", s.totalAccounts, Modifier.weight(1f))
+                        DashboardStat("מאומתים", s.verifiedAccounts, Modifier.weight(1f))
+                        DashboardStat("Premium", s.premiumAccounts, Modifier.weight(1f))
+                        DashboardStat("ניסיון", s.trialAccounts, Modifier.weight(1f))
                     }
                     Spacer(Modifier.height(10.dp))
                     Text("לקוחות (${snapshot.clients.size})", color = ThemeState.subtext2, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -510,9 +510,9 @@ private fun postAdminNotification(context: android.content.Context, count: Int) 
 }
 
 @Composable
-private fun DashboardStat(label: String, value: Int) {
+private fun DashboardStat(label: String, value: Int, modifier: Modifier = Modifier) {
     Column(
-        modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(ThemeState.card).padding(vertical = 8.dp),
+        modifier = modifier.clip(RoundedCornerShape(10.dp)).background(ThemeState.card).padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(value.toString(), color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
