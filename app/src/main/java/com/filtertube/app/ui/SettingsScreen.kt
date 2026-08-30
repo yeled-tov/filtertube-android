@@ -656,6 +656,23 @@ private fun PlayerAudioDialog(settings: SettingsStore, onDismiss: () -> Unit) {
                 Spacer(Modifier.height(6.dp))
                 Text("חל על הסרטון הבא שתפעיל. מעל 720p נטען מעט יותר לאט.",
                     color = ThemeState.subtext, fontSize = 11.sp, lineHeight = 15.sp)
+
+                HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 10.dp))
+                var crossfade by remember { mutableStateOf(settings.crossfadeSeconds) }
+                Text("Crossfade", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text("מעבר הדרגתי בין שירים", color = ThemeState.subtext, fontSize = 11.sp)
+                Spacer(Modifier.height(8.dp))
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    listOf(0, 2, 4, 6, 8, 10, 12).forEach { seconds ->
+                        val selected = crossfade == seconds
+                        Box(
+                            modifier = Modifier.padding(end = 6.dp).clip(RoundedCornerShape(16.dp))
+                                .background(if (selected) ThemeState.accent else Color(0xFF2A2A2A))
+                                .clickable { crossfade = seconds; settings.crossfadeSeconds = seconds }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) { Text(if (seconds == 0) "כבוי" else "$seconds שנ׳", color = Color.White, fontSize = 12.sp) }
+                    }
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("סגור") } },

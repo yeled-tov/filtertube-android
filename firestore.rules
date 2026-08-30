@@ -67,6 +67,7 @@ service cloud.firestore {
           'channelId',
           'thumbnailUrl',
           'publishedAt',
+          'isShort',
         ])
         && video.id is string
         && video.id.size() > 0
@@ -79,7 +80,8 @@ service cloud.firestore {
         && video.channelId.size() <= 100
         && video.thumbnailUrl is string
         && video.thumbnailUrl.size() <= 2048
-        && video.publishedAt is int;
+        && video.publishedAt is int
+        && video.isShort is bool;
     }
 
     function validLibraryItem() {

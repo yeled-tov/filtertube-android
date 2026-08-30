@@ -213,6 +213,10 @@ export function normalizeCreemEvent(event, productIds) {
     object?.current_period_end_date
       || object?.subscription?.current_period_end_date,
   );
+  const currentPeriodStart = epochSeconds(
+    object?.current_period_start_date
+      || object?.subscription?.current_period_start_date,
+  );
   return {
     eventId: event.id,
     eventType: event.eventType,
@@ -224,6 +228,7 @@ export function normalizeCreemEvent(event, productIds) {
     status: entitlement.status,
     cancelAtPeriodEnd: event.eventType === "subscription.scheduled_cancel",
     currentPeriodEnd,
+    currentPeriodStart,
     lastInvoiceStatus: {
       "checkout.completed": "paid",
       "subscription.paid": "paid",

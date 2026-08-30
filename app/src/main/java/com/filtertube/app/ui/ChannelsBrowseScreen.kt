@@ -27,6 +27,7 @@ import coil.compose.AsyncImage
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.Channel
 import com.filtertube.app.data.ChannelAvatars
+import com.filtertube.app.data.ChannelAdmin
 import com.filtertube.app.data.ChannelRequests
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.LibraryStore
@@ -36,6 +37,7 @@ import com.filtertube.app.data.categoryLabels
 import com.filtertube.app.data.forLevel
 import com.filtertube.app.data.sortedCategories
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 /** רשימת כל הערוצים המאושרים (מקובצת לפי קטגוריה) עם כפתור "עקוב" לכל ערוץ. */
 @Composable
@@ -110,6 +112,23 @@ private fun ChannelRequestDialog(onDismiss: () -> Unit) {
     var desc by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var sent by remember { mutableStateOf(false) }
+    var resolving by remember { mutableStateOf(false) }
+    var autoUrl by remember { mutableStateOf("") }
+
+    // Resolve a human-readable channel name automatically, so users do not
+    // need to know what a YouTube URL or channel ID is.
+    LaunchedEffect(name) {
+        val query = name.trim()
+        if (query.length < 3 || query == autoUrl) return@LaunchedEffect
+        delay(550)
+        resolving = true
+        val resolved = ChannelAdmin.resolveChannel(query)
+        resolving = false
+        if (resolved != null && name.trim() == query) {
+            url = resolved.first
+            autoUrl = query
+        }
+    }
 
     val colors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = ThemeState.accent, unfocusedBorderColor = ThemeState.divider,
@@ -135,7 +154,7 @@ private fun ChannelRequestDialog(onDismiss: () -> Unit) {
                     OutlinedTextField(name, { name = it }, label = { Text("שם הערוץ") }, singleLine = true,
                         modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = colors)
                     Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(url, { url = it }, label = { Text("קישור / @handle / UC...") }, singleLine = true,
+                    OutlinedTextField(url, { if (it != autoUrl) autoUrl = ""; url = it }, label = { Text(if (resolving) "מאתר ערוץ…" else "קישור ערוץ (מתמלא אוטומטית)") }, singleLine = true,
                         modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = colors)
                     Spacer(Modifier.height(12.dp))
                     Text("קטגוריה", color = ThemeState.subtext, fontSize = 12.sp, fontWeight = FontWeight.Bold)

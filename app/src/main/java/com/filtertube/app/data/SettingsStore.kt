@@ -134,6 +134,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getInt(KEY_PLAYER_STYLE, 1)
         set(value) = prefs.edit().putInt(KEY_PLAYER_STYLE, value).apply()
 
+    /** Smooth volume transition between playlist items (0 = disabled). */
+    var crossfadeSeconds: Int
+        get() = prefs.getInt(KEY_CROSSFADE, 0).coerceIn(0, 12)
+        set(value) = prefs.edit().putInt(KEY_CROSSFADE, value.coerceIn(0, 12)).apply()
+
     /** מצב נושא: 0 = לפי המערכת, 1 = כהה, 2 = בהיר. */
     var themeMode: Int
         get() = prefs.getInt(KEY_THEME_MODE, 1)
@@ -504,6 +509,7 @@ class SettingsStore(context: Context) {
         private const val KEY_ACCENT2 = "accent2_color"
         private const val KEY_QUALITY = "preferred_quality"
         private const val KEY_PLAYER_STYLE = "player_style"
+        private const val KEY_CROSSFADE = "crossfade_seconds"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_ADMIN_UNLOCKED_LEGACY = "admin_unlocked"
         private const val KEY_NOTIFY = "new_video_notifications"

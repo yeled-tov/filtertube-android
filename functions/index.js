@@ -826,11 +826,16 @@ export const resolvePremiumRequest = onRequest({
       if (resolution === "approved") {
         const ownerUid = cleanSingleLine(snapshot.get("ownerUid"), 128);
         if (!ownerUid) throw new Error("Premium request has no owner");
+        const plan = normalizePlan(snapshot.get("plan")) || "month";
+        const grantedAt = Date.now();
+        const duration = plan === "year" ? 365 : 30;
         transaction.set(billingRef(ownerUid), {
           manualPremiumActive: true,
           manualPremiumGrantedAt: FieldValue.serverTimestamp(),
+          manualPremiumStartedAtMillis: grantedAt,
+          manualPremiumEndsAtMillis: grantedAt + duration * 24 * 60 * 60 * 1_000,
           manualPremiumGrantedFor: cleanSingleLine(snapshot.get("accountEmail"), 254),
-          manualPremiumPlan: normalizePlan(snapshot.get("plan")) || "month",
+          manualPremiumPlan: plan,
           manualPremiumSource: "manual_email",
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
@@ -904,6 +909,72 @@ export const registerNotificationToken = onRequest({
   } catch (error) {
     console.error("registerNotificationToken failed", error);
     return res.status(502).json({ ok: false, message: "לא ניתן לרשום התראות" });
+  }
+});
+
+// Administrator dashboard: account counts and a paginated-safe snapshot of
+// every Firebase user. Billing remains server-only; only redacted status is
+// returned to the Android admin screen.
+export const adminDashboard = onRequest({
+  ...STATUS_HTTP_OPTIONS,
+  maxInstances: 3,
+}, async (req, res) => {
+  if (handleCors(req, res)) return;
+  if (req.method !== "GET") return res.status(405).json({ ok: false, message: "GET required" });
+  const decoded = await requireUser(req, res, true);
+  if (!decoded) return;
+  if (!requireVerifiedEmail(decoded, res)) return;
+  if (!requireAdmin(decoded, res)) return;
+  try {
+    const users = [];
+    let pageToken;
+    do {
+      const page = await auth.listUsers(1_000, pageToken);
+      users.push(...page.users);
+      pageToken = page.pageToken;
+    } while (pageToken && users.length < 10_000);
+    const now = Date.now();
+    const clients = await Promise.all(users.map(async (user) => {
+      const billing = (await billingRef(user.uid).get()).data() || {};
+      const createdAt = Date.parse(user.metadata.creationTime) || now;
+      const trialEndsAt = createdAt + TRIAL_DURATION_MS;
+      const manualEndsAt = positiveMillis(billing.manualPremiumEndsAtMillis);
+      const active = (Boolean(billing.manualPremiumActive)
+        && (!manualEndsAt || manualEndsAt > now))
+        || (Boolean(billing.active) && (!billing.currentPeriodEnd
+          || Number(billing.currentPeriodEnd) * 1_000 > now));
+      const paidStart = positiveMillis(billing.manualPremiumStartedAtMillis)
+        || positiveMillis(billing.currentPeriodStart) * 1_000;
+      const paidEnd = manualEndsAt || positiveMillis(billing.currentPeriodEnd) * 1_000;
+      return {
+        uid: user.uid,
+        email: cleanSingleLine(user.email, 254),
+        emailVerified: Boolean(user.emailVerified),
+        disabled: Boolean(user.disabled),
+        createdAt: new Date(createdAt).toISOString(),
+        lastSignInAt: user.metadata.lastSignInTime || "",
+        premium: active,
+        manualPremium: Boolean(billing.manualPremiumActive),
+        trialActive: !active && now < trialEndsAt,
+        trialEndsAt: new Date(trialEndsAt).toISOString(),
+        plan: cleanSingleLine(billing.manualPremiumPlan || billing.plan, 20) || null,
+        subscriptionStartedAt: new Date(paidStart || createdAt).toISOString(),
+        subscriptionEndsAt: new Date(paidEnd || trialEndsAt).toISOString(),
+      };
+    }));
+    clients.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const summary = {
+      totalAccounts: clients.length,
+      verifiedAccounts: clients.filter((client) => client.emailVerified).length,
+      connectedAccounts: clients.filter((client) => client.lastSignInAt).length,
+      premiumAccounts: clients.filter((client) => client.premium).length,
+      trialAccounts: clients.filter((client) => client.trialActive).length,
+    };
+    res.set("Cache-Control", "private, no-store");
+    return res.json({ ok: true, summary, clients });
+  } catch (error) {
+    console.error("adminDashboard failed", error);
+    return res.status(502).json({ ok: false, message: "לא ניתן לטעון את דשבורד הלקוחות" });
   }
 });
 
@@ -1478,6 +1549,9 @@ async function applyCreemBillingEvent(uid, update) {
       ...(update.productId ? { creemProductId: update.productId } : {}),
       ...(update.currentPeriodEnd !== null
         ? { currentPeriodEnd: update.currentPeriodEnd }
+        : {}),
+      ...(update.currentPeriodStart !== null
+        ? { currentPeriodStart: update.currentPeriodStart }
         : {}),
       ...(update.lastInvoiceStatus
         ? { lastInvoiceStatus: update.lastInvoiceStatus }

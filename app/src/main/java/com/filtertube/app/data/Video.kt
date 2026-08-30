@@ -14,6 +14,7 @@ data class Video(
     val channelId: String,
     val thumbnailUrl: String,
     val publishedAt: Long,           // milliseconds since epoch
+    val isShort: Boolean = false,    // Shorts stay in the dedicated Shorts tab
 ) {
     /** "לפני 3 שעות", "לפני 2 ימים", וכו' */
     fun timeAgoHe(): String {

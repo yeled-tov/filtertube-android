@@ -481,6 +481,7 @@ object CloudSync {
         "channelId" to video.channelId.take(100),
         "thumbnailUrl" to video.thumbnailUrl.take(2_048),
         "publishedAt" to video.publishedAt,
+        "isShort" to video.isShort,
     )
 
     /**
@@ -494,6 +495,7 @@ object CloudSync {
         "channelId" to video.channelId.take(100),
         "thumbnailUrl" to video.thumbnailUrl.take(384),
         "publishedAt" to video.publishedAt,
+        "isShort" to video.isShort,
     )
 
     private fun videoFromMap(data: Map<*, *>?): Video? {
@@ -506,6 +508,7 @@ object CloudSync {
             channelId = data["channelId"] as? String ?: "",
             thumbnailUrl = data["thumbnailUrl"] as? String ?: "",
             publishedAt = (data["publishedAt"] as? Number)?.toLong() ?: 0L,
+            isShort = data["isShort"] as? Boolean ?: false,
         )
     }
 

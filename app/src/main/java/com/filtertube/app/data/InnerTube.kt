@@ -282,7 +282,11 @@ object InnerTube {
                 ?: textOf(vr.optJSONObject("shortBylineText")) ?: ""
             val channelId = bylineChannelId(vr) ?: ""
             val thumb = "https://i.ytimg.com/vi/$id/hqdefault.jpg"
-            out[id] = Video(id, title, channel, channelId, thumb, System.currentTimeMillis())
+            // The regular player no longer consumes InnerTube related results;
+            // keep this parser conservative for callers that still use it.
+            if (!vr.optString("navigationEndpoint").contains("shorts", ignoreCase = true)) {
+                out[id] = Video(id, title, channel, channelId, thumb, System.currentTimeMillis())
+            }
         }
         return out.values.toList()
     }

@@ -12,6 +12,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.channel.ChannelInfo
+import org.schabi.newpipe.extractor.search.SearchInfo
 import java.util.concurrent.TimeUnit
 
 /**
@@ -35,8 +36,21 @@ object ChannelAdmin {
      * מזהה ערוץ YouTube מקישור/handle. מחזיר (channelId, name) או null.
      */
     suspend fun resolveChannel(input: String): Pair<String, String>? = withContext(Dispatchers.IO) {
-        val url = normalizeChannelUrl(input.trim())
         try {
+            val raw = input.trim()
+            // A plain name (for example "עומר אדם") is resolved through
+            // NewPipe's channel search; URLs, handles and UC IDs stay direct.
+            val url = if (raw.startsWith("http") || raw.startsWith("UC") || raw.startsWith("@")) {
+                normalizeChannelUrl(raw)
+            } else {
+                val query = ServiceList.YouTube.searchQHFactory.fromQuery(raw, listOf("channels"), "")
+                val info = SearchInfo.getInfo(ServiceList.YouTube, query)
+                val candidate = info.relatedItems.firstOrNull { item ->
+                    val u = item.url ?: ""
+                    u.contains("youtube.com/channel/") || u.contains("youtube.com/@")
+                } ?: info.relatedItems.firstOrNull()
+                candidate?.url ?: return@withContext null
+            }
             val info = ChannelInfo.getInfo(ServiceList.YouTube, url)
             val channelId = Regex("/channel/(UC[\\w-]+)").find(info.url)?.groupValues?.get(1)
                 ?: Regex("(UC[\\w-]{20,})").find(info.id ?: "")?.groupValues?.get(1)

@@ -47,12 +47,13 @@ object YouTubeRepository {
                 }
             }
             .awaitAll()
-        allLists.flatten().sortedByDescending { it.publishedAt }
+        allLists.flatten().filterNot { it.isShort }.sortedByDescending { it.publishedAt }
     }
 
     /** סרטוני ערוץ בודד לפי מזהה — להצגת תוכן של מנוי שנבחר. */
     suspend fun fetchChannelVideos(channelId: String, channelName: String): List<Video> =
         fetchChannelFeed(Channel(channelId, channelName, "general"))
+            .filterNot { it.isShort }
             .sortedByDescending { it.publishedAt }
 
     private suspend fun fetchChannelFeed(channel: Channel): List<Video> = withContext(Dispatchers.IO) {
@@ -198,6 +199,7 @@ object YouTubeRepository {
             channelId = channelId,
             thumbnailUrl = thumb,
             publishedAt = System.currentTimeMillis(), // search/shorts אין תאריך מדויק
+            isShort = item.url?.contains("/shorts/", ignoreCase = true) == true,
         )
     }
 

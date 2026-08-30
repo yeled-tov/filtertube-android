@@ -201,12 +201,13 @@ object Playback {
         // משתמשים בפיד המטמון כדי לא לעשות רשת נוספת לבניית רשימת המועמדים.
         val feed = runCatching { com.filtertube.app.data.FeedCache.loadFeed(context) }.getOrNull().orEmpty()
         val currentCat = catById[data.channelId]
-        val related = runCatching { com.filtertube.app.data.InnerTube.related(video.id) }.getOrNull().orEmpty()
-        val relatedApproved = related.filter { it.channelId in allowed && it.id != video.id }
+        // Keep the regular queue separate from Shorts. Shorts are available only
+        // from the dedicated Shorts tab and are never inserted into radio play.
+        val relatedApproved = emptyList<Video>()
         val sameCategory = feed
-            .filter { currentCat != null && catById[it.channelId] == currentCat && it.channelId != data.channelId }
+            .filter { !it.isShort && currentCat != null && catById[it.channelId] == currentCat && it.channelId != data.channelId }
             .shuffled()
-        val sameChannel = feed.filter { it.channelId == data.channelId && it.id != video.id }
+        val sameChannel = feed.filter { !it.isShort && it.channelId == data.channelId && it.id != video.id }
         // משלבים סרטונים מאותו ערוץ (אותו אמן — הכי קשור) עם סרטונים מאותה קטגוריה
         // מערוצים אחרים (גיוון) לסירוגין, כדי שיהיה גם קשור וגם מגוון — לא רק אותו ערוץ.
         val mixed = buildList {

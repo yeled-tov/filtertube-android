@@ -2,6 +2,9 @@ package com.filtertube.app.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
@@ -49,6 +52,35 @@ class PlaybackService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
+
+        val fadeHandler = Handler(Looper.getMainLooper())
+        var fadeTask: Runnable? = null
+        fun fadeIntoNextItem() {
+            val seconds = com.filtertube.app.data.SettingsStore(this).crossfadeSeconds
+            fadeTask?.let(fadeHandler::removeCallbacks)
+            if (seconds <= 0) {
+                player.volume = 1f
+                return
+            }
+            val duration = seconds * 1_000L
+            val started = SystemClock.elapsedRealtime()
+            player.volume = 0f
+            val task = object : Runnable {
+                override fun run() {
+                    val progress = ((SystemClock.elapsedRealtime() - started).toFloat() / duration).coerceIn(0f, 1f)
+                    player.volume = progress
+                    if (progress < 1f) fadeHandler.postDelayed(this, 50L)
+                }
+            }
+            fadeTask = task
+            fadeHandler.post(task)
+        }
+
+        player.addListener(object : androidx.media3.common.Player.Listener {
+            override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
+                fadeIntoNextItem()
+            }
+        })
 
         // אבחון: מתעד עצירות/באפר באמצע הניגון (משך + שנייה) ושגיאות נגן — כדי לראות
         // בדיוק מה ה"מתנגן ואז נעצר" במקום לנחש.

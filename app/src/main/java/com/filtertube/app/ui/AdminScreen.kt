@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import com.filtertube.app.data.Channel
 import com.filtertube.app.data.ChannelAdmin
 import com.filtertube.app.data.ChannelRequests
+import com.filtertube.app.data.AdminDashboard
 import com.filtertube.app.data.ManualPremiumRequests
 import com.filtertube.app.data.categoryLabels
 import kotlinx.coroutines.launch
@@ -46,6 +47,8 @@ fun AdminScreen(onBack: () -> Unit) {
     var channelHistory by remember { mutableStateOf<List<ChannelRequests.Req>>(emptyList()) }
     var premiumLoading by remember { mutableStateOf(false) }
     var historyLoading by remember { mutableStateOf(false) }
+    var dashboard by remember { mutableStateOf<AdminDashboard.Snapshot?>(null) }
+    var dashboardLoading by remember { mutableStateOf(false) }
 
     // שדות הוספה
     var newChannelInput by remember { mutableStateOf("") }
@@ -113,6 +116,19 @@ fun AdminScreen(onBack: () -> Unit) {
             } catch (e: Exception) {
                 status = "שגיאה בטעינת היסטוריה: ${e.message}"
             } finally { historyLoading = false }
+        }
+    }
+
+    fun loadDashboard() {
+        dashboardLoading = true
+        status = "טוען דשבורד לקוחות..."
+        scope.launch {
+            try {
+                dashboard = AdminDashboard.load()
+                status = "דשבורד נטען: ${dashboard?.summary?.totalAccounts ?: 0} חשבונות"
+            } catch (e: Exception) {
+                status = "שגיאה בדשבורד: ${e.message}"
+            } finally { dashboardLoading = false }
         }
     }
 
@@ -232,10 +248,62 @@ fun AdminScreen(onBack: () -> Unit) {
                     onClick = { loadHistory() }, modifier = Modifier.fillMaxWidth(),
                     enabled = !historyLoading && !busy,
                 ) { Text(if (historyLoading) "טוען היסטוריה..." else "הצג היסטוריית אישורים ודחיות") }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { loadDashboard() }, modifier = Modifier.fillMaxWidth(),
+                    enabled = !dashboardLoading && !busy,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
+                ) { Text(if (dashboardLoading) "טוען לקוחות..." else "דשבורד לקוחות ומנויים") }
 
                 if (status.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     Text(status, color = Color(0xFFFFAA00), fontSize = 12.sp)
+                }
+
+                dashboard?.let { snapshot ->
+                    Spacer(Modifier.height(16.dp))
+                    Text("דשבורד לקוחות", color = Color(0xFF90CAF9), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    val s = snapshot.summary
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        DashboardStat("חשבונות", s.totalAccounts)
+                        DashboardStat("מאומתים", s.verifiedAccounts)
+                        DashboardStat("Premium", s.premiumAccounts)
+                        DashboardStat("ניסיון", s.trialAccounts)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text("לקוחות (${snapshot.clients.size})", color = ThemeState.subtext2, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    snapshot.clients.forEach { client ->
+                        Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(client.email.ifBlank { client.uid }, color = ThemeState.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                Text(
+                                    when {
+                                        client.premium -> "Premium"
+                                        client.trialActive -> "ניסיון"
+                                        else -> "ללא מנוי"
+                                    },
+                                    color = if (client.premium) Color(0xFF81C784) else ThemeState.subtext,
+                                    fontSize = 11.sp,
+                                )
+                            }
+                            Text(
+                                "${if (client.verified) "✓ מאומת" else "לא מאומת"} · ${if (client.lastSignInAt.isBlank()) "טרם התחבר" else "מחובר בעבר"}",
+                                color = ThemeState.subtext2, fontSize = 10.sp,
+                            )
+                            if (client.premium || client.trialActive) {
+                                Text(
+                                    "מסלול: ${when (client.plan) { "year" -> "שנתי"; "month" -> "חודשי"; else -> if (client.trialActive) "ניסיון" else "לא ידוע" }}",
+                                    color = ThemeState.subtext, fontSize = 10.sp,
+                                )
+                                Text(
+                                    "התחלה: ${formatDashboardDate(client.subscriptionStartedAt)} · סיום: ${formatDashboardDate(if (client.premium) client.subscriptionEndsAt else client.subscriptionEndsAt)}",
+                                    color = ThemeState.subtext, fontSize = 10.sp,
+                                )
+                            }
+                        }
+                        HorizontalDivider(color = ThemeState.card)
+                    }
                 }
 
                 if (premiumRequests.isNotEmpty()) {
@@ -440,3 +508,17 @@ private fun postAdminNotification(context: android.content.Context, count: Int) 
         context.getSystemService(android.app.NotificationManager::class.java).notify(7001, notification)
     }
 }
+
+@Composable
+private fun DashboardStat(label: String, value: Int) {
+    Column(
+        modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(ThemeState.card).padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(value.toString(), color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = ThemeState.subtext, fontSize = 10.sp)
+    }
+}
+
+private fun formatDashboardDate(value: String): String =
+    value.takeIf { it.isNotBlank() }?.replace("T", " ")?.take(16) ?: "—"

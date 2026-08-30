@@ -1,10 +1,8 @@
 package com.filtertube.app.data
 
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
@@ -48,23 +46,10 @@ object StreamRepository {
 
     suspend fun getStream(videoId: String): StreamData = coroutineScope {
     val t0 = System.currentTimeMillis()
-    
-    // מפעיל את NewPipe ואת InnerTube במקביל באמת כדי לא לבזבז זמן
-    val newpipeDeferred = async(Dispatchers.IO) { runCatching { extractViaNewPipe(videoId) }.getOrNull() }
-    val innerDeferred = async(Dispatchers.IO) { 
-        withTimeoutOrNull(4500) { runCatching { InnerTube.player(videoId) }.getOrNull() } 
-    }
-    
-    // בודק קודם כל אם InnerTube הצליח
-    val inner = innerDeferred.await()
-    if (inner != null) {
-        newpipeDeferred.cancel() // אם InnerTube הצליח, נבטל את NewPipe כדי לחסוך משאבים
-        Diagnostics.log("טעינה $videoId: InnerTube ${System.currentTimeMillis() - t0}ms · ${trackSummary(inner)}")
-        return@coroutineScope inner
-    }
-    
-    // אם InnerTube נכשל, אנחנו לוקחים מיד את מה ש-NewPipe כבר חילץ בלי לחכות סתם
-    val np = newpipeDeferred.await()
+    // NewPipe is the reliable path on current Android devices. The old VR/iOS
+    // InnerTube clients consistently returned LOGIN_REQUIRED/400 and only
+    // added latency before falling back, so they are deliberately not called.
+    val np = runCatching { extractViaNewPipe(videoId) }.getOrNull()
     Diagnostics.log(
         "טעינה $videoId: " +
             if (np != null) "NewPipe ${System.currentTimeMillis() - t0}ms · ${trackSummary(np)}"
