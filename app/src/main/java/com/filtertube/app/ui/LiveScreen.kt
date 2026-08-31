@@ -10,6 +10,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.ChannelsRepository
-import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeDataApi
@@ -40,7 +40,6 @@ fun LiveScreen(onVideoClick: (Video) -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settings = remember { SettingsStore(context) }
-    val store = remember { LibraryStore(context) }
 
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<Video>>(emptyList()) }
@@ -51,16 +50,23 @@ fun LiveScreen(onVideoClick: (Video) -> Unit, onBack: () -> Unit) {
     var autoLive by remember { mutableStateOf<List<Video>>(emptyList()) }
     var autoLoading by remember { mutableStateOf(true) }
 
-    LaunchedEffect(Unit) {
+    fun refreshLive(force: Boolean = false) {
         autoLoading = true
-        runCatching {
-            val approved = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
-            val subs = approved.filter { store.isSubscribed(it.youtubeChannelId) }
-            // עדיפות לערוצים שאתה עוקב אחריהם; אם אין — בודקים תת-קבוצה מהמאושרים (חיסכון במכסה)
-            val toCheck = (if (subs.isNotEmpty()) subs else approved).take(20)
-            autoLive = YouTubeDataApi.liveFromChannels(toCheck)
+        scope.launch {
+            try {
+                val approved = ChannelsRepository.getChannels(context)
+                    .forLevel(settings.filterLevel, settings.userGender)
+                autoLive = YouTubeDataApi.liveFromChannels(approved, force)
+            } catch (e: Exception) {
+                error = e.message ?: "לא ניתן לעדכן שידורים חיים כרגע"
+            } finally {
+                autoLoading = false
+            }
         }
-        autoLoading = false
+    }
+
+    LaunchedEffect(Unit) {
+        refreshLive()
     }
 
     fun runSearch() {
@@ -99,6 +105,16 @@ fun LiveScreen(onVideoClick: (Video) -> Unit, onBack: () -> Unit) {
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { runSearch() }),
             )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("שידורים פעילים מכל הערוצים המאושרים", color = ThemeState.subtext, fontSize = 12.sp,
+                    modifier = Modifier.weight(1f))
+                IconButton(onClick = { refreshLive(force = true) }, enabled = !autoLoading) {
+                    Icon(Icons.Default.Refresh, "רענן שידורים חיים", tint = ThemeState.accent)
+                }
+            }
         }
 
         when {
@@ -133,7 +149,7 @@ fun LiveScreen(onVideoClick: (Video) -> Unit, onBack: () -> Unit) {
                     Icon(Icons.Default.LiveTv, null, tint = ThemeState.subtext, modifier = Modifier.size(46.dp))
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "אין כרגע שידורים חיים מהערוצים שאתה עוקב אחריהם.\nאפשר לחפש שידור חי למעלה.",
+                        "אין כרגע שידורים חיים פעילים בערוצים המאושרים.\nלחץ על רענון כדי לבדוק שוב.",
                         color = ThemeState.subtext, fontSize = 13.sp, lineHeight = 19.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )

@@ -61,13 +61,17 @@ object YouTubeDataApi {
     // מטמון לשידורים חיים — חיפוש לפי ערוץ יקר במכסה (100 יח'), אז שומרים ל-5 דק'.
     @Volatile private var liveCacheTime = 0L
     @Volatile private var liveCache: List<Video> = emptyList()
+    @Volatile private var liveCacheKey = ""
 
     /**
      * שידורים חיים *פעילים כעת* מתוך [channels] (בדיקה לכל ערוץ, מקבילות מוגבלת).
      * יקר במכסה — המתקשר אמור להעביר רשימה מצומצמת (למשל ערוצים שאתה עוקב אחריהם).
      */
     suspend fun liveFromChannels(channels: List<Channel>, force: Boolean = false): List<Video> = withContext(Dispatchers.IO) {
-        if (!force && System.currentTimeMillis() - liveCacheTime < 5 * 60_000L) return@withContext liveCache
+        val cacheKey = channels.map { it.youtubeChannelId }.sorted().joinToString(",")
+        if (!force && cacheKey == liveCacheKey && System.currentTimeMillis() - liveCacheTime < 5 * 60_000L) {
+            return@withContext liveCache
+        }
         val out = Collections.synchronizedList(mutableListOf<Video>())
         val sem = Semaphore(5)
         coroutineScope {
@@ -96,7 +100,9 @@ object YouTubeDataApi {
                 }
             }.awaitAll()
         }
-        liveCache = out.toList(); liveCacheTime = System.currentTimeMillis()
+        liveCache = out.distinctBy { it.id }
+        liveCacheKey = cacheKey
+        liveCacheTime = System.currentTimeMillis()
         liveCache
     }
 }

@@ -4,7 +4,6 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
@@ -26,59 +25,162 @@ import com.filtertube.app.MainActivity
 class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
+    private val crossfadeHandler = Handler(Looper.getMainLooper())
+    private var crossfadeTask: Runnable? = null
+    private var incomingPlayer: ExoPlayer? = null
 
     override fun onCreate() {
         super.onCreate()
         // באפר אגרסיבי נגד עצירות: זרמי יוטיוב נחנקים מדי פעם (CDN throttling), אז
         // בונים מאגר גדול קדימה (עד 2 דקות) כדי לגשר על נפילות זמניות בהורדה. התחלה
         // עדיין מהירה (~1.5ש'), ואחרי עצירה בונים כרית של 5ש' לפני שממשיכים שלא ייתקע שוב.
-        val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                /* minBufferMs = */ 30_000,
-                /* maxBufferMs = */ 120_000,
-                /* bufferForPlaybackMs = */ 1_500,
-                /* bufferForPlaybackAfterRebufferMs = */ 5_000,
-            )
-            .build()
-        val player = ExoPlayer.Builder(this)
+        fun createPlayer(handleAudioFocus: Boolean = true) = ExoPlayer.Builder(this)
             .setMediaSourceFactory(FilterTubeMediaSourceFactory(this))
-            .setLoadControl(loadControl)
+            .setLoadControl(
+                DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(
+                        /* minBufferMs = */ 30_000,
+                        /* maxBufferMs = */ 120_000,
+                        /* bufferForPlaybackMs = */ 1_500,
+                        /* bufferForPlaybackAfterRebufferMs = */ 5_000,
+                    )
+                    .build(),
+            )
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                     .setUsage(C.USAGE_MEDIA)
                     .build(),
-                /* handleAudioFocus = */ true,
+                handleAudioFocus,
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
 
-        val fadeHandler = Handler(Looper.getMainLooper())
-        var fadeTask: Runnable? = null
-        fun fadeIntoNextItem() {
-            val seconds = com.filtertube.app.data.SettingsStore(this).crossfadeSeconds
-            fadeTask?.let(fadeHandler::removeCallbacks)
-            if (seconds <= 0) {
-                player.volume = 1f
-                return
-            }
-            val duration = seconds * 1_000L
-            val started = SystemClock.elapsedRealtime()
-            player.volume = 0f
-            val task = object : Runnable {
-                override fun run() {
-                    val progress = ((SystemClock.elapsedRealtime() - started).toFloat() / duration).coerceIn(0f, 1f)
-                    player.volume = progress
-                    if (progress < 1f) fadeHandler.postDelayed(this, 50L)
-                }
-            }
-            fadeTask = task
-            fadeHandler.post(task)
+        val player = createPlayer()
+        val settings = com.filtertube.app.data.SettingsStore(this)
+        var fadingFromIndex = -1
+        var fadingToIndex = -1
+        var handoffInProgress = false
+
+        fun cancelCrossfade() {
+            crossfadeTask?.let(crossfadeHandler::removeCallbacks)
+            crossfadeTask = null
+            incomingPlayer?.release()
+            incomingPlayer = null
+            fadingFromIndex = -1
+            fadingToIndex = -1
+            handoffInProgress = false
+            player.volume = 1f
+            player.setPauseAtEndOfMediaItems(false)
         }
 
+        fun completeHandoff() {
+            val incoming = incomingPlayer ?: run {
+                cancelCrossfade()
+                return
+            }
+            val targetIndex = fadingToIndex
+            if (targetIndex !in 0 until player.mediaItemCount) {
+                cancelCrossfade()
+                return
+            }
+            // The incoming player is already audible.  Seek the session player to exactly
+            // the same point, wait a short moment for its buffer, then swap outputs.
+            handoffInProgress = true
+            player.setPauseAtEndOfMediaItems(false)
+            player.volume = 0f
+            player.seekTo(targetIndex, incoming.currentPosition)
+            player.play()
+            crossfadeHandler.postDelayed({
+                if (!handoffInProgress) return@postDelayed
+                player.volume = 1f
+                incoming.release()
+                incomingPlayer = null
+                fadingFromIndex = -1
+                fadingToIndex = -1
+                handoffInProgress = false
+            }, 180L)
+        }
+
+        fun startCrossfade() {
+            val sourceIndex = player.currentMediaItemIndex
+            val targetIndex = sourceIndex + 1
+            val seconds = settings.crossfadeSeconds
+            if (targetIndex !in 0 until player.mediaItemCount) return
+            val current = player.currentMediaItem
+            val next = player.getMediaItemAt(targetIndex)
+            val audioOnly = current?.requestMetadata?.extras
+                ?.getBoolean(Playback.EXTRA_IS_AUDIO) == true
+            val nextAudioOnly = next.requestMetadata.extras
+                ?.getBoolean(Playback.EXTRA_IS_AUDIO) == true
+            if (seconds <= 0 || !audioOnly || !nextAudioOnly) return
+            if (incomingPlayer != null || handoffInProgress) return
+
+            // This player overlaps the session player, so it must not steal audio focus.
+            val incoming = createPlayer(handleAudioFocus = false).apply {
+                volume = 0f
+                setMediaItem(next)
+                prepare()
+                play()
+            }
+            incomingPlayer = incoming
+            fadingFromIndex = sourceIndex
+            fadingToIndex = targetIndex
+            // Keep the original item selected until it has completely faded out.
+            player.setPauseAtEndOfMediaItems(true)
+            val durationMs = seconds * 1_000L
+
+            fun fadeWhenReady() {
+                if (!incoming.isPlaying) {
+                    crossfadeHandler.postDelayed({ if (incomingPlayer === incoming) fadeWhenReady() }, 40L)
+                    return
+                }
+                val startedAt = android.os.SystemClock.elapsedRealtime()
+                val task = object : Runnable {
+                    override fun run() {
+                        if (incomingPlayer !== incoming || player.currentMediaItemIndex != sourceIndex) return
+                        val fraction = ((android.os.SystemClock.elapsedRealtime() - startedAt).toFloat() / durationMs)
+                            .coerceIn(0f, 1f)
+                        player.volume = 1f - fraction
+                        incoming.volume = fraction
+                        if (fraction < 1f) crossfadeHandler.postDelayed(this, 25L)
+                    }
+                }
+                crossfadeTask = task
+                crossfadeHandler.post(task)
+            }
+            fadeWhenReady()
+        }
+
+        val crossfadeWatch = object : Runnable {
+            override fun run() {
+                val duration = player.duration
+                val seconds = settings.crossfadeSeconds
+                val canFade = seconds > 0 && player.isPlaying && player.hasNextMediaItem() && duration > 0
+                if (canFade && incomingPlayer == null && !handoffInProgress &&
+                    player.currentPosition >= duration - seconds * 1_000L
+                ) startCrossfade()
+                if (!canFade && incomingPlayer == null) player.setPauseAtEndOfMediaItems(false)
+                crossfadeHandler.postDelayed(this, 120L)
+            }
+        }
+        crossfadeHandler.post(crossfadeWatch)
+
         player.addListener(object : androidx.media3.common.Player.Listener {
-            override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
-                fadeIntoNextItem()
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == androidx.media3.common.Player.STATE_ENDED && incomingPlayer != null) {
+                    completeHandoff()
+                }
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: androidx.media3.common.Player.PositionInfo,
+                newPosition: androidx.media3.common.Player.PositionInfo,
+                reason: Int,
+            ) {
+                if (!handoffInProgress && reason != androidx.media3.common.Player.DISCONTINUITY_REASON_AUTO_TRANSITION) {
+                    cancelCrossfade()
+                }
             }
         })
 
@@ -129,6 +231,10 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        crossfadeTask?.let(crossfadeHandler::removeCallbacks)
+        crossfadeHandler.removeCallbacksAndMessages(null)
+        incomingPlayer?.release()
+        incomingPlayer = null
         mediaSession?.run {
             player.release()
             release()

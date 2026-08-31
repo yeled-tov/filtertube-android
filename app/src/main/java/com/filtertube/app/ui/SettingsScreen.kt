@@ -96,8 +96,8 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(8.dp))
         SettingsSectionHeader("חיבור ואימות")
-        SettingsRow(Icons.Default.AccountCircle, Color(0xFFFF0000), "חיבור ל-YouTube",
-            "סנכרון לייקים, היסטוריה ומנויים עם החשבון שלך") { onOpenYoutubeLogin() }
+        SettingsRow(Icons.Default.AccountCircle, Color(0xFFFF0000), "חיבור ל-YouTube (אופציונלי)",
+            "רק לסנכרון לייקים, היסטוריה ומנויים ב-YouTube — לא החשבון של FilterTube") { onOpenYoutubeLogin() }
         SettingsRow(Icons.Default.AccountCircle, Color(0xFF2563EB), "סנכרון ענן",
             if (settings.cloudEmail.isNotBlank()) "מחובר: ${settings.cloudEmail}" else "החשבון נדרש בכניסה לאפליקציה") { showCloud = true }
         SettingsRow(Icons.Default.WorkspacePremium, Color(0xFFFFC107), "FilterTube Premium",

@@ -69,11 +69,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -287,15 +289,17 @@ fun PlayerScreen(
 
         // פס התקדמות
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Slider(
-                value = ui.position.toFloat().coerceIn(0f, ui.duration.toFloat().coerceAtLeast(0f)),
-                onValueChange = { controller.seekTo(it.toLong()) },
-                valueRange = 0f..ui.duration.toFloat().coerceAtLeast(1f),
-                colors = SliderDefaults.colors(
-                    thumbColor = ThemeState.accent, activeTrackColor = ThemeState.accent,
-                    inactiveTrackColor = Color(0x55FFFFFF),
-                ),
-            )
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Slider(
+                    value = ui.position.toFloat().coerceIn(0f, ui.duration.toFloat().coerceAtLeast(0f)),
+                    onValueChange = { controller.seekTo(it.toLong()) },
+                    valueRange = 0f..ui.duration.toFloat().coerceAtLeast(1f),
+                    colors = SliderDefaults.colors(
+                        thumbColor = ThemeState.accent, activeTrackColor = ThemeState.accent,
+                        inactiveTrackColor = Color(0x55FFFFFF),
+                    ),
+                )
+            }
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
                 Text(fmtTime(ui.position), color = ThemeState.subtext2, fontSize = 11.sp)
                 Spacer(Modifier.weight(1f))
@@ -540,14 +544,16 @@ private fun FullscreenVideo(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(fmtTime(ui.position), color = ThemeState.text, fontSize = 11.sp)
-                    Slider(
-                        value = ui.position.toFloat().coerceIn(0f, ui.duration.toFloat().coerceAtLeast(0f)),
-                        onValueChange = { controller.seekTo(it.toLong()) },
-                        valueRange = 0f..ui.duration.toFloat().coerceAtLeast(1f),
-                        colors = SliderDefaults.colors(thumbColor = ThemeState.accent,
-                            activeTrackColor = ThemeState.accent, inactiveTrackColor = Color(0x55FFFFFF)),
-                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                    )
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Slider(
+                            value = ui.position.toFloat().coerceIn(0f, ui.duration.toFloat().coerceAtLeast(0f)),
+                            onValueChange = { controller.seekTo(it.toLong()) },
+                            valueRange = 0f..ui.duration.toFloat().coerceAtLeast(1f),
+                            colors = SliderDefaults.colors(thumbColor = ThemeState.accent,
+                                activeTrackColor = ThemeState.accent, inactiveTrackColor = Color(0x55FFFFFF)),
+                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                        )
+                    }
                     Text(fmtTime(ui.duration), color = ThemeState.text, fontSize = 11.sp)
                     IconButton(onClick = onExit) { Icon(Icons.Default.FullscreenExit, "צא ממסך מלא", tint = ThemeState.text) }
                 }
@@ -923,7 +929,7 @@ private fun OnVideoPlayerScreen(
             // פס דק כשהבקרים מוסתרים
             if (!controlsVisible) {
                 val frac = if (ui.duration > 0) (ui.position.toFloat() / ui.duration).coerceIn(0f, 1f) else 0f
-                Box(modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth(frac).height(3.dp).background(brandBrush()))
+                Box(modifier = Modifier.align(Alignment.BottomLeft).fillMaxWidth(frac).height(3.dp).background(brandBrush()))
             }
 
             androidx.compose.animation.AnimatedVisibility(

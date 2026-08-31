@@ -138,25 +138,25 @@ fun HomeScreen(
     Box(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         // התוכן הראשי — מטושטש כשהתפריט הצף פתוח (אפקט זכוכית)
         Column(modifier = Modifier.fillMaxSize().blur(if (showMenu) 18.dp else 0.dp)) {
-            // טופ-בר נקי — כפתור פרופיל בפינה הימנית (RTL: הילד הראשון יושב מימין)
+            // טופ-בר מרווח — כפתורי הפעולה אינם נחתכים גם במכשירים עם אזור מצלמה גדול.
             Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 22.dp, bottom = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 32.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    modifier = Modifier.size(36.dp).clip(RoundedCornerShape(50))
+                    modifier = Modifier.size(42.dp).clip(RoundedCornerShape(50))
                         .background(Brush.linearGradient(ThemeState.accentColors))
                         .clickable { showMenu = true },
                     contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Default.Person, "תפריט", tint = Color.White, modifier = Modifier.size(20.dp)) }
+                ) { Icon(Icons.Default.Person, "תפריט", tint = Color.White, modifier = Modifier.size(23.dp)) }
                 Spacer(Modifier.width(10.dp))
                 // פעמון "סרטונים חדשים" עם נקודה אדומה אם יש חדשים
                 Box(
-                    modifier = Modifier.size(36.dp).clip(RoundedCornerShape(50))
+                    modifier = Modifier.size(42.dp).clip(RoundedCornerShape(50))
                         .background(ThemeState.surface).clickable { onInbox() },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Default.Notifications, "סרטונים חדשים", tint = ThemeState.text, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Notifications, "סרטונים חדשים", tint = ThemeState.text, modifier = Modifier.size(23.dp))
                     if (newCount > 0) {
                         Box(modifier = Modifier.align(Alignment.TopEnd).padding(2.dp).size(9.dp)
                             .clip(RoundedCornerShape(50)).background(Color(0xFFFF3B30)))
@@ -165,11 +165,12 @@ fun HomeScreen(
                 Spacer(Modifier.width(10.dp))
                 // שידורים חיים
                 Box(
-                    modifier = Modifier.size(36.dp).clip(RoundedCornerShape(50))
+                    modifier = Modifier.size(42.dp).clip(RoundedCornerShape(50))
                         .background(ThemeState.surface).clickable { onLive() },
                     contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Default.LiveTv, "שידורים חיים", tint = Color(0xFFFF3B30), modifier = Modifier.size(19.dp)) }
+                ) { Icon(Icons.Default.LiveTv, "שידורים חיים", tint = Color(0xFFFF3B30), modifier = Modifier.size(22.dp)) }
                 Spacer(Modifier.weight(1f))
+                Text("Filter Tube", color = ThemeState.text, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
             }
             // טאבים של קטגוריות (כמו ביוטיוב) — לחיצה מסננת את הפיד לפי תחום
             if (channels.isNotEmpty()) {
@@ -234,7 +235,7 @@ fun HomeScreen(
                 val menuItems = listOf<Pair<String, () -> Unit>>(
                     "ערוצים — עקוב" to { showMenu = false; onChannels() },
                     "הגדרות" to { showMenu = false; onSettings() },
-                    "חיבור חשבון Google" to { showMenu = false; onAccount() },
+                    "חיבור חשבון YouTube (אופציונלי)" to { showMenu = false; onAccount() },
                     "אודות" to { showMenu = false; showAbout = true },
                 )
                 menuItems.forEach { (label, action) ->

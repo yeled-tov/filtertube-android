@@ -1,7 +1,6 @@
 package com.filtertube.app.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -12,7 +11,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -24,20 +22,16 @@ import com.filtertube.app.ThemeState
 data class GlassNavItem(val route: String, val label: String, val icon: ImageVector)
 
 /**
- * סרגל ניווט תחתון — זהה 1:1 לגרסת החנות: גלולה מרחפת כהה, והפריט הנבחר מודגש
- * בכרית בגרדיאנט הצבע הראשי עם אייקון + תווית; פריט שאינו נבחר מציג אייקון בלבד.
+ * סרגל הניווט צמוד לתחתית המסך, כך שהוא מרגיש חלק מהאפליקציה ולא ככרטיס צף.
  */
 @Composable
 fun GlassNavBar(items: List<GlassNavItem>, currentRoute: String?, onClick: (String) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 26.dp, end = 26.dp, bottom = 16.dp)
-            .shadow(16.dp, RoundedCornerShape(22.dp))
-            .background(ThemeState.surface.copy(alpha = 0.96f), RoundedCornerShape(22.dp))
-            .border(1.dp, ThemeState.divider, RoundedCornerShape(22.dp))
-            .height(62.dp)
-            .padding(horizontal = 8.dp),
+            .height(66.dp)
+            .background(ThemeState.surface.copy(alpha = 0.98f))
+            .padding(horizontal = 12.dp),
         horizontalArrangement = Arrangement.SpaceAround,
         verticalAlignment = Alignment.CenterVertically,
     ) {
