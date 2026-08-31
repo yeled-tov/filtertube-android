@@ -55,6 +55,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -544,15 +545,17 @@ private fun FullscreenVideo(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(fmtTime(ui.position), color = ThemeState.text, fontSize = 11.sp)
-                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                        Slider(
-                            value = ui.position.toFloat().coerceIn(0f, ui.duration.toFloat().coerceAtLeast(0f)),
-                            onValueChange = { controller.seekTo(it.toLong()) },
-                            valueRange = 0f..ui.duration.toFloat().coerceAtLeast(1f),
-                            colors = SliderDefaults.colors(thumbColor = ThemeState.accent,
-                                activeTrackColor = ThemeState.accent, inactiveTrackColor = Color(0x55FFFFFF)),
-                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                        )
+                    Box(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            Slider(
+                                value = ui.position.toFloat().coerceIn(0f, ui.duration.toFloat().coerceAtLeast(0f)),
+                                onValueChange = { controller.seekTo(it.toLong()) },
+                                valueRange = 0f..ui.duration.toFloat().coerceAtLeast(1f),
+                                colors = SliderDefaults.colors(thumbColor = ThemeState.accent,
+                                    activeTrackColor = ThemeState.accent, inactiveTrackColor = Color(0x55FFFFFF)),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                     Text(fmtTime(ui.duration), color = ThemeState.text, fontSize = 11.sp)
                     IconButton(onClick = onExit) { Icon(Icons.Default.FullscreenExit, "צא ממסך מלא", tint = ThemeState.text) }
@@ -929,7 +932,7 @@ private fun OnVideoPlayerScreen(
             // פס דק כשהבקרים מוסתרים
             if (!controlsVisible) {
                 val frac = if (ui.duration > 0) (ui.position.toFloat() / ui.duration).coerceIn(0f, 1f) else 0f
-                Box(modifier = Modifier.align(Alignment.BottomLeft).fillMaxWidth(frac).height(3.dp).background(brandBrush()))
+                Box(modifier = Modifier.align(AbsoluteAlignment.BottomLeft).fillMaxWidth(frac).height(3.dp).background(brandBrush()))
             }
 
             androidx.compose.animation.AnimatedVisibility(
