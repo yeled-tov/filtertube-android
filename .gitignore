@@ -19,3 +19,7 @@ service-account*.json
 /gradle/wrapper/gradle-wrapper.jar
 gradlew
 gradlew.bat
+
+build/
+.gradle/
+app/build/

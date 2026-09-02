@@ -1,11 +1,6 @@
 package com.filtertube.app.data
 
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withContext
-import org.schabi.newpipe.extractor.ServiceList
-import org.schabi.newpipe.extractor.stream.StreamInfo
-import org.schabi.newpipe.extractor.stream.StreamInfoItem
 
 /**
  * איכות וידאו זמינה. אם [audioUrl] לא null — מדובר בזרם וידאו-בלבד שצריך
@@ -44,19 +39,72 @@ data class StreamData(
 
 object StreamRepository {
 
-    suspend fun getStream(videoId: String): StreamData = coroutineScope {
-    val t0 = System.currentTimeMillis()
-    // NewPipe is the reliable path on current Android devices. The old VR/iOS
-    // InnerTube clients consistently returned LOGIN_REQUIRED/400 and only
-    // added latency before falling back, so they are deliberately not called.
-    val np = runCatching { extractViaNewPipe(videoId) }.getOrNull()
-    Diagnostics.log(
-        "טעינה $videoId: " +
-            if (np != null) "NewPipe ${System.currentTimeMillis() - t0}ms · ${trackSummary(np)}"
-            else "נכשל ${System.currentTimeMillis() - t0}ms ✖",
+    private const val CACHE_TTL_MS = 2 * 60 * 60 * 1000L // 2 שעות (כתובות YouTube פגות)
+    private const val MAX_CACHE_SIZE = 50
+
+    private data class CachedStream(
+        val data: StreamData,
+        val timestamp: Long = System.currentTimeMillis()
     )
-    np ?: throw IllegalStateException("לא נמצא video stream")
-}
+
+    private val cache = LinkedHashMap<String, CachedStream>()
+
+    private val resolvers: List<StreamResolver> = listOf(
+        InnerTubeResolver(InnerTubeClientType.ANDROID_VR),
+        InnerTubeResolver(InnerTubeClientType.IOS),
+        NewPipeResolver()
+    )
+
+    @Synchronized
+    fun getCached(videoId: String): StreamData? {
+        val entry = cache[videoId] ?: return null
+        if (System.currentTimeMillis() - entry.timestamp > CACHE_TTL_MS) {
+            cache.remove(videoId)
+            return null
+        }
+        return entry.data
+    }
+
+    @Synchronized
+    private fun putCache(videoId: String, data: StreamData) {
+        cache[videoId] = CachedStream(data)
+        while (cache.size > MAX_CACHE_SIZE) {
+            val oldest = cache.keys.firstOrNull() ?: break
+            cache.remove(oldest)
+        }
+    }
+
+    @Synchronized
+    fun clearCache() {
+        cache.clear()
+    }
+
+    suspend fun getStream(videoId: String): StreamData = coroutineScope {
+        val t0 = System.currentTimeMillis()
+
+        // 1. בדיקת מטמון
+        getCached(videoId)?.let { cached ->
+            Diagnostics.log("StreamRepository $videoId: cache hit (0ms) · ${trackSummary(cached)}")
+            return@coroutineScope cached
+        }
+
+        // 2. ניסיונות resolvers לפי הסדר (InnerTube VR -> InnerTube iOS -> NewPipe)
+        for (resolver in resolvers) {
+            val rT0 = System.currentTimeMillis()
+            val result = runCatching { resolver.resolve(videoId) }.getOrNull()
+            if (result != null) {
+                putCache(videoId, result)
+                Diagnostics.log(
+                    "StreamRepository $videoId: ${resolver.name} ניצח ב-${System.currentTimeMillis() - rT0}ms (סה\"כ ${System.currentTimeMillis() - t0}ms) · ${trackSummary(result)}"
+                )
+                return@coroutineScope result
+            }
+            Diagnostics.log("StreamRepository $videoId: ${resolver.name} נכשל → מעבר למנוע הבא")
+        }
+
+        Diagnostics.log("StreamRepository $videoId: כל המנועים נכשלו ${System.currentTimeMillis() - t0}ms ✖")
+        throw IllegalStateException("לא נמצא video stream")
+    }
 
     /** תקציר האיכויות שנבחרו — האם ברירת המחדל משולבת (muxed) או DASH (מיזוג). */
     private fun trackSummary(d: StreamData): String {
@@ -64,84 +112,5 @@ object StreamRepository {
         val def = d.tracks.firstOrNull { it.audioUrl == null } ?: d.tracks.firstOrNull()
         val kind = if (def?.audioUrl == null) "muxed" else "DASH"
         return "${d.tracks.size} איכויות ($muxed muxed), ברירת מחדל ${def?.label ?: "?"} [$kind]"
-    }
-
-    // חילוץ דרך NewPipe — קוראים ישירות מה-extractor ועוטפים כל שדה ב-runCatching.
-    // מדלגים על getDescription() — הוא קורא ל-URLDecoder.decode(String,Charset) שלא קיים
-    // ב-API<33 ומפיל את האפליקציה (NoSuchMethodError הוא Error, לא Exception).
-    private suspend fun extractViaNewPipe(videoId: String): StreamData = withContext(Dispatchers.IO) {
-        val linkHandler = org.schabi.newpipe.extractor.services.youtube.linkHandler
-            .YoutubeStreamLinkHandlerFactory.getInstance().fromId(videoId)
-        val extractor = ServiceList.YouTube.getStreamExtractor(linkHandler)
-        extractor.fetchPage()
-
-        val allVideo = runCatching { extractor.videoStreams }.getOrNull().orEmpty()
-        val videoOnlyList = runCatching { extractor.videoOnlyStreams }.getOrNull().orEmpty()
-        val audioStreams = runCatching { extractor.audioStreams }.getOrNull().orEmpty()
-
-        val muxed = allVideo.filter { !it.isVideoOnly && it.height > 0 }
-        val videoOnly = (allVideo.filter { it.isVideoOnly } + videoOnlyList).filter { it.height > 0 }
-        val audioBest = audioStreams.maxByOrNull { it.bitrate }
-
-        // בונים רשימת איכויות: muxed (כוללים קול) קודם, אחר כך video-only (ממוזגים עם אודיו)
-        val muxedTracks = muxed.map { StreamTrack(it.height, "${it.height}p", it.content, null) }
-        val dashTracks = if (audioBest != null) {
-            videoOnly.map { StreamTrack(it.height, "${it.height}p", it.content, audioBest.content) }
-        } else emptyList()
-
-        val vodTracks = (muxedTracks + dashTracks)
-            .distinctBy { it.height }          // muxed מקבל עדיפות (מופיע ראשון)
-            .sortedByDescending { it.height }
-
-        // שידור חי: NewPipe מספק HLS manifest (m3u8) במקום זרמים מתקדמים
-        val hls = runCatching { extractor.hlsUrl }.getOrNull()
-        val live = vodTracks.isEmpty() && !hls.isNullOrEmpty()
-        val tracks = if (live) listOf(StreamTrack(0, "שידור חי", hls!!, null)) else vodTracks
-
-        if (tracks.isEmpty()) throw IllegalStateException("לא נמצא video stream")
-
-        // להורדה — זרם משולב הגבוה ביותר (כך הקובץ כולל קול); בשידור חי — ה-HLS
-        val bestMuxed = if (live) hls!! else (muxed.maxByOrNull { it.height }?.content ?: tracks.first().videoUrl)
-
-        val channelId = extractChannelId(runCatching { extractor.uploaderUrl }.getOrNull()) ?: ""
-
-        // הסרטונים הקשורים נטענים בנפרד ב-Playback אחרי תחילת הניגון — לא כאן.
-        // כך מוסרים round-trip שלם מהמסלול הקריטי של טעינת הסרטון.
-        val related = emptyList<Video>()
-
-        StreamData(
-            title = runCatching { extractor.name }.getOrNull().orEmpty(),
-            uploaderName = runCatching { extractor.uploaderName }.getOrNull().orEmpty(),
-            channelId = channelId,
-            durationSec = runCatching { extractor.length }.getOrNull() ?: 0L,
-            viewCount = runCatching { extractor.viewCount }.getOrNull() ?: 0L,
-            description = null,   // מדלגים — זה מקור הקריסה ב-API<33
-            thumbnailUrl = runCatching { extractor.thumbnails?.maxByOrNull { it.height }?.url }.getOrNull(),
-            tracks = tracks,
-            bestAudioUrl = audioBest?.content,
-            bestVideoUrl = bestMuxed,
-            related = related,
-        )
-    }
-
-    private fun relatedToVideo(item: StreamInfoItem): Video? {
-        val vid = extractVideoId(item.url) ?: return null
-        val chId = extractChannelId(item.uploaderUrl) ?: ""
-        val thumb = item.thumbnails?.maxByOrNull { it.height }?.url
-            ?: "https://i.ytimg.com/vi/$vid/hqdefault.jpg"
-        return Video(vid, item.name ?: "", item.uploaderName ?: "", chId, thumb, System.currentTimeMillis())
-    }
-
-    private fun extractVideoId(url: String?): String? {
-        if (url == null) return null
-        Regex("[?&]v=([A-Za-z0-9_-]{11})").find(url)?.let { return it.groupValues[1] }
-        Regex("/shorts/([A-Za-z0-9_-]{11})").find(url)?.let { return it.groupValues[1] }
-        Regex("youtu\\.be/([A-Za-z0-9_-]{11})").find(url)?.let { return it.groupValues[1] }
-        return null
-    }
-
-    private fun extractChannelId(url: String?): String? {
-        if (url == null) return null
-        return Regex("/channel/(UC[\\w-]+)").find(url)?.groupValues?.get(1)
     }
 }

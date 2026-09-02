@@ -1,22 +1,28 @@
 package com.filtertube.app.data
 
 import android.content.Context
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.File
 import java.util.concurrent.TimeUnit
-import com.google.firebase.auth.FirebaseAuth
 
 /**
- * מקור רשימת הערוצים המאושרים — ללא Supabase.
+ * מקור רשימת הערוצים המאושרים (Approved Channels).
  *
- * 1. מנסה למשוך מ-GitHub raw (כך אפשר לעדכן ערוצים ע"י עריכת channels.json ב-GitHub)
- * 2. נופל ל-asset מקומי שמוטמע באפליקציה (עובד offline)
- *
- * לעדכון רשימת הערוצים: ערוך את channels.json ב-repo ב-GitHub. האפליקציה תמשוך אוטומטית.
+ * ארכיטקטורת M-P-F-G:
+ * 1. Memory Cache
+ * 2. Persistent Local Snapshot (מוצג מיד לשיפור מהירות)
+ * 3. Firebase approvedChannels (מקור האמת הראשי)
+ * 4. GitHub fallback
+ * 5. Asset fallback
  */
 object ChannelsRepository {
 
@@ -24,29 +30,122 @@ object ChannelsRepository {
         "https://raw.githubusercontent.com/yeled-tov/filtertube-android/main/channels.json"
     private const val APPROVED_API =
         "https://europe-west1-filter-tube-52d8e.cloudfunctions.net/listApprovedChannels"
+    private const val SNAPSHOT_FILE_NAME = "channels_snapshot.json"
+    private const val CACHE_TTL_MS = 30 * 60 * 1000L // 30 דקות TTL למטמון זיכרון
 
     private val json = Json { ignoreUnknownKeys = true }
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(6, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
         .build()
 
     @Volatile
     private var cached: List<Channel>? = null
 
-    suspend fun getChannels(context: Context): List<Channel> {
-        cached?.let { return it }
+    @Volatile
+    private var lastFetchTime: Long = 0L
 
-        val fromGithub = runCatching { fetchFromGithub() }.getOrNull().orEmpty()
-        val fromServer = runCatching { fetchFromServer() }.getOrNull().orEmpty()
-        val merged = (fromGithub + fromServer).associateBy { it.youtubeChannelId }.values.toList()
-        if (merged.isNotEmpty()) {
-            cached = merged
-            return merged
+    @Volatile
+    private var isRefreshing: Boolean = false
+
+    @Synchronized
+    fun invalidate() {
+        cached = null
+        lastFetchTime = 0L
+    }
+
+    /**
+     * מחזיר ערוצים מהמטמון/snapshot המקומי מיד, ומבצע רענון ברקע במידת הצורך.
+     */
+    suspend fun getChannels(context: Context): List<Channel> = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val mem = cached
+
+        if (mem != null && (now - lastFetchTime < CACHE_TTL_MS)) {
+            return@withContext mem
         }
-        val fromAsset = runCatching { loadFromAsset(context) }.getOrNull().orEmpty()
-        cached = fromAsset
-        return fromAsset
+
+        // טעינה מ-snapshot מקומי
+        val snapshot = loadFromSnapshot(context)
+        if (snapshot.isNotEmpty()) {
+            cached = snapshot
+            // אם עבר TTL, מרעננים ברקע בלי לעכב את הקורא
+            if (now - lastFetchTime >= CACHE_TTL_MS) {
+                backgroundRefresh(context)
+            }
+            return@withContext snapshot
+        }
+
+        // אם אין snapshot מקומי, מבצעים רענון מלא (Firebase -> GitHub -> Asset)
+        refresh(context)
+    }
+
+    /**
+     * מחזיר מיד את רשימת הערוצים הקיימת בזיכרון או ב-snapshot, ללא המתנה לרשת.
+     */
+    fun getCachedChannelsFast(context: Context): List<Channel> {
+        cached?.let { return it }
+        val snapshot = loadFromSnapshot(context)
+        if (snapshot.isNotEmpty()) {
+            cached = snapshot
+            return snapshot
+        }
+        val asset = loadFromAsset(context)
+        if (asset.isNotEmpty()) {
+            cached = asset
+            return asset
+        }
+        return emptyList()
+    }
+
+    /**
+     * מבצע רענון לרשימת הערוצים מול Firebase -> GitHub -> Asset ועדכון המטמון.
+     */
+    suspend fun refresh(context: Context): List<Channel> = withContext(Dispatchers.IO) {
+        val fromServer = runCatching { fetchFromServer() }.getOrNull().orEmpty()
+        val channels = if (fromServer.isNotEmpty()) {
+            fromServer
+        } else {
+            val fromGithub = runCatching { fetchFromGithub() }.getOrNull().orEmpty()
+            if (fromGithub.isNotEmpty()) fromGithub else loadFromAsset(context)
+        }
+
+        if (channels.isNotEmpty()) {
+            cached = channels
+            lastFetchTime = System.currentTimeMillis()
+            saveToSnapshot(context, channels)
+        }
+        channels
+    }
+
+    private fun backgroundRefresh(context: Context) {
+        if (isRefreshing) return
+        isRefreshing = true
+        GlobalScope.launch(Dispatchers.IO) {
+            try {
+                refresh(context)
+            } catch (_: Exception) {
+            } finally {
+                isRefreshing = false
+            }
+        }
+    }
+
+    private fun loadFromSnapshot(context: Context): List<Channel> {
+        return runCatching {
+            val file = File(context.filesDir, SNAPSHOT_FILE_NAME)
+            if (!file.exists()) return emptyList()
+            val text = file.readText()
+            json.decodeFromString<List<Channel>>(text)
+        }.getOrNull().orEmpty()
+    }
+
+    private fun saveToSnapshot(context: Context, channels: List<Channel>) {
+        runCatching {
+            val file = File(context.filesDir, SNAPSHOT_FILE_NAME)
+            val text = json.encodeToString(channels)
+            file.writeText(text)
+        }
     }
 
     private suspend fun fetchFromServer(): List<Channel> = withContext(Dispatchers.IO) {
@@ -63,15 +162,20 @@ object ChannelsRepository {
                 for (i in 0 until items.length()) {
                     val item = items.optJSONObject(i) ?: continue
                     val id = item.optString("youtubeChannelId")
-                    if (id.isNotBlank()) add(Channel(id, item.optString("name", id), item.optString("category", "general"), item.optString("gender", "all")))
+                    if (id.isNotBlank()) add(
+                        Channel(
+                            id,
+                            item.optString("name", id),
+                            item.optString("category", "general"),
+                            item.optString("gender", "all")
+                        )
+                    )
                 }
             }
         }
     }
 
     private suspend fun fetchFromGithub(): List<Channel> = withContext(Dispatchers.IO) {
-        // חותמת-זמן עוקפת את מטמון ה-CDN של GitHub raw (~5 דק') כדי לקבל עדכוני ערוצים
-        // מפאנל הניהול כמעט מיד — בשתי האפליקציות (אותו URL בדיוק).
         val request = Request.Builder().url("$GITHUB_RAW?t=${System.currentTimeMillis()}").build()
         httpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return@use emptyList()
@@ -80,8 +184,10 @@ object ChannelsRepository {
         }
     }
 
-    private suspend fun loadFromAsset(context: Context): List<Channel> = withContext(Dispatchers.IO) {
-        val text = context.assets.open("channels.json").bufferedReader().use { it.readText() }
-        json.decodeFromString<List<Channel>>(text)
+    private fun loadFromAsset(context: Context): List<Channel> {
+        return runCatching {
+            val text = context.assets.open("channels.json").bufferedReader().use { it.readText() }
+            json.decodeFromString<List<Channel>>(text)
+        }.getOrNull().orEmpty()
     }
 }
