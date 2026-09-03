@@ -7,6 +7,7 @@ on:
       - 'codex/**'
       - 'jules/**'
       - 'feature/**'
+      - 'fix/**'
     paths-ignore:
       - 'flutter_app/**'
       - '.github/workflows/flutter.yml'
