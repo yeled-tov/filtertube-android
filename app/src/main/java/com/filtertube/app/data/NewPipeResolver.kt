@@ -84,7 +84,15 @@ class NewPipeResolver : StreamResolver {
             val elapsedMs = System.currentTimeMillis() - t0
             val reason = e.message ?: "Unknown error"
             Diagnostics.log("$name $videoId: $reason FAILED (${elapsedMs}ms)")
-            ResolverHealthMonitor.recordFailure(clientKey, reason)
+
+            // סרטונים מוגבלים גיל/ארגון אינם פגם במנוע החילוץ עצמו
+            val isRestricted = reason.contains("restricted", ignoreCase = true) ||
+                reason.contains("age", ignoreCase = true) ||
+                reason.contains("flagged", ignoreCase = true)
+
+            if (!isRestricted) {
+                ResolverHealthMonitor.recordFailure(clientKey, reason)
+            }
             null
         }
     }
