@@ -12,14 +12,11 @@ import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 
 /**
  * Factory שיודע למזג זרם וידאו-בלבד עם זרם אודיו נפרד (DASH של יוטיוב),
- * כדי לאפשר איכויות גבוהות. כתובת האודיו מועברת ב-extras של ה-MediaItem.
- *
- * כך גם השירות (שמנגן ברקע) וגם ה-UI משתמשים באותה לוגיקת מיזוג.
+ * שומר על ה-User-Agent של ה-Resolver גם ל-video וגם ל-audio בנפרד.
  */
 @UnstableApi
 class FilterTubeMediaSourceFactory(context: Context) : MediaSource.Factory {
 
-    // ברירת מחדל: UA של דפדפן אמיתי — מתאים לזרמי NewPipe (לקוח WEB, מפוענחים).
     private val default = factoryFor(DEFAULT_UA)
 
     private fun factoryFor(userAgent: String): DefaultMediaSourceFactory {
@@ -34,13 +31,20 @@ class FilterTubeMediaSourceFactory(context: Context) : MediaSource.Factory {
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
         val extras = mediaItem.requestMetadata.extras
         val audioUrl = extras?.getString(EXTRA_AUDIO_URL)
-        // מנגנים את הזרם ב-UA שבו נחלץ (IOS/VR/Web). חוסר התאמה = יוטיוב חותך אחרי כמה שניות.
         val ua = extras?.getString(EXTRA_USER_AGENT)
         val srcFactory = if (ua.isNullOrEmpty()) default else factoryFor(ua)
 
         val video = srcFactory.createMediaSource(mediaItem)
         return if (!audioUrl.isNullOrEmpty()) {
-            val audio = srcFactory.createMediaSource(MediaItem.fromUri(audioUrl))
+            val audioItem = MediaItem.Builder()
+                .setUri(audioUrl)
+                .setRequestMetadata(
+                    MediaItem.RequestMetadata.Builder()
+                        .setExtras(extras)
+                        .build()
+                )
+                .build()
+            val audio = srcFactory.createMediaSource(audioItem)
             MergingMediaSource(video, audio)
         } else {
             video

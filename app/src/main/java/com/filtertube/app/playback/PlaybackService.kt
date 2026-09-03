@@ -12,14 +12,14 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.filtertube.app.MainActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 /**
- * שירות ניגון ברקע (foreground service) — מחזיק את הנגן ואת ה-MediaSession.
- *
- * בזכותו:
- *  - המוזיקה ממשיכה לנגן גם כשיוצאים מהאפליקציה
- *  - מופיעה חלונית שליטה בהתראות ובמסך הנעילה
- *  - הטלפון מזהה את האפליקציה כנגן מדיה (כפתורי אוזניות וכו')
+ * שירות ניגון ברקע (foreground service) — מחזיק את הנגן ואת ה-MediaSession,
+ * ומשלב מנגנון התאוששות אוטומטי (Auto Recovery) משגיאות ניגון/רשת.
  */
 @UnstableApi
 class PlaybackService : MediaSessionService() {
@@ -28,12 +28,11 @@ class PlaybackService : MediaSessionService() {
     private val crossfadeHandler = Handler(Looper.getMainLooper())
     private var crossfadeTask: Runnable? = null
     private var incomingPlayer: ExoPlayer? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onCreate() {
         super.onCreate()
-        // באפר אגרסיבי נגד עצירות: זרמי יוטיוב נחנקים מדי פעם (CDN throttling), אז
-        // בונים מאגר גדול קדימה (עד 2 דקות) כדי לגשר על נפילות זמניות בהורדה. התחלה
-        // עדיין מהירה (~1.5ש'), ואחרי עצירה בונים כרית של 5ש' לפני שממשיכים שלא ייתקע שוב.
+
         fun createPlayer(handleAudioFocus: Boolean = true) = ExoPlayer.Builder(this)
             .setMediaSourceFactory(FilterTubeMediaSourceFactory(this))
             .setLoadControl(
@@ -84,8 +83,6 @@ class PlaybackService : MediaSessionService() {
                 cancelCrossfade()
                 return
             }
-            // The incoming player is already audible.  Seek the session player to exactly
-            // the same point, wait a short moment for its buffer, then swap outputs.
             handoffInProgress = true
             player.setPauseAtEndOfMediaItems(false)
             player.volume = 0f
@@ -116,7 +113,6 @@ class PlaybackService : MediaSessionService() {
             if (seconds <= 0 || !audioOnly || !nextAudioOnly) return
             if (incomingPlayer != null || handoffInProgress) return
 
-            // This player overlaps the session player, so it must not steal audio focus.
             val incoming = createPlayer(handleAudioFocus = false).apply {
                 volume = 0f
                 setMediaItem(next)
@@ -126,7 +122,6 @@ class PlaybackService : MediaSessionService() {
             incomingPlayer = incoming
             fadingFromIndex = sourceIndex
             fadingToIndex = targetIndex
-            // Keep the original item selected until it has completely faded out.
             player.setPauseAtEndOfMediaItems(true)
             val durationMs = seconds * 1_000L
 
@@ -171,6 +166,9 @@ class PlaybackService : MediaSessionService() {
                 if (playbackState == androidx.media3.common.Player.STATE_ENDED && incomingPlayer != null) {
                     completeHandoff()
                 }
+                if (playbackState == androidx.media3.common.Player.STATE_READY) {
+                    player.currentMediaItem?.mediaId?.let { PlayerRecoveryHandler.resetAttempts(it) }
+                }
             }
 
             override fun onPositionDiscontinuity(
@@ -184,8 +182,7 @@ class PlaybackService : MediaSessionService() {
             }
         })
 
-        // אבחון: מתעד עצירות/באפר באמצע הניגון (משך + שנייה) ושגיאות נגן — כדי לראות
-        // בדיוק מה ה"מתנגן ואז נעצר" במקום לנחש.
+        // אבחון והתאוששות אוטומטית (Auto Recovery) בשגיאות ניגון/רשת
         player.addListener(object : androidx.media3.common.Player.Listener {
             private var stallStart = 0L
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -204,7 +201,12 @@ class PlaybackService : MediaSessionService() {
             }
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                com.filtertube.app.data.Diagnostics.log("✖ שגיאת נגן: ${error.errorCodeName}")
+                PlayerRecoveryHandler.handlePlayerError(
+                    context = this@PlaybackService,
+                    player = player,
+                    error = error,
+                    scope = serviceScope
+                )
             }
         })
 
@@ -213,7 +215,6 @@ class PlaybackService : MediaSessionService() {
             .build()
     }
 
-    /** לחיצה על חלונית ההתראה / מסך הנעילה תפתח את האפליקציה. */
     private fun openAppIntent(): PendingIntent {
         val intent = Intent(this, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -231,6 +232,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        serviceScope.cancel()
         crossfadeTask?.let(crossfadeHandler::removeCallbacks)
         crossfadeHandler.removeCallbacksAndMessages(null)
         incomingPlayer?.release()

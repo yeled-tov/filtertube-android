@@ -1,6 +1,10 @@
 package com.filtertube.app.data
 
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * איכות וידאו זמינה. אם [audioUrl] לא null — מדובר בזרם וידאו-בלבד שצריך
@@ -30,16 +34,14 @@ data class StreamData(
     /** סרטונים קשורים — להפעלה אוטומטית (לפני סינון לרשימה הלבנה) */
     val related: List<Video>,
     /**
-     * ה-User-Agent שבו *חייבים* לנגן את כתובות הזרם. יוטיוב מאמת את ה-UA מול
-     * הלקוח שביקש את הזרם (IOS/VR/Web) — נגינה ב-UA שונה גורמת ל-CDN לחתוך את
-     * הזרם אחרי כמה שניות. null = אפשר UA ברירת מחדל.
+     * ה-User-Agent שבו *חייבים* לנגן את כתובות הזרם.
      */
     val streamUserAgent: String? = null,
 )
 
 object StreamRepository {
 
-    private const val CACHE_TTL_MS = 2 * 60 * 60 * 1000L // 2 שעות (כתובות YouTube פגות)
+    private const val CACHE_TTL_MS = 5 * 60 * 1000L // 5 דקות TTL (כתובות YouTube חתומות פגות מהר)
     private const val MAX_CACHE_SIZE = 50
 
     private data class CachedStream(
@@ -48,11 +50,12 @@ object StreamRepository {
     )
 
     private val cache = LinkedHashMap<String, CachedStream>()
+    private val inFlight = ConcurrentHashMap<String, Deferred<StreamData>>()
 
-    private val resolvers: List<StreamResolver> = listOf(
-        InnerTubeResolver(InnerTubeClientType.ANDROID_VR),
-        InnerTubeResolver(InnerTubeClientType.IOS),
-        NewPipeResolver()
+    private val resolverMap: Map<String, StreamResolver> = mapOf(
+        "IOS" to InnerTubeResolver(InnerTubeClientType.IOS),
+        "ANDROID_VR" to InnerTubeResolver(InnerTubeClientType.ANDROID_VR),
+        "NewPipe" to NewPipeResolver()
     )
 
     @Synchronized
@@ -63,6 +66,14 @@ object StreamRepository {
             return null
         }
         return entry.data
+    }
+
+    @Synchronized
+    fun invalidateCache(videoId: String) {
+        if (cache.containsKey(videoId)) {
+            cache.remove(videoId)
+            Diagnostics.log("StreamRepository $videoId: cache invalidated ✖")
+        }
     }
 
     @Synchronized
@@ -80,16 +91,46 @@ object StreamRepository {
     }
 
     suspend fun getStream(videoId: String): StreamData = coroutineScope {
-        val t0 = System.currentTimeMillis()
-
         // 1. בדיקת מטמון
         getCached(videoId)?.let { cached ->
             Diagnostics.log("StreamRepository $videoId: cache hit (0ms) · ${trackSummary(cached)}")
             return@coroutineScope cached
         }
 
-        // 2. ניסיונות resolvers לפי הסדר (InnerTube VR -> InnerTube iOS -> NewPipe)
-        for (resolver in resolvers) {
+        // 2. מניעת קריאות כפולות במקביל (Deduplication)
+        val activeDeferred = inFlight[videoId]
+        if (activeDeferred != null) {
+            Diagnostics.log("StreamRepository $videoId: בקשה מקבילית קיימת, ממתין לתשובה")
+            return@coroutineScope activeDeferred.await()
+        }
+
+        val deferred = async(Dispatchers.IO) {
+            try {
+                resolveInternal(videoId)
+            } finally {
+                inFlight.remove(videoId)
+            }
+        }
+
+        inFlight[videoId] = deferred
+        deferred.await()
+    }
+
+    private suspend fun resolveInternal(videoId: String): StreamData {
+        val t0 = System.currentTimeMillis()
+        val priorityKeys = RemoteConfig.resolverPriority()
+
+        val activeResolvers = buildList {
+            for (key in priorityKeys) {
+                resolverMap[key]?.let { add(it) }
+            }
+            // הוספת מנועים חסרים שלא צוינו ב-priority כגיבוי
+            for ((key, res) in resolverMap) {
+                if (key !in priorityKeys) add(res)
+            }
+        }
+
+        for (resolver in activeResolvers) {
             val rT0 = System.currentTimeMillis()
             val result = runCatching { resolver.resolve(videoId) }.getOrNull()
             if (result != null) {
@@ -97,13 +138,13 @@ object StreamRepository {
                 Diagnostics.log(
                     "StreamRepository $videoId: ${resolver.name} ניצח ב-${System.currentTimeMillis() - rT0}ms (סה\"כ ${System.currentTimeMillis() - t0}ms) · ${trackSummary(result)}"
                 )
-                return@coroutineScope result
+                return result
             }
             Diagnostics.log("StreamRepository $videoId: ${resolver.name} נכשל → מעבר למנוע הבא")
         }
 
         Diagnostics.log("StreamRepository $videoId: כל המנועים נכשלו ${System.currentTimeMillis() - t0}ms ✖")
-        throw IllegalStateException("לא נמצא video stream")
+        throw IllegalStateException("לא הצלחנו להפעיל את הסרטון. נסה שוב בעוד רגע.")
     }
 
     /** תקציר האיכויות שנבחרו — האם ברירת המחדל משולבת (muxed) או DASH (מיזוג). */

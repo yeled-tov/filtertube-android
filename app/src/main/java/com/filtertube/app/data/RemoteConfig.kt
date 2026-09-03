@@ -8,12 +8,10 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * קונפיגורציה מהענן — "מערכת עדכון API" בלי לשנות קוד.
+ * קונפיגורציה מהענן — מנגנון שליטה מרכזי במנועי ניגון.
  *
- * האפליקציה מושכת בהפעלה קובץ `remote_config.json` מ-GitHub. כשיוטיוב משתנה
- * (גרסת לקוח, User-Agent וכו'), עורכים את ה-JSON ב-GitHub וכל הטלפונים מתעדכנים —
- * בלי בנייה חדשה ובלי עדכון אפליקציה. אם המשיכה נכשלת, נופלים לערכי ברירת המחדל
- * המוטמעים בקוד, כך שתמיד יש בסיס עובד. GitHub חינמי ולא חוסם על חוסר פעילות.
+ * מאפשר להשבית מנוע שנשבר, לשנות עדיפות (priority), עדכון User-Agent ופרמטרי בריאות
+ * מ-GitHub remote_config.json ללא צורך בהוצאת APK חדש.
  */
 object RemoteConfig {
 
@@ -54,4 +52,34 @@ object RemoteConfig {
 
     fun vrVersion(default: String) = str("vr", "clientVersion", default)
     fun vrUserAgent(default: String) = str("vr", "userAgent", default)
+
+    fun isResolverEnabled(resolverName: String, default: Boolean = true): Boolean {
+        val resolvers = cfg?.optJSONObject("resolvers") ?: return default
+        val res = resolvers.optJSONObject(resolverName) ?: return default
+        return res.optBoolean("enabled", default)
+    }
+
+    fun resolverPriority(): List<String> {
+        val list = mutableListOf<String>()
+        val arr = cfg?.optJSONObject("resolvers")?.optJSONArray("priority")
+        if (arr != null) {
+            for (i in 0 until arr.length()) {
+                val name = arr.optString(i)
+                if (name.isNotBlank()) list.add(name)
+            }
+        }
+        // ברירת מחדל: IOS קודם, לאחר מכן ANDROID_VR, ובסוף NewPipe
+        if (list.isEmpty()) {
+            return listOf("IOS", "ANDROID_VR", "NewPipe")
+        }
+        return list
+    }
+
+    fun maxConsecutiveFailures(default: Int = 3): Int {
+        return cfg?.optJSONObject("health")?.optInt("maxConsecutiveFailures", default) ?: default
+    }
+
+    fun cooldownDurationMinutes(default: Long = 5): Long {
+        return cfg?.optJSONObject("health")?.optLong("cooldownDurationMinutes", default) ?: default
+    }
 }
