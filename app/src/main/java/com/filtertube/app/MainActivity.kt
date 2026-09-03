@@ -39,6 +39,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
+import com.filtertube.app.data.YouTubeUrlParser
 import com.filtertube.app.ui.*
 import kotlinx.coroutines.launch
 
@@ -86,7 +87,6 @@ class MainActivity : ComponentActivity() {
     /** יציאה מהאפליקציה בזמן צפייה בווידאו → חלון צף (PiP) שממשיך לנגן. */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // חלון צף הוא פיצ'ר פרימיום — חסום אחרי תום הניסיון
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && PipState.canPip
             && com.filtertube.app.data.SettingsStore(this).premiumActive) {
             runCatching {
@@ -111,21 +111,8 @@ class MainActivity : ComponentActivity() {
     private fun handleDeepLink(intent: android.content.Intent?) {
         if (intent?.getBooleanExtra("ft_open_inbox", false) == true) { InboxNav.pending = true; return }
         val url = intent?.data?.toString() ?: return
-        val id = extractYouTubeId(url) ?: return
+        val id = YouTubeUrlParser.extractVideoId(url) ?: return
         DeepLink.pendingVideoId = id
-    }
-
-    private fun extractYouTubeId(url: String): String? {
-        for (p in listOf(
-            "[?&]v=([A-Za-z0-9_-]{11})",
-            "youtu\\.be/([A-Za-z0-9_-]{11})",
-            "/shorts/([A-Za-z0-9_-]{11})",
-            "/live/([A-Za-z0-9_-]{11})",
-            "/embed/([A-Za-z0-9_-]{11})",
-        )) {
-            Regex(p).find(url)?.let { return it.groupValues[1] }
-        }
-        return null
     }
 
     /** בוחר את מצב התצוגה עם קצב הרענון הגבוה ביותר באותה רזולוציה (אם נתמך). */
@@ -164,8 +151,6 @@ object InboxNav {
 @Composable
 fun AppRoot() {
     val context = androidx.compose.ui.platform.LocalContext.current
-    // A crash must not trap the user in a launch/crash loop. Show the stored
-    // report before starting playback, cloud sync, or any other optional work.
     var crashReport by remember { mutableStateOf(com.filtertube.app.data.CrashLog.lastCrash(context)) }
     val savedCrashReport = crashReport
     if (savedCrashReport != null) {
@@ -180,8 +165,6 @@ fun AppRoot() {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val settings = remember { SettingsStore(context) }
 
-    // Existing installs created before Firebase account sync must sign in once.
-    // Fresh installs create the account as the final onboarding step.
     val firebaseAuth = remember { com.google.firebase.auth.FirebaseAuth.getInstance() }
     var accountReady by remember {
         val user = firebaseAuth.currentUser
@@ -193,8 +176,6 @@ fun AppRoot() {
     var profileRequired by remember { mutableStateOf(!settings.onboardingDone) }
     DisposableEffect(firebaseAuth) {
         val listener = com.google.firebase.auth.FirebaseAuth.AuthStateListener { auth ->
-            // A non-null user is not enough: account initialization must finish
-            // successfully before the login screen is removed.
             val user = auth.currentUser
             if (user == null || !user.isEmailVerified || settings.cloudUid != user.uid) {
                 accountReady = false
@@ -203,8 +184,6 @@ fun AppRoot() {
         firebaseAuth.addAuthStateListener(listener)
         onDispose { firebaseAuth.removeAuthStateListener(listener) }
     }
-    // Every user starts at a clear account choice. Profile personalisation is
-    // shown only after sign-in/registration and email verification complete.
     if (!accountReady) {
         com.filtertube.app.ui.FirebaseAccountScreen(onDone = { needsProfile ->
             val user = firebaseAuth.currentUser
@@ -219,8 +198,6 @@ fun AppRoot() {
         return
     }
 
-    // The setup wizard contains profile/filter choices only; authentication
-    // never happens on its final button.
     if (!onboarded || profileRequired) {
         com.filtertube.app.ui.OnboardingScreen(onDone = {
             val user = firebaseAuth.currentUser
@@ -241,9 +218,6 @@ fun AppRoot() {
         val user = firebaseAuth.currentUser ?: return@LaunchedEffect
         if (!user.isEmailVerified || settings.cloudUid != user.uid) return@LaunchedEffect
         try {
-            // CloudSync binds the local data owner itself. Keeping this work
-            // isolated means an unavailable backend can never prevent entry
-            // into the app after a successful account verification.
             val synchronized = com.filtertube.app.data.CloudSync.synchronize(context, settings)
             if (synchronized) {
                 filterLevel = settings.filterLevel
@@ -276,7 +250,6 @@ fun AppRoot() {
     val controller by com.filtertube.app.ui.rememberMediaController()
     val playerUi = com.filtertube.app.ui.rememberPlayerUiState(controller)
 
-    // ניגון ברקע כבוי → עצירה ביציאה מהאפליקציה (אלא אם במצב חלון צף PiP)
     val lifecycleActivity = context as? androidx.activity.ComponentActivity
     DisposableEffect(lifecycleActivity, controller) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -293,7 +266,6 @@ fun AppRoot() {
             }
             if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && !PipState.inPip) {
                 val s = com.filtertube.app.data.SettingsStore(context)
-                // עצירה אם ניגון-ברקע כבוי, *או* אם הניסיון/מנוי הפרימיום הסתיים
                 if (!s.backgroundPlay || !s.premiumActive) runCatching { controller?.pause() }
             }
         }
@@ -319,11 +291,11 @@ fun AppRoot() {
         }
     }
 
-    // קישור יוטיוב שנפתח דרך האפליקציה — מפעיל את הסרטון בנגן שלנו
+    // קישור יוטיוב שנפתח דרך האפליקציה — מפעיל את הסרטון בנגן שלנו מיד
     LaunchedEffect(DeepLink.pendingVideoId) {
         val id = DeepLink.pendingVideoId ?: return@LaunchedEffect
         DeepLink.pendingVideoId = null
-        openVideo(Video(id, "", "", "", "https://i.ytimg.com/vi/$id/hqdefault.jpg", System.currentTimeMillis()))
+        openVideo(Video(id, "טוען...", "טוען...", "", "https://i.ytimg.com/vi/$id/hqdefault.jpg", System.currentTimeMillis()))
     }
 
     // לחיצה על התראת "סרטונים חדשים" — פותחת את מסך התיבה
@@ -331,7 +303,6 @@ fun AppRoot() {
         if (InboxNav.pending) { InboxNav.pending = false; navController.navigate("newvideos") }
     }
 
-    // סרגל ניווט תחתון — כולל חיפוש (לבקשת המשתמש: כפתור החיפוש למטה)
     val navItems = buildList {
         add(GlassNavItem("home", "בית", Icons.Default.Home))
         add(GlassNavItem("search", "חיפוש", Icons.Default.Search))
@@ -465,7 +436,6 @@ fun AppRoot() {
             }
         }
 
-        // מיני-נגן + סרגל ניווט צף (זכוכית), מרחפים מעל התוכן
         if (showBottomBar) {
             Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding()) {
                 com.filtertube.app.ui.MiniPlayer(
@@ -558,19 +528,13 @@ private fun CrashReportDialog(report: String, onDismiss: () -> Unit) {
     )
 }
 
-/**
- * מצב ערכת-נושא גלובלי — צבע ראשי + כהה/בהיר וטוקני צבע נגזרים.
- * שינוי של accent או dark מרענן את כל המסכים מיד (mutableState).
- */
 object ThemeState {
-    // accent + accent2 = הגרדיאנט הראשי (תואם 1:1 למפרט Claude Design)
     var accent by mutableStateOf(Color(0xFFFF2D43))
     var accent2 by mutableStateOf(Color(0xFFFF6A5C))
     var dark by mutableStateOf(true)
 
-    // פלטה יוקרתית — תואמת למפרט Claude Design (כהה עמוק, טוקנים מדויקים)
     val bg: Color get() = if (dark) Color(0xFF08080B) else Color(0xFFFAFAFA)
-    val bg2: Color get() = if (dark) Color(0xFF111114) else Color(0xFFEDEDED)   // נאב/נגן כהה יותר
+    val bg2: Color get() = if (dark) Color(0xFF111114) else Color(0xFFEDEDED)
     val surface: Color get() = if (dark) Color(0xFF18181B) else Color(0xFFFFFFFF)
     val card: Color get() = if (dark) Color(0xFF121216) else Color(0xFFF1F1F1)
     val divider: Color get() = if (dark) Color(0xFF26262C) else Color(0xFFE2E2E2)
@@ -578,7 +542,6 @@ object ThemeState {
     val subtext: Color get() = if (dark) Color(0xFF8B8B93) else Color(0xFF6B6B6B)
     val subtext2: Color get() = if (dark) Color(0xFFC6C6CE) else Color(0xFF555555)
 
-    /** הגרדיאנט הראשי — לכפתורים, אווטארים, פריט נבחר וכו'. */
     val accentColors: List<Color> get() = listOf(accent, accent2)
 }
 

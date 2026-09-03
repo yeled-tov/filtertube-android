@@ -2,11 +2,18 @@ package com.filtertube.app.data
 
 import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -14,15 +21,22 @@ import okhttp3.Request
 import java.io.File
 import java.util.concurrent.TimeUnit
 
+@Serializable
+data class SnapshotMetadata(
+    val timestamp: Long,
+    val source: String,
+    val version: Int = 1,
+    val channels: List<Channel>
+)
+
 /**
- * מקור רשימת הערוצים המאושרים (Approved Channels).
+ * מקור אמת יחיד לרשימת הערוצים המאושרים (Approved Channels Single Source of Truth).
  *
- * ארכיטקטורת M-P-F-G:
- * 1. Memory Cache
- * 2. Persistent Local Snapshot (מוצג מיד לשיפור מהירות)
- * 3. Firebase approvedChannels (מקור האמת הראשי)
- * 4. GitHub fallback
- * 5. Asset fallback
+ * היררכיית סמכות (Authority Order):
+ * 1. Firebase approvedChannels (מקור האמת הבלעדי כשהוא זמין — ללא מיזוג עם GitHub)
+ * 2. Last Known Good Snapshot בלתי תלוי ברשת
+ * 3. GitHub fallback במידה ואין snapshot
+ * 4. Asset fallback במידה ואין תמונת מצב כלל
  */
 object ChannelsRepository {
 
@@ -31,7 +45,7 @@ object ChannelsRepository {
     private const val APPROVED_API =
         "https://europe-west1-filter-tube-52d8e.cloudfunctions.net/listApprovedChannels"
     private const val SNAPSHOT_FILE_NAME = "channels_snapshot.json"
-    private const val CACHE_TTL_MS = 30 * 60 * 1000L // 30 דקות TTL למטמון זיכרון
+    private const val CACHE_TTL_MS = 30 * 60 * 1000L // 30 דקות TTL למטמון
 
     private val json = Json { ignoreUnknownKeys = true }
     private val httpClient = OkHttpClient.Builder()
@@ -39,19 +53,22 @@ object ChannelsRepository {
         .readTimeout(8, TimeUnit.SECONDS)
         .build()
 
+    private val refreshMutex = Mutex()
+    private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val _approvedChannelsFlow = MutableStateFlow<List<Channel>>(emptyList())
+    val approvedChannelsFlow: StateFlow<List<Channel>> = _approvedChannelsFlow.asStateFlow()
+
     @Volatile
     private var cached: List<Channel>? = null
 
     @Volatile
     private var lastFetchTime: Long = 0L
 
-    @Volatile
-    private var isRefreshing: Boolean = false
-
-    @Synchronized
     fun invalidate() {
-        cached = null
         lastFetchTime = 0L
+        cached = null
+        Diagnostics.log("ChannelsRepository: invalidate - מטמון ערוצים בוטל יזמית")
     }
 
     /**
@@ -59,24 +76,22 @@ object ChannelsRepository {
      */
     suspend fun getChannels(context: Context): List<Channel> = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
-        val mem = cached
+        val mem = cached ?: _approvedChannelsFlow.value.takeIf { it.isNotEmpty() }
 
         if (mem != null && (now - lastFetchTime < CACHE_TTL_MS)) {
             return@withContext mem
         }
 
-        // טעינה מ-snapshot מקומי
         val snapshot = loadFromSnapshot(context)
         if (snapshot.isNotEmpty()) {
             cached = snapshot
-            // אם עבר TTL, מרעננים ברקע בלי לעכב את הקורא
+            _approvedChannelsFlow.value = snapshot
             if (now - lastFetchTime >= CACHE_TTL_MS) {
                 backgroundRefresh(context)
             }
             return@withContext snapshot
         }
 
-        // אם אין snapshot מקומי, מבצעים רענון מלא (Firebase -> GitHub -> Asset)
         refresh(context)
     }
 
@@ -84,49 +99,62 @@ object ChannelsRepository {
      * מחזיר מיד את רשימת הערוצים הקיימת בזיכרון או ב-snapshot, ללא המתנה לרשת.
      */
     fun getCachedChannelsFast(context: Context): List<Channel> {
-        cached?.let { return it }
+        cached?.takeIf { it.isNotEmpty() }?.let { return it }
+        val flowVal = _approvedChannelsFlow.value
+        if (flowVal.isNotEmpty()) {
+            cached = flowVal
+            return flowVal
+        }
         val snapshot = loadFromSnapshot(context)
         if (snapshot.isNotEmpty()) {
             cached = snapshot
+            _approvedChannelsFlow.value = snapshot
             return snapshot
         }
         val asset = loadFromAsset(context)
         if (asset.isNotEmpty()) {
             cached = asset
+            _approvedChannelsFlow.value = asset
             return asset
         }
         return emptyList()
     }
 
     /**
-     * מבצע רענון לרשימת הערוצים מול Firebase -> GitHub -> Asset ועדכון המטמון.
+     * מבצע רענון יחיד ומאובטח (מניעת מרוץ באמצעות Mutex) של רשימת הערוצים המאושרים.
      */
     suspend fun refresh(context: Context): List<Channel> = withContext(Dispatchers.IO) {
-        val fromServer = runCatching { fetchFromServer() }.getOrNull().orEmpty()
-        val channels = if (fromServer.isNotEmpty()) {
-            fromServer
-        } else {
-            val fromGithub = runCatching { fetchFromGithub() }.getOrNull().orEmpty()
-            if (fromGithub.isNotEmpty()) fromGithub else loadFromAsset(context)
-        }
+        refreshMutex.withLock {
+            val fromServer = runCatching { fetchFromServer() }.getOrNull().orEmpty()
+            val (channels, source) = if (fromServer.isNotEmpty()) {
+                fromServer to "firebase"
+            } else {
+                val snapshot = loadFromSnapshot(context)
+                if (snapshot.isNotEmpty()) {
+                    snapshot to "snapshot"
+                } else {
+                    val fromGithub = runCatching { fetchFromGithub() }.getOrNull().orEmpty()
+                    if (fromGithub.isNotEmpty()) fromGithub to "github" else loadFromAsset(context) to "asset"
+                }
+            }
 
-        if (channels.isNotEmpty()) {
-            cached = channels
-            lastFetchTime = System.currentTimeMillis()
-            saveToSnapshot(context, channels)
+            if (channels.isNotEmpty()) {
+                cached = channels
+                lastFetchTime = System.currentTimeMillis()
+                _approvedChannelsFlow.value = channels
+                if (source == "firebase" || source == "github") {
+                    saveToSnapshot(context, channels, source)
+                }
+            }
+            channels
         }
-        channels
     }
 
     private fun backgroundRefresh(context: Context) {
-        if (isRefreshing) return
-        isRefreshing = true
-        GlobalScope.launch(Dispatchers.IO) {
+        repoScope.launch {
             try {
                 refresh(context)
             } catch (_: Exception) {
-            } finally {
-                isRefreshing = false
             }
         }
     }
@@ -136,14 +164,21 @@ object ChannelsRepository {
             val file = File(context.filesDir, SNAPSHOT_FILE_NAME)
             if (!file.exists()) return emptyList()
             val text = file.readText()
-            json.decodeFromString<List<Channel>>(text)
+            val metadata = json.decodeFromString<SnapshotMetadata>(text)
+            metadata.channels
         }.getOrNull().orEmpty()
     }
 
-    private fun saveToSnapshot(context: Context, channels: List<Channel>) {
+    private fun saveToSnapshot(context: Context, channels: List<Channel>, source: String) {
         runCatching {
             val file = File(context.filesDir, SNAPSHOT_FILE_NAME)
-            val text = json.encodeToString(channels)
+            val metadata = SnapshotMetadata(
+                timestamp = System.currentTimeMillis(),
+                source = source,
+                version = 1,
+                channels = channels
+            )
+            val text = json.encodeToString(metadata)
             file.writeText(text)
         }
     }
