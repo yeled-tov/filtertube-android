@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - 'codex/**'
+      - 'jules/**'
     paths-ignore:
       - 'flutter_app/**'
       - '.github/workflows/flutter.yml'
@@ -85,7 +86,7 @@ jobs:
           mkdir -p artifacts
           cp app/build/outputs/apk/release/app-release.apk artifacts/FilterTube.apk
 
-      - name: Upload APK artifact
+      - name: Upload Android APK artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: FilterTube-APK

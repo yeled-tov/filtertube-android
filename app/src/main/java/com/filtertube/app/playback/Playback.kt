@@ -28,7 +28,7 @@ object Playback {
 
     const val EXTRA_IS_AUDIO = "filtertube_is_audio"
     private const val CACHE_CAP = 60
-    private const val RADIO_SIZE = 14
+    private const val PREFETCH_SIZE = 2 // טעינה מוקדמת של 1-2 סרטונים בלבד כדי לא לקחת רוחב פס מהנגן
 
     private val dataCache = LinkedHashMap<String, StreamData>()
     private val pendingNext = ArrayDeque<Video>()
@@ -96,9 +96,6 @@ object Playback {
         val idx = if (preferred > 0) {
             data.tracks.indexOfFirst { it.height in 1..preferred }.takeIf { it >= 0 } ?: data.tracks.lastIndex
         } else {
-            // אוטומטי: מעדיפים זרם משולב (muxed, audioUrl==null) — קובץ יחיד שמתחיל מהר
-            // ויציב, בלי מיזוג DASH של וידאו+אודיו נפרדים שעלול להיתקע באמצע. אם אין
-            // muxed — הגבוה ביותר עד 720p. המשתמש יכול להעלות איכות ידנית בתפריט הנגן.
             data.tracks.indexOfFirst { it.audioUrl == null }.takeIf { it >= 0 }
                 ?: data.tracks.indexOfFirst { it.height in 1..720 }.takeIf { it >= 0 }
                 ?: 0
@@ -111,7 +108,6 @@ object Playback {
 
     fun buildItem(data: StreamData, videoId: String, audio: Boolean, qualityIndex: Int = defaultQuality(data)): MediaItem {
         val extras = Bundle().apply { putBoolean(EXTRA_IS_AUDIO, audio) }
-        // ה-UA שבו נחלצו כתובות הזרם — חובה לנגן באותו UA אחרת יוטיוב חותך אחרי כמה שניות
         data.streamUserAgent?.let { extras.putString(FilterTubeMediaSourceFactory.EXTRA_USER_AGENT, it) }
         val uri: String = if (audio) {
             data.bestAudioUrl ?: data.bestVideoUrl
@@ -158,14 +154,16 @@ object Playback {
         }
         val settings = SettingsStore(context)
         val level = settings.filterLevel
-        val channels = ChannelsRepository.getChannels(context)
-        val allowed = channels.map { it.youtubeChannelId }.toHashSet()
+
+        // שימוש מהיר במטמון ערוצים מקומי כדי לא לחסום את תחילת הניגון ברשת
+        val channels = ChannelsRepository.getCachedChannelsFast(context)
         val catById = channels.associate { it.youtubeChannelId to it.category }
 
         val preferred = settings.preferredQuality
         val data = StreamRepository.getStream(video.id)
         if (!sessionCurrent()) return
         cache(video.id, data)
+
         // היסטוריית צפייה מקומית — מזינה את מסך ההיסטוריה ואת התאמת מסך הבית
         runCatching {
             library.addToHistory(
@@ -188,28 +186,18 @@ object Playback {
         c.play()
         addPendingNext(context, c)
 
-        // תן לסרטון הנוכחי "ראש" גדול (6ש') לבנות buffer לפני שמתחילים עבודת רקע,
-        // אחרת חילוץ התור גוזל רוחב פס והניגון נתקע אחרי כמה שניות (התסמין שדווח).
-        kotlinx.coroutines.delay(6000)
+        // נותנים לסרטון הנוכחי זמן להיטען בבאפר מלא לפני שמכינים את התור ברקע
+        kotlinx.coroutines.delay(8000)
         if (!sessionCurrent()) return
 
-        // ── בניית תור "רדיו" חכם ומגוון (בתוך הרשימה הלבנה בלבד) ──
-        // מועמדים, לפי עדיפות:
-        //   1) סרטונים *קשורים* אמיתיים של יוטיוב (מסוננים למאושרים)
-        //   2) סרטונים מאותה *קטגוריה* מערוצים אחרים — לא רק אותו ערוץ! (מהפיד שכבר בזיכרון)
-        //   3) עוד מאותו ערוץ (גיבוי)
-        // משתמשים בפיד המטמון כדי לא לעשות רשת נוספת לבניית רשימת המועמדים.
+        // ── prefetch מוגבל של 1–2 סרטונים בלבד כדי למנוע העמסת רוחב פס ──
         val feed = runCatching { com.filtertube.app.data.FeedCache.loadFeed(context) }.getOrNull().orEmpty()
         val currentCat = catById[data.channelId]
-        // Keep the regular queue separate from Shorts. Shorts are available only
-        // from the dedicated Shorts tab and are never inserted into radio play.
-        val relatedApproved = emptyList<Video>()
         val sameCategory = feed
             .filter { !it.isShort && currentCat != null && catById[it.channelId] == currentCat && it.channelId != data.channelId }
             .shuffled()
         val sameChannel = feed.filter { !it.isShort && it.channelId == data.channelId && it.id != video.id }
-        // משלבים סרטונים מאותו ערוץ (אותו אמן — הכי קשור) עם סרטונים מאותה קטגוריה
-        // מערוצים אחרים (גיוון) לסירוגין, כדי שיהיה גם קשור וגם מגוון — לא רק אותו ערוץ.
+
         val mixed = buildList {
             val a = sameCategory.iterator()
             val b = sameChannel.iterator()
@@ -218,13 +206,11 @@ object Playback {
                 if (b.hasNext()) add(b.next())
             }
         }
-        val queue = (relatedApproved + mixed)
+        val queue = mixed
             .distinctBy { it.id }
             .filter { it.id != video.id }
-            .take(RADIO_SIZE)
+            .take(PREFETCH_SIZE)
 
-        // פותרים *אחד-אחד* דרך getStream (הנתיב העובד — NewPipe). הראש הגדול (6ש') +
-        // הבאפר הענק מונעים עצירות. כל פריט מתווסף לתור ברגע שהתפענח.
         for (v in queue) {
             if (!sessionCurrent()) return
             val d = runCatching { StreamRepository.getStream(v.id) }.getOrNull() ?: continue
@@ -232,7 +218,7 @@ object Playback {
             cache(v.id, d)
             val a = forcedAudio(catById[d.channelId] ?: catById[v.channelId], level)
             c.addMediaItem(buildItem(d, v.id, a, defaultQuality(d, preferred)))
-            kotlinx.coroutines.delay(1200)   // נשימה בין חילוצים, לשמור רוחב פס לניגון
+            kotlinx.coroutines.delay(2000)
         }
     }
 }

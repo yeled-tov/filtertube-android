@@ -69,8 +69,18 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
         state = SearchState.Loading
         scope.launch {
             state = try {
-                val channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
-                // חיפוש מהיר דרך ה-API הרשמי (קריאה אחת) במקום חילוץ NewPipe האיטי
+                // שימוש בערוצים מאושרים מהמטמון המקומי מיד, ללא המתנה לרשת
+                val cached = ChannelsRepository.getCachedChannelsFast(context).forLevel(settings.filterLevel)
+                val channels = if (cached.isNotEmpty()) {
+                    // רענון ברקע של הערוצים
+                    scope.launch { ChannelsRepository.refresh(context) }
+                    cached
+                } else {
+                    // אם אין מטמון כלל, טעינה מקבילית
+                    ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
+                }
+
+                // חיפוש מהיר דרך ה-API הרשמי (קריאה אחת)
                 val results = YouTubeDataApi.search(trimmed, channels)
                 if (results.isEmpty()) SearchState.Error("לא נמצאו תוצאות בערוצים המאושרים")
                 else SearchState.Results(results)
