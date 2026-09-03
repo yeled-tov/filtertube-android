@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import com.filtertube.app.data.Channel
 import com.filtertube.app.data.ChannelAdmin
 import com.filtertube.app.data.ChannelRequests
+import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.AdminDashboard
 import com.filtertube.app.data.ManualPremiumRequests
 import com.filtertube.app.data.categoryLabels
@@ -50,7 +51,6 @@ fun AdminScreen(onBack: () -> Unit) {
     var dashboard by remember { mutableStateOf<AdminDashboard.Snapshot?>(null) }
     var dashboardLoading by remember { mutableStateOf(false) }
 
-    // שדות הוספה
     var newChannelInput by remember { mutableStateOf("") }
     var newCategory by remember { mutableStateOf("music") }
     var newGender by remember { mutableStateOf("all") }
@@ -144,6 +144,8 @@ fun AdminScreen(onBack: () -> Unit) {
                     val ok = ChannelRequests.upsertApproved(ChannelRequests.Approved(cid, nm, r.category, r.gender))
                     if (!ok) { status = "שגיאה בשמירת הערוץ"; busy = false; return@launch }
                     channels = (channels + Channel(cid, nm, r.category, r.gender)).sortedBy { it.name }
+                    ChannelsRepository.invalidate()
+                    ChannelsRepository.refresh(context)
                 }
                 if (!ChannelRequests.resolve(r.id, r.version, "approved")) {
                     status = "הערוץ נוסף, אך סימון הבקשה כמאושרת נכשל"
@@ -187,6 +189,8 @@ fun AdminScreen(onBack: () -> Unit) {
                 val ok = ChannelRequests.upsertApproved(ChannelRequests.Approved(channelId, name, newCategory, newGender))
                 if (ok) {
                     channels = (channels + Channel(channelId, name, newCategory, newGender)).sortedBy { it.name }
+                    ChannelsRepository.invalidate()
+                    ChannelsRepository.refresh(context)
                     newChannelInput = ""
                     status = "נוסף: $name ✓"
                 } else status = "שגיאה בשמירת הערוץ"
@@ -204,6 +208,8 @@ fun AdminScreen(onBack: () -> Unit) {
                 val ok = ChannelRequests.removeApproved(channel.youtubeChannelId)
                 if (ok) {
                     channels = channels.filter { it.youtubeChannelId != channel.youtubeChannelId }
+                    ChannelsRepository.invalidate()
+                    ChannelsRepository.refresh(context)
                     status = "הוסר: ${channel.name} ✓"
                 } else status = "שגיאה בהסרת הערוץ"
             } catch (e: Exception) {
@@ -218,7 +224,6 @@ fun AdminScreen(onBack: () -> Unit) {
     }
 
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
-        // Top bar
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 24.dp, start = 4.dp, end = 16.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
