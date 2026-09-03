@@ -15,13 +15,18 @@ enum class InnerTubeClientType {
 }
 
 /**
- * מנוע פתרון זרמי InnerTube עם אימות תגובה, תמיכה ב-visitorData ואימות נגישות זרם חיה (HTTP check).
+ * מנוע פתרון זרמי InnerTube עם אימות תגובה, ניטור בריאות (Health Monitor) ותמיכה ב-RemoteConfig.
  */
 class InnerTubeResolver(
     private val clientType: InnerTubeClientType
 ) : StreamResolver {
 
-    override val name: String = "InnerTube ${clientType.name}"
+    val clientKey: String = when (clientType) {
+        InnerTubeClientType.IOS -> "IOS"
+        InnerTubeClientType.ANDROID_VR -> "ANDROID_VR"
+    }
+
+    override val name: String = "InnerTube $clientKey"
 
     companion object {
         private const val BASE = "https://www.youtube.com/youtubei/v1/"
@@ -49,46 +54,22 @@ class InnerTubeResolver(
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(6, TimeUnit.SECONDS)
             .build()
-
-        private val streamCheckHttp = OkHttpClient.Builder()
-            .connectTimeout(3, TimeUnit.SECONDS)
-            .readTimeout(3, TimeUnit.SECONDS)
-            .followRedirects(true)
-            .build()
-
-        fun compareVersions(v1: String, v2: String): Int {
-            val p1 = v1.split(".").mapNotNull { it.toIntOrNull() }
-            val p2 = v2.split(".").mapNotNull { it.toIntOrNull() }
-            val maxLen = maxOf(p1.size, p2.size)
-            for (i in 0 until maxLen) {
-                val n1 = p1.getOrElse(i) { 0 }
-                val n2 = p2.getOrElse(i) { 0 }
-                if (n1 != n2) return n1.compareTo(n2)
-            }
-            return 0
-        }
     }
 
     private fun getIosVersion(): String {
-        val rc = RemoteConfig.iosVersion(DEF_IOS_VER)
-        return if (compareVersions(rc, DEF_IOS_VER) >= 0) rc else DEF_IOS_VER
+        return RemoteConfig.iosVersion(DEF_IOS_VER)
     }
 
     private fun getIosUserAgent(): String {
-        val rcVer = RemoteConfig.iosVersion(DEF_IOS_VER)
-        val rcUa = RemoteConfig.iosUserAgent(DEF_IOS_UA)
-        return if (compareVersions(rcVer, DEF_IOS_VER) >= 0) rcUa else DEF_IOS_UA
+        return RemoteConfig.iosUserAgent(DEF_IOS_UA)
     }
 
     private fun getVrVersion(): String {
-        val rc = RemoteConfig.vrVersion(DEF_VR_VER)
-        return if (compareVersions(rc, DEF_VR_VER) >= 0) rc else DEF_VR_VER
+        return RemoteConfig.vrVersion(DEF_VR_VER)
     }
 
     private fun getVrUserAgent(): String {
-        val rcVer = RemoteConfig.vrVersion(DEF_VR_VER)
-        val rcUa = RemoteConfig.vrUserAgent(DEF_VR_UA)
-        return if (compareVersions(rcVer, DEF_VR_VER) >= 0) rcUa else DEF_VR_UA
+        return RemoteConfig.vrUserAgent(DEF_VR_UA)
     }
 
     private fun buildClientConfig(): Pair<JSONObject, String> {
@@ -133,6 +114,16 @@ class InnerTubeResolver(
     }
 
     override suspend fun resolve(videoId: String): StreamData? = withContext(Dispatchers.IO) {
+        if (!RemoteConfig.isResolverEnabled(clientKey, default = true)) {
+            Diagnostics.log("$name $videoId: מנוע מבוטל ב-RemoteConfig")
+            return@withContext null
+        }
+
+        if (!ResolverHealthMonitor.isAvailable(clientKey)) {
+            Diagnostics.log("$name $videoId: מנוע ב-cooldown (נכשל לאחרונה)")
+            return@withContext null
+        }
+
         val t0 = System.currentTimeMillis()
         val (clientObj, userAgent) = buildClientConfig()
         val cname = clientObj.optString("clientName")
@@ -173,11 +164,12 @@ class InnerTubeResolver(
         val elapsedMs = System.currentTimeMillis() - t0
 
         if (json == null) {
-            Diagnostics.log("$name $videoId: HTTP $httpCode FAILED (${elapsedMs}ms)")
+            val reason = "HTTP $httpCode"
+            Diagnostics.log("$name $videoId: $reason FAILED (${elapsedMs}ms)")
+            ResolverHealthMonitor.recordFailure(clientKey, reason)
             return@withContext null
         }
 
-        // Save visitorData if returned
         json.optJSONObject("responseContext")?.optString("visitorData")?.takeIf { it.isNotBlank() }?.let {
             visitorData = it
         }
@@ -186,13 +178,16 @@ class InnerTubeResolver(
         val status = playability?.optString("status")
         val reason = playability?.optString("reason") ?: playability?.optString("errorScreen")
         if (status != "OK") {
-            Diagnostics.log("$name $videoId: status=$status reason=$reason FAILED (${elapsedMs}ms)")
+            val failMsg = "status=$status reason=${reason ?: "none"}"
+            Diagnostics.log("$name $videoId: $failMsg FAILED (${elapsedMs}ms)")
+            ResolverHealthMonitor.recordFailure(clientKey, status ?: "NOT_OK")
             return@withContext null
         }
 
         val sd = json.optJSONObject("streamingData")
         if (sd == null) {
             Diagnostics.log("$name $videoId: missing streamingData FAILED (${elapsedMs}ms)")
+            ResolverHealthMonitor.recordFailure(clientKey, "missing streamingData")
             return@withContext null
         }
 
@@ -203,7 +198,7 @@ class InnerTubeResolver(
 
         fun processFormat(f: JSONObject, adaptive: Boolean) {
             val url = f.optString("url")
-            if (url.isEmpty()) return // Ciphered or missing direct URL
+            if (url.isEmpty()) return
             val mime = f.optString("mimeType")
             when {
                 mime.startsWith("audio/") -> {
@@ -242,23 +237,10 @@ class InnerTubeResolver(
             listOf(StreamTrack(0, "שידור חי", hls, null))
         else vodTracks
 
-        if (tracks.isEmpty()) {
-            Diagnostics.log("$name $videoId: no direct playable URLs FAILED (${elapsedMs}ms)")
-            return@withContext null
-        }
-
-        val testUrl = tracks.first().videoUrl
-        if (!verifyStreamUrl(testUrl, userAgent)) {
-            Diagnostics.log("$name $videoId: stream URL probe 403/failed FAILED (${elapsedMs}ms)")
-            return@withContext null
-        }
-
         val bestMuxed = if (isLive && hls.isNotEmpty()) hls
-        else muxedTracks.maxByOrNull { it.height }?.videoUrl ?: tracks.first().videoUrl
+        else muxedTracks.maxByOrNull { it.height }?.videoUrl ?: tracks.firstOrNull()?.videoUrl ?: ""
 
-        Diagnostics.log("$name $videoId: status=OK streamingData=OK tracks=${tracks.size} SUCCESS (${elapsedMs}ms)")
-
-        StreamData(
+        val streamData = StreamData(
             title = vd?.optString("title") ?: "",
             uploaderName = vd?.optString("author") ?: "",
             channelId = vd?.optString("channelId") ?: "",
@@ -272,20 +254,15 @@ class InnerTubeResolver(
             related = emptyList(),
             streamUserAgent = userAgent
         )
-    }
 
-    private fun verifyStreamUrl(url: String, userAgent: String): Boolean {
-        if (url.isEmpty()) return false
-        return runCatching {
-            val req = Request.Builder()
-                .url(url)
-                .header("User-Agent", userAgent)
-                .header("Range", "bytes=0-1")
-                .get()
-                .build()
-            streamCheckHttp.newCall(req).execute().use { resp ->
-                resp.isSuccessful || resp.code == 206
-            }
-        }.getOrDefault(false)
+        if (!StreamValidator.validateBasic(streamData)) {
+            Diagnostics.log("$name $videoId: basic stream validation FAILED (${elapsedMs}ms)")
+            ResolverHealthMonitor.recordFailure(clientKey, "invalid StreamData")
+            return@withContext null
+        }
+
+        ResolverHealthMonitor.recordSuccess(clientKey)
+        Diagnostics.log("$name $videoId: status=OK streamingData=OK tracks=${tracks.size} SUCCESS (${elapsedMs}ms)")
+        streamData
     }
 }

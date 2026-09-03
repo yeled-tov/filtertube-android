@@ -3,7 +3,6 @@ package com.filtertube.app.data
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.ServiceList
-import org.schabi.newpipe.extractor.stream.StreamInfoItem
 
 /**
  * מנוע פתרון זרמי NewPipe — המנגנון האמין כנתיב גיבוי (Fallback).
@@ -11,8 +10,19 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 class NewPipeResolver : StreamResolver {
 
     override val name: String = "NewPipe"
+    private val clientKey: String = "NewPipe"
 
     override suspend fun resolve(videoId: String): StreamData? = withContext(Dispatchers.IO) {
+        if (!RemoteConfig.isResolverEnabled(clientKey, default = true)) {
+            Diagnostics.log("$name $videoId: מנוע מבוטל ב-RemoteConfig")
+            return@withContext null
+        }
+
+        if (!ResolverHealthMonitor.isAvailable(clientKey)) {
+            Diagnostics.log("$name $videoId: מנוע ב-cooldown (נכשל לאחרונה)")
+            return@withContext null
+        }
+
         val t0 = System.currentTimeMillis()
         runCatching {
             val linkHandler = org.schabi.newpipe.extractor.services.youtube.linkHandler
@@ -47,9 +57,8 @@ class NewPipeResolver : StreamResolver {
             val channelId = extractChannelId(runCatching { extractor.uploaderUrl }.getOrNull()) ?: ""
 
             val elapsedMs = System.currentTimeMillis() - t0
-            Diagnostics.log("$name $videoId: tracks=${tracks.size} SUCCESS (${elapsedMs}ms)")
 
-            StreamData(
+            val streamData = StreamData(
                 title = runCatching { extractor.name }.getOrNull().orEmpty(),
                 uploaderName = runCatching { extractor.uploaderName }.getOrNull().orEmpty(),
                 channelId = channelId,
@@ -63,9 +72,19 @@ class NewPipeResolver : StreamResolver {
                 related = emptyList(),
                 streamUserAgent = null
             )
+
+            if (!StreamValidator.validateBasic(streamData)) {
+                throw IllegalStateException("Basic stream validation failed in NewPipe")
+            }
+
+            ResolverHealthMonitor.recordSuccess(clientKey)
+            Diagnostics.log("$name $videoId: tracks=${tracks.size} SUCCESS (${elapsedMs}ms)")
+            streamData
         }.getOrElse { e ->
             val elapsedMs = System.currentTimeMillis() - t0
-            Diagnostics.log("$name $videoId: ${e.message ?: "Unknown error"} FAILED (${elapsedMs}ms)")
+            val reason = e.message ?: "Unknown error"
+            Diagnostics.log("$name $videoId: $reason FAILED (${elapsedMs}ms)")
+            ResolverHealthMonitor.recordFailure(clientKey, reason)
             null
         }
     }
