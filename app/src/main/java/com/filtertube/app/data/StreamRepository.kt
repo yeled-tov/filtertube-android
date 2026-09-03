@@ -120,13 +120,16 @@ object StreamRepository {
         val t0 = System.currentTimeMillis()
         val priorityKeys = RemoteConfig.resolverPriority()
 
+        // סינון יזיר ומהיר: בוחרים רק מנועים זמינים שאינם ב-cooldown
         val activeResolvers = buildList {
             for (key in priorityKeys) {
-                resolverMap[key]?.let { add(it) }
+                if (ResolverHealthMonitor.isAvailable(key) && RemoteConfig.isResolverEnabled(key, true)) {
+                    resolverMap[key]?.let { add(it) }
+                }
             }
-            // הוספת מנועים חסרים שלא צוינו ב-priority כגיבוי
-            for ((key, res) in resolverMap) {
-                if (key !in priorityKeys) add(res)
+            // אם כל המנועים המועדפים ב-cooldown, משתמשים ב-NewPipe כגיבוי ישיר
+            if (isEmpty()) {
+                resolverMap["NewPipe"]?.let { add(it) }
             }
         }
 
