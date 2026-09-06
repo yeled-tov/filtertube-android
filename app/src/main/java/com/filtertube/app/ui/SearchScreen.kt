@@ -25,9 +25,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filtertube.app.data.ChannelsRepository
+import com.filtertube.app.data.Diagnostics
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeDataApi
+import com.filtertube.app.data.YouTubeRepository
 import com.filtertube.app.data.YouTubeSuggest
 import com.filtertube.app.data.forLevel
 import kotlinx.coroutines.launch
@@ -67,24 +69,52 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
         settings.addSearchQuery(trimmed)
         history = settings.getSearchHistory()
         state = SearchState.Loading
+
         scope.launch {
             state = try {
-                // שימוש בערוצים מאושרים מהמטמון המקומי מיד, ללא המתנה לרשת
+                // 1. שימוש בערוצים מאושרים מהמטמון המקומי מיד
                 val cached = ChannelsRepository.getCachedChannelsFast(context).forLevel(settings.filterLevel)
                 val channels = if (cached.isNotEmpty()) {
-                    // רענון ברקע של הערוצים
                     scope.launch { ChannelsRepository.refresh(context) }
                     cached
                 } else {
-                    // אם אין מטמון כלל, טעינה מקבילית
                     ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
                 }
 
-                // חיפוש מהיר דרך ה-API הרשמי (קריאה אחת)
-                val results = YouTubeDataApi.search(trimmed, channels)
-                if (results.isEmpty()) SearchState.Error("לא נמצאו תוצאות בערוצים המאושרים")
-                else SearchState.Results(results)
+                // 2. ניסיון קריאה ל-YouTubeDataApi (הנתיב המהיר הראשי)
+                val primaryResults = runCatching {
+                    YouTubeDataApi.search(trimmed, channels)
+                }.getOrNull()
+
+                if (primaryResults != null) {
+                    Diagnostics.log("SEARCH_RESULTS_COUNT count=${primaryResults.size}")
+                    if (primaryResults.isNotEmpty()) {
+                        SearchState.Results(primaryResults)
+                    } else {
+                        SearchState.Error("לא נמצאו תוצאות בערוצים המאושרים")
+                    }
+                } else {
+                    // 3. ה-Data API נכשל ← הפעלת fallback אוטומטית ל-YouTubeRepository (NewPipe)
+                    Diagnostics.log("SEARCH_FALLBACK_STARTED query=$trimmed")
+                    val fallbackResults = runCatching {
+                        YouTubeRepository.search(trimmed, channels) { partial ->
+                            if (partial.isNotEmpty()) {
+                                state = SearchState.Results(partial)
+                            }
+                        }
+                    }.getOrNull().orEmpty()
+
+                    Diagnostics.log("SEARCH_FALLBACK_SUCCESS count=${fallbackResults.size}")
+
+                    if (fallbackResults.isNotEmpty()) {
+                        SearchState.Results(fallbackResults)
+                    } else {
+                        Diagnostics.log("SEARCH_FINAL_FAILURE query=$trimmed")
+                        SearchState.Error("שגיאה בחיפוש. לא ניתן לטעון תוצאות כעת.")
+                    }
+                }
             } catch (e: Exception) {
+                Diagnostics.log("SEARCH_FINAL_FAILURE query=$trimmed error=${e.message}")
                 SearchState.Error(e.message ?: "שגיאה בחיפוש")
             }
         }
