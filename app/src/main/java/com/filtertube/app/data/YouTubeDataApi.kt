@@ -13,9 +13,14 @@ import org.json.JSONObject
 import java.util.Collections
 import java.util.concurrent.TimeUnit
 
+class YouTubeDataApiException(
+    val statusCode: Int,
+    val errorBody: String,
+    message: String
+) : Exception(message)
+
 /**
- * חיפוש מהיר דרך ה-YouTube Data API הרשמי — קריאה אחת, מהיר בהרבה מחילוץ NewPipe
- * (שעשה חיפוש + עד 5 עמודי המשך). הניגון עדיין דרך חילוץ; רק החיפוש כאן.
+ * חיפוש מסונן לרשימה הלבנה דרך ה-YouTube Data API הרשמי.
  */
 object YouTubeDataApi {
     private const val KEY = "AIzaSyDLAo5cUv4lt1Tsad50aMGFE0jl-mfRtOk"
@@ -28,34 +33,71 @@ object YouTubeDataApi {
 
     /**
      * חיפוש מסונן לרשימה הלבנה — מחזיר רק תוצאות מערוצים מאושרים.
-     * [live] = רק שידורים חיים פעילים (eventType=live).
+     * מנותב מחדש לשגיאה מפורשת במידה וה-API נכשל (לדוגמה 403 / מכסה מבוזבזת / key invalid).
      */
     suspend fun search(query: String, channels: List<Channel>, live: Boolean = false): List<Video> = withContext(Dispatchers.IO) {
         val allowed = channels.map { it.youtubeChannelId }.toHashSet()
         val q = java.net.URLEncoder.encode(query, "UTF-8")
         val event = if (live) "&eventType=live" else ""
         val url = "$BASE/search?part=snippet&type=video$event&maxResults=40&q=$q&key=$KEY"
-        val out = LinkedHashMap<String, Video>()
-        runCatching {
-            http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
-                if (!resp.isSuccessful) return@use
-                val items = JSONObject(resp.body?.string() ?: return@use)
-                    .optJSONArray("items") ?: return@use
-                for (i in 0 until items.length()) {
-                    val item = items.optJSONObject(i) ?: continue
-                    val s = item.optJSONObject("snippet") ?: continue
-                    val vid = item.optJSONObject("id")?.optString("videoId").orEmpty()
-                    if (vid.isBlank() || out.containsKey(vid)) continue
-                    val chId = s.optString("channelId")
-                    if (chId !in allowed) continue
-                    val thumb = s.optJSONObject("thumbnails")?.optJSONObject("high")?.optString("url")
-                        ?: "https://i.ytimg.com/vi/$vid/hqdefault.jpg"
-                    out[vid] = Video(vid, s.optString("title"), s.optString("channelTitle"),
-                        chId, thumb, System.currentTimeMillis())
-                }
-            }
+
+        Diagnostics.log("SEARCH_START query=$query")
+        Diagnostics.log("SEARCH_CHANNELS_COUNT allowed=${allowed.size}")
+
+        val req = Request.Builder().url(url).build()
+        var httpCode = -1
+        var responseBody = ""
+
+        val resp = runCatching {
+            http.newCall(req).execute()
+        }.getOrElse { e ->
+            Diagnostics.log("SEARCH_DATA_API_FAILED network error=${e.message}")
+            throw e
         }
-        out.values.toList()
+
+        resp.use { response ->
+            httpCode = response.code
+            responseBody = response.body?.string().orEmpty()
+
+            if (!response.isSuccessful) {
+                Diagnostics.log("SEARCH_DATA_API_FAILED status=$httpCode body=$responseBody")
+                throw YouTubeDataApiException(
+                    statusCode = httpCode,
+                    errorBody = responseBody,
+                    message = "YouTube Data API HTTP $httpCode: $responseBody"
+                )
+            }
+
+            val json = JSONObject(responseBody)
+            val items = json.optJSONArray("items") ?: run {
+                Diagnostics.log("SEARCH_DATA_API_SUCCESS count=0 (missing items array)")
+                return@withContext emptyList()
+            }
+
+            val out = LinkedHashMap<String, Video>()
+            for (i in 0 until items.length()) {
+                val item = items.optJSONObject(i) ?: continue
+                val s = item.optJSONObject("snippet") ?: continue
+                val vid = item.optJSONObject("id")?.optString("videoId").orEmpty()
+                if (vid.isBlank() || out.containsKey(vid)) continue
+                val chId = s.optString("channelId")
+                if (chId !in allowed) continue
+                val thumb = s.optJSONObject("thumbnails")?.optJSONObject("high")?.optString("url")
+                    ?: "https://i.ytimg.com/vi/$vid/hqdefault.jpg"
+                out[vid] = Video(
+                    vid,
+                    s.optString("title"),
+                    s.optString("channelTitle"),
+                    chId,
+                    thumb,
+                    System.currentTimeMillis()
+                )
+            }
+
+            val list = out.values.toList()
+            Diagnostics.log("SEARCH_DATA_API_SUCCESS count=${list.size}")
+            return@withContext list
+        }
     }
 
     // מטמון לשידורים חיים — חיפוש לפי ערוץ יקר במכסה (100 יח'), אז שומרים ל-5 דק'.
@@ -65,7 +107,6 @@ object YouTubeDataApi {
 
     /**
      * שידורים חיים *פעילים כעת* מתוך [channels] (בדיקה לכל ערוץ, מקבילות מוגבלת).
-     * יקר במכסה — המתקשר אמור להעביר רשימה מצומצמת (למשל ערוצים שאתה עוקב אחריהם).
      */
     suspend fun liveFromChannels(channels: List<Channel>, force: Boolean = false): List<Video> = withContext(Dispatchers.IO) {
         val cacheKey = channels.map { it.youtubeChannelId }.sorted().joinToString(",")
