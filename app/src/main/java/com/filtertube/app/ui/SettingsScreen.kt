@@ -730,10 +730,14 @@ private fun NotificationsDialog(settings: SettingsStore, onDismiss: () -> Unit) 
 @Composable
 private fun UpdateDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
+    val settings = remember { SettingsStore(context) }
     var status by remember { mutableStateOf("בודק עדכונים...") }
     var update by remember { mutableStateOf<UpdateChecker.Update?>(null) }
-    LaunchedEffect(Unit) {
-        val u = UpdateChecker.check()
+    var testChannel by remember { mutableStateOf(settings.testChannel) }
+    LaunchedEffect(testChannel) {
+        update = null
+        status = "בודק עדכונים..."
+        val u = UpdateChecker.check(includeTestBuilds = testChannel)
         when {
             u == null -> status = "לא ניתן לבדוק כעת — נסה שוב מאוחר יותר"
             u.isNewer -> { update = u; status = "" }
@@ -747,6 +751,10 @@ private fun UpdateDialog(onDismiss: () -> Unit) {
             Column(modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
                 val u = update
                 if (u != null) {
+                    if (u.isTestBuild) {
+                        Text("גרסת בדיקה", color = ThemeState.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(4.dp))
+                    }
                     Text("יש גרסה חדשה: ${u.name}", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
                     Text("מה השתנה:", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -754,6 +762,26 @@ private fun UpdateDialog(onDismiss: () -> Unit) {
                     Text(u.changelog.ifEmpty { "—" }, color = ThemeState.subtext2, fontSize = 12.sp, lineHeight = 16.sp)
                 } else {
                     Text(status, color = ThemeState.text, fontSize = 14.sp)
+                }
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = ThemeState.divider)
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("ערוץ בדיקות", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            "קבלת גרסאות טסט לפני שחרור ללקוחות. השאר כבוי במכשירי לקוחות.",
+                            color = ThemeState.subtext, fontSize = 11.sp, lineHeight = 15.sp,
+                        )
+                    }
+                    Switch(
+                        checked = testChannel,
+                        onCheckedChange = { settings.testChannel = it; testChannel = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White, checkedTrackColor = ThemeState.accent,
+                            uncheckedThumbColor = ThemeState.subtext, uncheckedTrackColor = Color(0xFF333333),
+                        ),
+                    )
                 }
             }
         },

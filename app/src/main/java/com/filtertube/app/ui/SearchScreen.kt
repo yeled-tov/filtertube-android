@@ -21,22 +21,26 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.filtertube.app.data.Channel
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.Diagnostics
+import com.filtertube.app.data.SearchEngine
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
-import com.filtertube.app.data.YouTubeDataApi
-import com.filtertube.app.data.YouTubeRepository
 import com.filtertube.app.data.YouTubeSuggest
 import com.filtertube.app.data.forLevel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 sealed class SearchState {
     data object Idle : SearchState()
     data object Loading : SearchState()
+    /** חיפוש תקין שפשוט לא מצא כלום — שונה מ-[Error], שמסמן תקלה. */
+    data object Empty : SearchState()
     data class Results(val videos: List<Video>) : SearchState()
     data class Error(val message: String) : SearchState()
 }
@@ -53,13 +57,23 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
     var state by remember { mutableStateOf<SearchState>(SearchState.Idle) }
     var history by remember { mutableStateOf(settings.getSearchHistory()) }
     var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
+    var searchJob by remember { mutableStateOf<Job?>(null) }
 
-    // חיפוש חי — השלמה אוטומטית תוך כדי הקלדה (עם debounce קצר)
-    LaunchedEffect(query) {
+    LaunchedEffect(Unit) {
+        channels = runCatching {
+            ChannelsRepository.getChannels(context).forLevel(settings.filterLevel, settings.userGender)
+        }.getOrNull().orEmpty()
+    }
+
+    // השלמה אוטומטית: קודם שמות ערוצים מאושרים (מיידי, מקומי), ואז הצעות יוטיוב.
+    LaunchedEffect(query, channels) {
         val q = query.trim()
         if (q.isEmpty()) { suggestions = emptyList(); return@LaunchedEffect }
+        suggestions = SearchEngine.channelSuggestions(channels, q)
         kotlinx.coroutines.delay(220)
-        suggestions = YouTubeSuggest.suggest(q)
+        val remote = YouTubeSuggest.suggest(q)
+        suggestions = (suggestions + remote).distinct().take(8)
     }
 
     fun runSearch(q: String) {
@@ -70,49 +84,31 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
         history = settings.getSearchHistory()
         state = SearchState.Loading
 
-        scope.launch {
-            state = try {
-                // 1. שימוש בערוצים מאושרים מהמטמון המקומי מיד
-                val cached = ChannelsRepository.getCachedChannelsFast(context).forLevel(settings.filterLevel)
-                val channels = if (cached.isNotEmpty()) {
-                    scope.launch { ChannelsRepository.refresh(context) }
-                    cached
-                } else {
-                    ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
-                }
-
-                // 2. ניסיון קריאה ל-YouTubeDataApi (הנתיב המהיר הראשי)
-                val primaryResults = runCatching {
-                    YouTubeDataApi.search(trimmed, channels)
-                }.getOrNull()
-
-                if (primaryResults != null) {
-                    Diagnostics.log("SEARCH_RESULTS_COUNT count=${primaryResults.size}")
-                    if (primaryResults.isNotEmpty()) {
-                        SearchState.Results(primaryResults)
-                    } else {
-                        SearchState.Error("לא נמצאו תוצאות בערוצים המאושרים")
-                    }
-                } else {
-                    // 3. ה-Data API נכשל ← הפעלת fallback אוטומטית ל-YouTubeRepository (NewPipe)
-                    Diagnostics.log("SEARCH_FALLBACK_STARTED query=$trimmed")
-                    val fallbackResults = runCatching {
-                        YouTubeRepository.search(trimmed, channels) { partial ->
-                            if (partial.isNotEmpty()) {
-                                state = SearchState.Results(partial)
-                            }
-                        }
+        searchJob?.cancel()
+        searchJob = scope.launch {
+            val approved = channels.ifEmpty {
+                val cached = ChannelsRepository.getCachedChannelsFast(context)
+                    .forLevel(settings.filterLevel, settings.userGender)
+                cached.ifEmpty {
+                    runCatching {
+                        ChannelsRepository.getChannels(context)
+                            .forLevel(settings.filterLevel, settings.userGender)
                     }.getOrNull().orEmpty()
+                }.also { channels = it }
+            }
 
-                    Diagnostics.log("SEARCH_FALLBACK_SUCCESS count=${fallbackResults.size}")
-
-                    if (fallbackResults.isNotEmpty()) {
-                        SearchState.Results(fallbackResults)
-                    } else {
-                        Diagnostics.log("SEARCH_FINAL_FAILURE query=$trimmed")
-                        SearchState.Error("שגיאה בחיפוש. לא ניתן לטעון תוצאות כעת.")
-                    }
+            state = try {
+                val outcome = SearchEngine.search(context, trimmed, approved) { partial ->
+                    if (partial.isNotEmpty()) state = SearchState.Results(partial)
                 }
+                when {
+                    outcome.videos.isNotEmpty() -> SearchState.Results(outcome.videos)
+                    // מבחינים בין "אין תוצאות" (מצב תקין) לבין תקלה אמיתית.
+                    outcome.failed -> SearchState.Error("לא ניתן לחפש כרגע. בדוק את החיבור לאינטרנט ונסה שוב.")
+                    else -> SearchState.Empty
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Diagnostics.log("SEARCH_FINAL_FAILURE query=$trimmed error=${e.message}")
                 SearchState.Error(e.message ?: "שגיאה בחיפוש")
@@ -164,6 +160,22 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
                     onClear = { settings.clearSearchHistory(); history = emptyList() },
                 ) else SuggestionsList(suggestions) { picked -> query = picked; runSearch(picked) }
             is SearchState.Loading -> CenteredLoading("מחפש...")
+            is SearchState.Empty -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(24.dp),
+                ) {
+                    Icon(Icons.Default.Search, null, tint = ThemeState.subtext, modifier = Modifier.size(44.dp))
+                    Spacer(Modifier.height(12.dp))
+                    Text("לא נמצאו סרטונים ל\"$query\"", color = ThemeState.text, fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "החיפוש מוגבל לערוצים המאושרים בלבד. אם חסר לך ערוץ — אפשר לבקש להוסיף אותו במסך \"ערוצים\".",
+                        color = ThemeState.subtext, fontSize = 12.5f.sp, lineHeight = 17.sp,
+                    )
+                }
+            }
             is SearchState.Error -> CenteredError(s.message) { runSearch(query) }
             is SearchState.Results -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),

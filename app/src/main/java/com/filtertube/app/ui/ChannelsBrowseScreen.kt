@@ -52,7 +52,10 @@ fun ChannelsBrowseScreen(onBack: () -> Unit, onOpenChannel: (String, String) -> 
     LaunchedEffect(Unit) {
         channels = runCatching {
             ChannelsRepository.getChannels(context).forLevel(settings.filterLevel, settings.userGender)
-        }.getOrNull().orEmpty().sortedBy { it.name }
+        }.getOrNull().orEmpty()
+            // מזהה ערוץ כפול ברשימה מפיל את LazyColumn ("Key was already used").
+            .distinctBy { it.youtubeChannelId }
+            .sortedBy { it.name }
         runCatching { ChannelAvatars.warm(context, channels.map { it.youtubeChannelId }) }
     }
 
@@ -113,20 +116,46 @@ private fun ChannelRequestDialog(onDismiss: () -> Unit) {
     var sending by remember { mutableStateOf(false) }
     var sent by remember { mutableStateOf(false) }
     var resolving by remember { mutableStateOf(false) }
-    var autoUrl by remember { mutableStateOf("") }
+    var resolved by remember { mutableStateOf<ChannelAdmin.Resolved?>(null) }
+    var manualUrl by remember { mutableStateOf(false) }
+    var notFound by remember { mutableStateOf(false) }
 
-    // Resolve a human-readable channel name automatically, so users do not
-    // need to know what a YouTube URL or channel ID is.
-    LaunchedEffect(name) {
+    /**
+     * מילוי אוטומטי של קישור הערוץ תוך כדי הקלדת השם.
+     *
+     * שלוש תקלות תוקנו כאן ביחס לגרסה הקודמת:
+     * 1. **קריסה.** כל אות פתחה חילוץ NewPipe נוסף במקביל (הביטול לא עוצר בקשת
+     *    רשת שכבר רצה), עד לחניקת מאגר ה-IO ונפילה בזיכרון. עכשיו יש debounce
+     *    ארוך יותר, מנעול חילוץ יחיד ב-ChannelAdmin, ותפיסת Throwable.
+     * 2. **תוצאה ישנה שדורסת חדשה.** נבדק שהשם לא השתנה לפני כתיבת התוצאה.
+     * 3. **"מאתר ערוץ…" שנתקע לנצח.** finally מאפס תמיד את מצב הטעינה.
+     */
+    LaunchedEffect(name, manualUrl) {
+        if (manualUrl) return@LaunchedEffect
         val query = name.trim()
-        if (query.length < 3 || query == autoUrl) return@LaunchedEffect
-        delay(550)
+        if (query.length < 3) {
+            resolved = null; notFound = false; resolving = false; url = ""
+            return@LaunchedEffect
+        }
+        if (resolved?.name?.trim() == query) return@LaunchedEffect
+        delay(700)
         resolving = true
-        val resolved = ChannelAdmin.resolveChannel(query)
-        resolving = false
-        if (resolved != null && name.trim() == query) {
-            url = resolved.first
-            autoUrl = query
+        notFound = false
+        try {
+            val found = ChannelAdmin.resolveChannel(query)
+            if (name.trim() != query) return@LaunchedEffect // הקלדה חדשה — התוצאה כבר לא רלוונטית
+            if (found != null) {
+                resolved = found
+                url = found.url
+            } else {
+                resolved = null
+                notFound = true
+                // חשוב: מנקים את הקישור הישן, אחרת אפשר לשלוח בקשה עם ערוץ
+                // שזוהה קודם ולא קשור לשם שמופיע עכשיו בטופס.
+                url = ""
+            }
+        } finally {
+            resolving = false
         }
     }
 
@@ -151,11 +180,68 @@ private fun ChannelRequestDialog(onDismiss: () -> Unit) {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     Text("מלא/י את הפרטים כדי שיהיה קל לאשר:", color = ThemeState.subtext, fontSize = 12.sp)
                     Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(name, { name = it }, label = { Text("שם הערוץ") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = colors)
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(url, { if (it != autoUrl) autoUrl = ""; url = it }, label = { Text(if (resolving) "מאתר ערוץ…" else "קישור ערוץ (מתמלא אוטומטית)") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = colors)
+                    OutlinedTextField(
+                        name, { name = it; manualUrl = false },
+                        label = { Text("שם הערוץ או הזמר") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = colors,
+                    )
+                    Spacer(Modifier.height(8.dp))
+
+                    // כרטיס הערוץ שזוהה — המשתמש רואה בדיוק איזה ערוץ נבחר,
+                    // במקום להתבקש להדביק קישור או מזהה שהוא לא מכיר.
+                    val found = resolved
+                    when {
+                        resolving -> Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                color = ThemeState.accent, strokeWidth = 2.dp,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text("מאתר את הערוץ ביוטיוב…", color = ThemeState.subtext, fontSize = 12.sp)
+                        }
+
+                        found != null && !manualUrl -> Row(
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                                .background(ThemeState.card).padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AsyncImage(
+                                model = found.avatarUrl, contentDescription = null,
+                                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(50))
+                                    .background(Brush.linearGradient(ThemeState.accentColors)),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("זוהה: ${found.name}", color = ThemeState.text, fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(found.channelId, color = ThemeState.subtext, fontSize = 11.sp,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            TextButton(onClick = { manualUrl = true }) {
+                                Text("לא נכון?", color = ThemeState.accent, fontSize = 12.sp)
+                            }
+                        }
+
+                        notFound -> Column {
+                            Text("לא מצאנו ערוץ בשם הזה. אפשר להדביק קישור ידנית:",
+                                color = ThemeState.subtext, fontSize = 12.sp)
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                url, { url = it; manualUrl = true },
+                                label = { Text("קישור לערוץ ביוטיוב") }, singleLine = true,
+                                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
+                                colors = colors,
+                            )
+                        }
+
+                        manualUrl -> OutlinedTextField(
+                            url, { url = it }, label = { Text("קישור לערוץ ביוטיוב") }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = colors,
+                        )
+
+                        else -> Text("הקלד/י שם והקישור יימצא אוטומטית",
+                            color = ThemeState.subtext, fontSize = 12.sp)
+                    }
                     Spacer(Modifier.height(12.dp))
                     Text("קטגוריה", color = ThemeState.subtext, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))

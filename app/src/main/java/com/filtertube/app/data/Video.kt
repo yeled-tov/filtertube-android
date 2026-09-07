@@ -16,24 +16,48 @@ data class Video(
     val isShort: Boolean = false,    // Shorts stay in the dedicated Shorts tab
     val durationSec: Long = 0L,      // משך הסרטון בשניות
     val viewCount: Long = 0L,        // מספר צפיות
+    /**
+     * מתי *המשתמש* צפה בסרטון (מילישניות). 0 = לא נצפה.
+     * שדה נפרד מ-[publishedAt] דווקא, כדי שההיסטוריה לא תדרוס את תאריך ההעלאה האמיתי
+     * — זה מה שגרם לכל סרטון בספרייה להיראות כאילו "עלה עכשיו".
+     */
+    val watchedAt: Long = 0L,
 ) {
-    /** "לפני 3 שעות", "לפני 2 ימים", או "תאריך לא זמין" */
-    fun timeAgoHe(): String {
-        if (publishedAt <= 0L) return "תאריך לא זמין"
-        val diff = System.currentTimeMillis() - publishedAt
+    /** "לפני 3 שעות", "לפני יומיים", או "תאריך לא זמין" */
+    fun timeAgoHe(): String = relativeHe(publishedAt)
+
+    /** "נצפה לפני שעתיים" — ריק אם הסרטון מעולם לא נצפה. */
+    fun watchedAgoHe(): String =
+        if (watchedAt <= 0L) "" else "נצפה ${relativeHe(watchedAt)}"
+
+    private fun relativeHe(timestamp: Long): String {
+        if (timestamp <= 0L) return "תאריך לא זמין"
+        val diff = System.currentTimeMillis() - timestamp
         if (diff < -60_000L) return "תאריך לא זמין" // תאריך עתידי
         val mins = diff / 60_000
         if (mins < 1) return "עכשיו"
+        if (mins == 1L) return "לפני דקה"
         if (mins < 60) return "לפני $mins דק׳"
         val hrs = mins / 60
+        if (hrs == 1L) return "לפני שעה"
+        if (hrs == 2L) return "לפני שעתיים"
         if (hrs < 24) return "לפני $hrs שעות"
         val days = hrs / 24
+        if (days == 1L) return "אתמול"
+        if (days == 2L) return "לפני יומיים"
         if (days < 7) return "לפני $days ימים"
         val weeks = days / 7
+        if (weeks == 1L) return "לפני שבוע"
+        if (weeks == 2L) return "לפני שבועיים"
         if (weeks < 5) return "לפני $weeks שבועות"
         val months = days / 30
+        if (months <= 1L) return "לפני חודש"
+        if (months == 2L) return "לפני חודשיים"
         if (months < 12) return "לפני $months חודשים"
-        return "לפני ${days / 365} שנים"
+        val years = days / 365
+        if (years <= 1L) return "לפני שנה"
+        if (years == 2L) return "לפני שנתיים"
+        return "לפני $years שנים"
     }
 
     /** עיצוב משך הסרטון (לדוגמה: "4:32", "1:12:08", "0:45") */

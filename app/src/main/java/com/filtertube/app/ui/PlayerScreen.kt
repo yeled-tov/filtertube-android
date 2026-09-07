@@ -224,6 +224,7 @@ fun PlayerScreen(
                 fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             IconButton(onClick = {
                 liked = store.toggleLike(currentVideo())
+                com.filtertube.app.data.LibraryBadges.setLiked(ui.mediaId ?: "", liked)
                 syncLikeToYoutube(context, scope, ui.mediaId ?: "", liked)
             }) {
                 Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
@@ -1024,6 +1025,7 @@ private fun OnVideoPlayerScreen(
             }
             IconButton(onClick = {
                 liked = store.toggleLike(currentVideo())
+                com.filtertube.app.data.LibraryBadges.setLiked(ui.mediaId ?: "", liked)
                 syncLikeToYoutube(context, scope, ui.mediaId ?: "", liked)
                 if (liked && sb.autoDownloadLikes && sb.premiumActive && currentData != null) {
                     com.filtertube.app.data.DownloadEngine.enqueue(context, currentVideo(), currentData.bestVideoUrl, false, currentData.streamUserAgent)

@@ -24,9 +24,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.ChannelsRepository
+import com.filtertube.app.data.FeedCache
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeDataApi
+import com.filtertube.app.data.YouTubeRepository
 import com.filtertube.app.data.forLevel
 import kotlinx.coroutines.launch
 
@@ -50,13 +52,29 @@ fun LiveScreen(onVideoClick: (Video) -> Unit, onBack: () -> Unit) {
     var autoLive by remember { mutableStateOf<List<Video>>(emptyList()) }
     var autoLoading by remember { mutableStateOf(true) }
 
+    /**
+     * זיהוי שידורים חיים בעלות של יחידת מכסה אחת לכל 50 סרטונים.
+     *
+     * הגרסה הקודמת הריצה `search.list` נפרד לכל ערוץ מאושר — 166 ערוצים × 100
+     * יחידות = 16,600 יחידות בפתיחה אחת של המסך, מול מכסה יומית של 10,000.
+     * פתיחה בודדת של המסך שרפה את כל המכסה של היום וגרמה לחיפוש להיתקע.
+     */
     fun refreshLive(force: Boolean = false) {
         autoLoading = true
+        error = ""
         scope.launch {
             try {
                 val approved = ChannelsRepository.getChannels(context)
                     .forLevel(settings.filterLevel, settings.userGender)
-                autoLive = YouTubeDataApi.liveFromChannels(approved, force)
+                val allowed = approved.mapTo(HashSet()) { it.youtubeChannelId }
+                // הפיד השמור כבר מכיל את הסרטונים האחרונים של כל ערוץ מאושר,
+                // ושידור חי מופיע בו כרשומה רגילה ברגע שהוא מתחיל.
+                val recent = (FeedCache.loadFeed(context).orEmpty())
+                    .filter { it.channelId in allowed }
+                    .ifEmpty {
+                        if (force) YouTubeRepository.fetchAllChannelsFeed(approved) else emptyList()
+                    }
+                autoLive = YouTubeDataApi.liveFromVideos(context, recent)
             } catch (e: Exception) {
                 error = e.message ?: "לא ניתן לעדכן שידורים חיים כרגע"
             } finally {
@@ -69,19 +87,16 @@ fun LiveScreen(onVideoClick: (Video) -> Unit, onBack: () -> Unit) {
         refreshLive()
     }
 
+    /** חיפוש בתוך השידורים החיים שכבר אותרו — מקומי, בלי מכסה ובלי המתנה. */
     fun runSearch() {
         val q = query.trim()
         if (q.isEmpty()) { searched = false; results = emptyList(); return }
-        loading = true; searched = true; error = ""; results = emptyList()
-        scope.launch {
-            try {
-                val channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
-                results = YouTubeDataApi.search(q, channels, live = true)
-                if (results.isEmpty()) error = "לא נמצאו שידורים חיים פעילים לחיפוש זה"
-            } catch (e: Exception) {
-                error = e.message ?: "שגיאה בחיפוש"
-            } finally { loading = false }
+        searched = true; error = ""
+        val needle = q.lowercase()
+        results = autoLive.filter {
+            it.title.lowercase().contains(needle) || it.channelName.lowercase().contains(needle)
         }
+        if (results.isEmpty()) error = "לא נמצא שידור חי פעיל שתואם לחיפוש"
     }
 
     val fieldColors = TextFieldDefaults.colors(

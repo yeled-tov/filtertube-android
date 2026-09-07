@@ -149,6 +149,15 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_NOTIFY, true)
         set(value) = prefs.edit().putBoolean(KEY_NOTIFY, value).apply()
 
+    /**
+     * ערוץ בדיקות — המכשיר יקבל גם גרסאות טסט (Pre-release מסוג `test-N`)
+     * שנבנות מענפי `test/**`, לפני שהן משוחררות ללקוחות.
+     * כבוי כברירת מחדל: לקוחות מקבלים רק גרסאות יציבות.
+     */
+    var testChannel: Boolean
+        get() = prefs.getBoolean(KEY_TEST_CHANNEL, false)
+        set(value) = prefs.edit().putBoolean(KEY_TEST_CHANNEL, value).apply()
+
     /** כמה הורדות לרוץ במקביל (1–4). */
     var concurrentDownloads: Int
         get() = prefs.getInt(KEY_DL_CONCURRENT, 3).coerceIn(1, 4)
@@ -513,6 +522,7 @@ class SettingsStore(context: Context) {
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_ADMIN_UNLOCKED_LEGACY = "admin_unlocked"
         private const val KEY_NOTIFY = "new_video_notifications"
+        private const val KEY_TEST_CHANNEL = "test_channel_updates"
         private const val KEY_DL_CONCURRENT = "dl_concurrent"
         private const val KEY_DL_CONNECTIONS = "dl_connections"
         private const val KEY_DL_AUTO_LIKES = "dl_auto_likes"

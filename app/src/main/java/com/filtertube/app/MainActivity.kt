@@ -238,7 +238,8 @@ fun AppRoot() {
     }
     LaunchedEffect(Unit) {
         try {
-            val u = com.filtertube.app.data.UpdateChecker.check()
+            // לקוחות מקבלים רק גרסאות יציבות; גרסאות טסט רק אם הופעל ערוץ בדיקות.
+            val u = com.filtertube.app.data.UpdateChecker.check(includeTestBuilds = settings.testChannel)
             if (u != null && u.isNewer) pendingUpdate = u
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error

@@ -139,7 +139,8 @@ fun AdminScreen(onBack: () -> Unit) {
             try {
                 val resolved = ChannelAdmin.resolveChannel(r.url)
                 if (resolved == null) { status = "לא זוהה ערוץ מהקישור של ${r.name}"; busy = false; return@launch }
-                val (cid, nm) = resolved
+                val cid = resolved.channelId
+                val nm = resolved.name
                 if (channels.none { it.youtubeChannelId == cid }) {
                     val ok = ChannelRequests.upsertApproved(ChannelRequests.Approved(cid, nm, r.category, r.gender))
                     if (!ok) { status = "שגיאה בשמירת הערוץ"; busy = false; return@launch }
@@ -181,7 +182,8 @@ fun AdminScreen(onBack: () -> Unit) {
             try {
                 val resolved = ChannelAdmin.resolveChannel(newChannelInput.trim())
                 if (resolved == null) { status = "ערוץ לא נמצא"; busy = false; return@launch }
-                val (channelId, name) = resolved
+                val channelId = resolved.channelId
+                val name = resolved.name
                 if (channels.any { it.youtubeChannelId == channelId }) {
                     status = "הערוץ כבר קיים"; busy = false; return@launch
                 }

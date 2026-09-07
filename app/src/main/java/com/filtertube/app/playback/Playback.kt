@@ -170,10 +170,14 @@ object Playback {
                     channelName = data.uploaderName.ifBlank { video.channelName },
                     channelId = data.channelId.ifBlank { video.channelId },
                     thumbnailUrl = data.thumbnailUrl ?: video.thumbnailUrl,
-                    publishedAt = System.currentTimeMillis(),
+                    // תאריך ההעלאה האמיתי נשמר; זמן הצפייה נרשם ב-watchedAt בתוך addToHistory.
+                    publishedAt = video.publishedAt,
+                    durationSec = data.durationSec.takeIf { it > 0L } ?: video.durationSec,
+                    viewCount = data.viewCount.takeIf { it > 0L } ?: video.viewCount,
                 ),
             )
         }
+        com.filtertube.app.data.LibraryBadges.markWatched(video.id)
         val audio = forcedAudio(catById[data.channelId], level)
         val firstItem = buildItem(data, video.id, audio, defaultQuality(data, preferred))
 

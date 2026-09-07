@@ -176,11 +176,28 @@ class LibraryStore(context: Context) {
     fun addToHistory(video: Video) {
         if (video.id.isBlank()) return
         val current = localHistory().toMutableList()
+        val previous = current.firstOrNull { it.id == video.id }
         current.removeAll { it.id == video.id }
-        current.add(0, video.copy(publishedAt = System.currentTimeMillis()))
+        // זמן הצפייה נשמר ב-watchedAt; publishedAt נשאר תאריך ההעלאה האמיתי.
+        // דריסה שלו כאן היא מה שגרמה לכל סרטון בהיסטוריה להיראות כאילו עלה עכשיו.
+        current.add(
+            0,
+            video.copy(
+                publishedAt = video.publishedAt.takeIf { it > 0L } ?: previous?.publishedAt ?: 0L,
+                durationSec = video.durationSec.takeIf { it > 0L } ?: previous?.durationSec ?: 0L,
+                viewCount = video.viewCount.takeIf { it > 0L } ?: previous?.viewCount ?: 0L,
+                watchedAt = System.currentTimeMillis(),
+            ),
+        )
         while (current.size > HISTORY_CAP) current.removeAt(current.lastIndex)
         if (saveVideos(KEY_LOCAL_HISTORY, current)) queueCloudBackup()
     }
+
+    /** מזהי הסרטונים שכבר נצפו — לסימון "נצפה" ברשימות. */
+    fun watchedIds(): Set<String> = localHistory().mapTo(HashSet()) { it.id }
+
+    /** מזהי הסרטונים שסומנו ב"אהבתי" — לסימון לב ברשימות. */
+    fun likedIds(): Set<String> = likes().mapTo(HashSet()) { it.id }
 
     fun clearLocalHistory() {
         if (saveVideos(KEY_LOCAL_HISTORY, emptyList())) queueCloudBackup()
