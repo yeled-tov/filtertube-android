@@ -94,8 +94,16 @@ object YouTubeRepository {
                 XmlPullParser.END_TAG -> if (parser.name == "entry" && inEntry) {
                     val id = vId; val title = vTitle
                     if (!id.isNullOrEmpty() && !title.isNullOrEmpty()) {
-                        videos.add(Video(id, title, channel.name, channel.youtubeChannelId,
-                            vThumb ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg", vPublished))
+                        videos.add(
+                            Video(
+                                id = id,
+                                title = title,
+                                channelName = channel.name,
+                                channelId = channel.youtubeChannelId,
+                                thumbnailUrl = vThumb ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+                                publishedAt = vPublished
+                            )
+                        )
                     }
                     inEntry = false
                 }
@@ -110,8 +118,7 @@ object YouTubeRepository {
     // ───────────────────────────────────────────────────────────────────────
     /**
      * חיפוש מסונן לערוצים מאושרים. **הדרגתי** — [onPartial] נקרא אחרי כל עמוד
-     * עם כל התוצאות שנאספו עד כה, כך שה-UI מציג תוצאות מיד עם העמוד הראשון
-     * במקום להמתין לכל 6 העמודים. מחזיר את הרשימה הסופית בסוף.
+     * עם כל התוצאות שנאספו עד כה.
      */
     suspend fun search(
         query: String,
@@ -122,7 +129,6 @@ object YouTubeRepository {
         val allowedNames = channels.map { it.name.trim().lowercase() }.toHashSet()
         val qh = ServiceList.YouTube.searchQHFactory.fromQuery(query, listOf("videos"), "")
 
-        // אוסף שומר סדר ומונע כפילויות
         val collected = LinkedHashMap<String, Video>()
         fun ingest(items: List<Any?>) {
             items.filterIsInstance<StreamInfoItem>()
@@ -133,7 +139,7 @@ object YouTubeRepository {
 
         val info = SearchInfo.getInfo(ServiceList.YouTube, qh)
         ingest(info.relatedItems)
-        onPartial(collected.values.toList())   // ← תוצאות ראשונות מופיעות כאן מיד
+        onPartial(collected.values.toList())
 
         var nextPage = info.nextPage
         var pagesFetched = 0
@@ -154,10 +160,9 @@ object YouTubeRepository {
     }
 
     // ───────────────────────────────────────────────────────────────────────
-    // SHORTS — מהטאב "Shorts" של ערוצים מאושרים (כך זה תמיד רק מאושרים)
+    // SHORTS — מהטאב "Shorts" של ערוצים מאושרים
     // ───────────────────────────────────────────────────────────────────────
     suspend fun fetchShorts(channels: List<Channel>): List<Video> = coroutineScope {
-        // דגימה של עד 12 ערוצים בכל פעם (לשמור מהירות), ערבוב להגוון
         val sample = channels.filter { it.youtubeChannelId.startsWith("UC") }.shuffled().take(12)
 
         val lists = sample.map { channel ->
@@ -185,21 +190,31 @@ object YouTubeRepository {
     }
 
     // ───────────────────────────────────────────────────────────────────────
-    // המרת StreamInfoItem → Video
+    // המרת StreamInfoItem → Video עם metadata מלא (duration, viewCount, uploadDate)
     // ───────────────────────────────────────────────────────────────────────
     private fun toVideo(item: StreamInfoItem, fallbackChannel: String? = null, fallbackChannelId: String? = null): Video? {
         val videoId = extractVideoId(item.url) ?: return null
         val channelId = fallbackChannelId ?: extractChannelId(item.uploaderUrl) ?: ""
         val thumb = item.thumbnails?.maxByOrNull { it.height }?.url
             ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+
+        val uploadDateMillis = runCatching {
+            item.uploadDate?.offsetDateTime()?.toInstant()?.toEpochMilli()
+        }.getOrNull() ?: 0L
+
+        val durationSec = runCatching { item.duration }.getOrNull()?.takeIf { it > 0 } ?: 0L
+        val viewCount = runCatching { item.viewCount }.getOrNull()?.takeIf { it > 0 } ?: 0L
+
         return Video(
             id = videoId,
             title = item.name ?: "",
             channelName = fallbackChannel ?: item.uploaderName ?: "",
             channelId = channelId,
             thumbnailUrl = thumb,
-            publishedAt = System.currentTimeMillis(), // search/shorts אין תאריך מדויק
+            publishedAt = uploadDateMillis,
             isShort = item.url?.contains("/shorts/", ignoreCase = true) == true,
+            durationSec = durationSec,
+            viewCount = viewCount
         )
     }
 

@@ -23,8 +23,8 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -345,6 +345,17 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                 Spacer(Modifier.width(4.dp))
                 Text("מאושר", color = Color(0xFF7CF2C0), fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
+            // משך זמן הסרטון בפינה הימנית התחתונה
+            val formattedDur = video.formattedDuration()
+            if (formattedDur.isNotBlank()) {
+                Box(
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)
+                        .clip(RoundedCornerShape(4.dp)).background(Color.Black.copy(alpha = 0.75f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                ) {
+                    Text(formattedDur, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
         Spacer(Modifier.height(10.dp))
         Row(modifier = Modifier.fillMaxWidth()) {
@@ -360,7 +371,12 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                 Text(video.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = ThemeState.text,
                     maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 18.sp)
                 Spacer(Modifier.height(3.dp))
-                Text("${video.channelName} · ${video.timeAgoHe()}", fontSize = 12.sp, color = ThemeState.subtext,
+                val subParts = mutableListOf(video.channelName)
+                val timeStr = video.timeAgoHe()
+                if (timeStr.isNotBlank()) subParts.add(timeStr)
+                val viewsStr = video.formattedViewCount()
+                if (viewsStr.isNotBlank()) subParts.add(viewsStr)
+                Text(subParts.joinToString(" · "), fontSize = 12.sp, color = ThemeState.subtext,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
@@ -368,7 +384,6 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
     if (showActions) VideoActionMenu(video, onDismiss = { showActions = false })
 }
 
-@OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 private fun VideoActionMenu(video: Video, onDismiss: () -> Unit) {
     val context = LocalContext.current
@@ -383,7 +398,7 @@ private fun VideoActionMenu(video: Video, onDismiss: () -> Unit) {
         title = { Text("פעולות לסרטון", color = ThemeState.text) },
         text = {
             Column {
-                VideoAction("הבא בתור", Icons.Default.QueueMusic) {
+                VideoAction("הבא בתור", Icons.AutoMirrored.Filled.QueueMusic) {
                     busy = true
                     scope.launch {
                         val immediate = Playback.enqueueNext(context, video)
@@ -409,7 +424,7 @@ private fun VideoActionMenu(video: Video, onDismiss: () -> Unit) {
                     }
                     context.startActivity(android.content.Intent.createChooser(share, "שתף סרטון")); onDismiss()
                 }
-                VideoAction("הוסף לפלייליסט", Icons.Default.PlaylistAdd) { playlistOpen = true }
+                VideoAction("הוסף לפלייליסט", Icons.AutoMirrored.Filled.PlaylistAdd) { playlistOpen = true }
                 VideoAction("דווח על הסרטון", Icons.Default.Flag) { reportOpen = true }
                 VideoAction("הסר סרטון", Icons.Default.Delete) {
                     store.removeVideo(video); onDismiss()
