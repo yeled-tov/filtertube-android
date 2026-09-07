@@ -47,9 +47,11 @@ import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.BugReport
 import com.filtertube.app.data.DownloadEngine
 import com.filtertube.app.data.FeedCache
+import com.filtertube.app.data.LibraryBadges
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
+import com.filtertube.app.data.VideoMetadata
 import com.filtertube.app.data.YouTubeRepository
 import com.filtertube.app.playback.Playback
 import com.filtertube.app.data.categoryLabelHe
@@ -112,8 +114,13 @@ fun HomeScreen(
                 channels = chans
                 val videos = YouTubeRepository.fetchAllChannelsFeed(chans)
                 if (videos.isNotEmpty()) {
-                    FeedCache.saveFeed(context, videos)   // שומרים גולמי; מתאימים אישית בתצוגה
-                    state = HomeState.Success(sanitizeFeed(personalizeFeed(videos, store.localHistory())))
+                    val ordered = sanitizeFeed(personalizeFeed(videos, store.localHistory()))
+                    // ה-RSS לא מחזיר משך ולא צפיות. ההעשרה מוסיפה נתונים אמיתיים
+                    // בעלות של יחידת מכסה אחת לכל 50 סרטונים, ונשמרת במטמון.
+                    val enriched = runCatching { VideoMetadata.enrich(context, ordered) }
+                        .getOrDefault(ordered)
+                    FeedCache.saveFeed(context, enriched)
+                    state = HomeState.Success(enriched)
                 } else if (state !is HomeState.Success) {
                     state = HomeState.Error("לא נמצאו סרטונים בערוצים המאושרים")
                 }
@@ -127,6 +134,7 @@ fun HomeScreen(
 
     // טעינה מיידית מהקאש (אם יש), ואז רענון ברקע
     LaunchedEffect(Unit) {
+        runCatching { LibraryBadges.refresh(context) }
         runCatching { channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel, settings.userGender) }
         val cached = FeedCache.loadFeed(context)
         if (!cached.isNullOrEmpty()) {
@@ -310,6 +318,8 @@ fun CenteredError(message: String, onRetry: () -> Unit) {
 @Composable
 fun VideoRow(video: Video, onClick: () -> Unit) {
     var showActions by remember(video.id) { mutableStateOf(false) }
+    val liked = video.id in LibraryBadges.liked
+    val watched = video.id in LibraryBadges.watched
     Column(
         modifier = Modifier.fillMaxWidth().combinedClickable(
             onClick = onClick,
@@ -356,6 +366,24 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                     Text(formattedDur, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
+            // סימון "נצפה" — פס התקדמות מלא בתחתית התמונה, כמו ביוטיוב
+            if (watched) {
+                Box(
+                    modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp)
+                        .background(ThemeState.accent),
+                )
+            }
+            // סימון "אהבתי"
+            if (liked) {
+                Box(
+                    modifier = Modifier.align(Alignment.TopStart).padding(9.dp)
+                        .clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.5f))
+                        .padding(5.dp),
+                ) {
+                    Icon(Icons.Default.Favorite, "אהבתי", tint = ThemeState.accent,
+                        modifier = Modifier.size(12.dp))
+                }
+            }
         }
         Spacer(Modifier.height(10.dp))
         Row(modifier = Modifier.fillMaxWidth()) {
@@ -372,12 +400,19 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                     maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 18.sp)
                 Spacer(Modifier.height(3.dp))
                 val subParts = mutableListOf(video.channelName)
-                val timeStr = video.timeAgoHe()
-                if (timeStr.isNotBlank()) subParts.add(timeStr)
                 val viewsStr = video.formattedViewCount()
                 if (viewsStr.isNotBlank()) subParts.add(viewsStr)
+                val timeStr = video.timeAgoHe()
+                // "תאריך לא זמין" רק מרעיש — עדיף להשמיט את החלק הזה
+                if (timeStr.isNotBlank() && timeStr != "תאריך לא זמין") subParts.add(timeStr)
                 Text(subParts.joinToString(" · "), fontSize = 12.sp, color = ThemeState.subtext,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val watchedStr = video.watchedAgoHe()
+                if (watched && watchedStr.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(watchedStr, fontSize = 11.sp, color = ThemeState.accent,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
     }
@@ -414,9 +449,9 @@ private fun VideoActionMenu(video: Video, onDismiss: () -> Unit) {
                         android.widget.Toast.makeText(context, if (ok) "ההורדה התחילה" else "לא ניתן להתחיל הורדה", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
-                val liked = store.isLiked(video.id)
+                val liked = video.id in LibraryBadges.liked
                 VideoAction(if (liked) "הסר מסרטונים שאהבתי" else "הוסף לסרטונים שאהבתי", if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder) {
-                    store.toggleLike(video); onDismiss()
+                    LibraryBadges.setLiked(video.id, store.toggleLike(video)); onDismiss()
                 }
                 VideoAction("שתף סרטון", Icons.Default.Share) {
                     val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {

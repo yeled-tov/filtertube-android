@@ -482,6 +482,9 @@ object CloudSync {
         "thumbnailUrl" to video.thumbnailUrl.take(2_048),
         "publishedAt" to video.publishedAt,
         "isShort" to video.isShort,
+        "durationSec" to video.durationSec,
+        "viewCount" to video.viewCount,
+        "watchedAt" to video.watchedAt,
     )
 
     /**
@@ -509,6 +512,9 @@ object CloudSync {
             thumbnailUrl = data["thumbnailUrl"] as? String ?: "",
             publishedAt = (data["publishedAt"] as? Number)?.toLong() ?: 0L,
             isShort = data["isShort"] as? Boolean ?: false,
+            durationSec = (data["durationSec"] as? Number)?.toLong() ?: 0L,
+            viewCount = (data["viewCount"] as? Number)?.toLong() ?: 0L,
+            watchedAt = (data["watchedAt"] as? Number)?.toLong() ?: 0L,
         )
     }
 

@@ -33,11 +33,21 @@ object UpdateChecker {
         val name: String,
         val changelog: String,
         val apkUrl: String?,
+        val isTestBuild: Boolean = false,
     ) {
         val isNewer: Boolean get() = build > BuildConfig.VERSION_CODE
     }
 
-    suspend fun check(): Update? = withContext(Dispatchers.IO) {
+    /**
+     * מחפש את הגרסה האחרונה.
+     *
+     * [includeTestBuilds] = false (ברירת המחדל, וכל הלקוחות): רק Release יציב
+     * מסוג `build-N`. Pre-release מסוג `test-N` נדחה, כדי שגרסאות בדיקה שנבנות
+     * בענפי `test/**` לא יגיעו בטעות ללקוחות כהתראת עדכון.
+     *
+     * [includeTestBuilds] = true: נלקח גם `test-N`, למכשיר שהפעיל "ערוץ בדיקות".
+     */
+    suspend fun check(includeTestBuilds: Boolean = false): Update? = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(LIST_URL)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "FilterTube")
@@ -50,15 +60,22 @@ object UpdateChecker {
                 for (i in 0 until arr.length()) {
                     val json = arr.optJSONObject(i) ?: continue
                     if (json.optBoolean("draft")) continue
-                    val tag = json.optString("tag_name")              // build-N / flutter-N
-                    if (!tag.startsWith("build-")) continue           // מתעלמים מגרסת Flutter
-                    val build = tag.removePrefix("build-").toIntOrNull() ?: continue
+                    val prerelease = json.optBoolean("prerelease")
+                    if (prerelease && !includeTestBuilds) continue
+                    val tag = json.optString("tag_name")              // build-N / test-N / flutter-N
+                    val prefix = when {
+                        tag.startsWith("build-") -> "build-"
+                        tag.startsWith("test-") && includeTestBuilds -> "test-"
+                        else -> continue                             // מתעלמים מגרסת Flutter ומכל השאר
+                    }
+                    val build = tag.removePrefix(prefix).toIntOrNull() ?: continue
                     if (build <= (latest?.build ?: -1)) continue
+                    val assetName = if (prefix == "test-") "FilterTube-test.apk" else "FilterTube.apk"
                     var apkUrl: String? = null
                     json.optJSONArray("assets")?.let { assets ->
                         for (j in 0 until assets.length()) {
                             val a = assets.optJSONObject(j) ?: continue
-                            if (a.optString("name") == "FilterTube.apk") {
+                            if (a.optString("name") == assetName) {
                                 apkUrl = a.optString("browser_download_url"); break
                             }
                         }
@@ -68,6 +85,7 @@ object UpdateChecker {
                         name = json.optString("name", tag),
                         changelog = json.optString("body", "").trim(),
                         apkUrl = apkUrl,
+                        isTestBuild = prefix == "test-",
                     )
                 }
                 latest

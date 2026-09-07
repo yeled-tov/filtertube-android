@@ -1,7 +1,10 @@
 package com.filtertube.app.data
 
 import android.util.Base64
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -32,32 +35,65 @@ object ChannelAdmin {
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
+    /** תוצאת זיהוי ערוץ — כולל קישור ותמונה, להצגה למשתמש לפני שליחת הבקשה. */
+    data class Resolved(
+        val channelId: String,
+        val name: String,
+        val url: String,
+        val avatarUrl: String?,
+    )
+
     /**
-     * מזהה ערוץ YouTube מקישור/handle. מחזיר (channelId, name) או null.
+     * חילוץ ערוץ דרך NewPipe הוא כבד (שתי בקשות רשת ופענוח JSON גדול), ולא ניתן
+     * להפסקה באמצע. בלי המנעול הזה, כל הקלדה במסך "בקשת הוספת ערוץ" פתחה חילוץ
+     * נוסף במקביל: עשר אותיות = עשרה חילוצים בו-זמנית, שחנקו את מאגר ה-IO והפילו
+     * את האפליקציה בזיכרון על מכשירים חלשים. מנעול = חילוץ אחד בכל רגע נתון.
      */
-    suspend fun resolveChannel(input: String): Pair<String, String>? = withContext(Dispatchers.IO) {
-        try {
-            val raw = input.trim()
-            // A plain name (for example "עומר אדם") is resolved through
-            // NewPipe's channel search; URLs, handles and UC IDs stay direct.
-            val url = if (raw.startsWith("http") || raw.startsWith("UC") || raw.startsWith("@")) {
-                normalizeChannelUrl(raw)
-            } else {
-                val query = ServiceList.YouTube.searchQHFactory.fromQuery(raw, listOf("channels"), "")
-                val info = SearchInfo.getInfo(ServiceList.YouTube, query)
-                val candidate = info.relatedItems.firstOrNull { item ->
-                    val u = item.url ?: ""
-                    u.contains("youtube.com/channel/") || u.contains("youtube.com/@")
-                } ?: info.relatedItems.firstOrNull()
-                candidate?.url ?: return@withContext null
+    private val resolveLock = Mutex()
+
+    /**
+     * מזהה ערוץ YouTube משם, קישור, handle או מזהה UC.
+     *
+     * מחזיר null אם לא נמצא ערוץ. **לא זורק לעולם** — גם לא על [Error]
+     * (כמו OutOfMemoryError מפענוח תגובה גדולה), שהגרסה הקודמת לא תפסה.
+     * ביטול הקורוטינה כן מועבר הלאה, כדי שהקלדה חדשה באמת תבטל חיפוש ישן.
+     */
+    suspend fun resolveChannel(input: String): Resolved? = withContext(Dispatchers.IO) {
+        val raw = input.trim()
+        if (raw.length < 2) return@withContext null
+        resolveLock.withLock {
+            try {
+                // שם רגיל (למשל "עומר אדם") עובר דרך חיפוש ערוצים של NewPipe;
+                // קישור, handle או מזהה UC מטופלים ישירות ובלי חיפוש.
+                val url = if (raw.startsWith("http") || raw.startsWith("UC") || raw.startsWith("@")) {
+                    normalizeChannelUrl(raw)
+                } else {
+                    val query = ServiceList.YouTube.searchQHFactory.fromQuery(raw, listOf("channels"), "")
+                    val info = SearchInfo.getInfo(ServiceList.YouTube, query)
+                    val candidate = info.relatedItems.firstOrNull { item ->
+                        val u = item.url ?: ""
+                        u.contains("youtube.com/channel/") || u.contains("youtube.com/@")
+                    } ?: info.relatedItems.firstOrNull()
+                    candidate?.url ?: return@withLock null
+                }
+                val info = ChannelInfo.getInfo(ServiceList.YouTube, url)
+                val channelId = Regex("/channel/(UC[\\w-]+)").find(info.url)?.groupValues?.get(1)
+                    ?: Regex("(UC[\\w-]{20,})").find(info.id ?: "")?.groupValues?.get(1)
+                    ?: return@withLock null
+                Resolved(
+                    channelId = channelId,
+                    name = info.name ?: channelId,
+                    url = "https://www.youtube.com/channel/$channelId",
+                    avatarUrl = runCatching {
+                        info.avatars?.maxByOrNull { it.height }?.url
+                    }.getOrNull(),
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Throwable) {
+                android.util.Log.w("ChannelAdmin", "resolveChannel('$raw') failed", error)
+                null
             }
-            val info = ChannelInfo.getInfo(ServiceList.YouTube, url)
-            val channelId = Regex("/channel/(UC[\\w-]+)").find(info.url)?.groupValues?.get(1)
-                ?: Regex("(UC[\\w-]{20,})").find(info.id ?: "")?.groupValues?.get(1)
-                ?: return@withContext null
-            channelId to (info.name ?: channelId)
-        } catch (e: Exception) {
-            null
         }
     }
 

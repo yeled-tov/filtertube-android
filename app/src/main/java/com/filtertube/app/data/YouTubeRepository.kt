@@ -126,14 +126,15 @@ object YouTubeRepository {
         onPartial: (List<Video>) -> Unit = {},
     ): List<Video> = withContext(Dispatchers.IO) {
         val allowedIds = channels.map { it.youtubeChannelId }.toHashSet()
-        val allowedNames = channels.map { it.name.trim().lowercase() }.toHashSet()
         val qh = ServiceList.YouTube.searchQHFactory.fromQuery(query, listOf("videos"), "")
 
         val collected = LinkedHashMap<String, Video>()
         fun ingest(items: List<Any?>) {
             items.filterIsInstance<StreamInfoItem>()
                 .mapNotNull { item -> toVideo(item) }
-                .filter { it.channelId in allowedIds || it.channelName.trim().lowercase() in allowedNames }
+                // סינון לפי מזהה ערוץ בלבד. התאמה לפי *שם* ערוץ הייתה חור בסינון:
+                // כל ערוץ ביוטיוב יכול לקרוא לעצמו בשם של ערוץ מאושר ולעבור.
+                .filter { it.channelId in allowedIds }
                 .forEach { if (!collected.containsKey(it.id)) collected[it.id] = it }
         }
 
