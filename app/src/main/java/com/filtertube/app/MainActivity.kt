@@ -240,7 +240,8 @@ fun AppRoot() {
         try {
             // לקוחות מקבלים רק גרסאות יציבות; גרסאות טסט רק אם הופעל ערוץ בדיקות.
             val u = com.filtertube.app.data.UpdateChecker.check(includeTestBuilds = settings.testChannel)
-            if (u != null && u.isNewer) pendingUpdate = u
+            // מציגים רק אם באמת חדשה יותר *וגם* המשתמש לא ביקש לדלג עליה.
+            if (u != null && u.isNewer && u.build > settings.skippedUpdateBuild) pendingUpdate = u
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -452,12 +453,33 @@ fun AppRoot() {
     pendingUpdate?.let { u ->
         AlertDialog(
             onDismissRequest = { pendingUpdate = null },
-            title = { Text("עדכון זמין: ${u.name}") },
+            title = { Text("עדכון זמין — ${u.displayName}") },
             text = {
-                Column(modifier = Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
-                    Text("מה השתנה:", color = ThemeState.accent, fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                    Spacer(Modifier.height(4.dp))
-                    Text(u.changelog.ifEmpty { "—" }, color = Color(0xFFAAAAAA), fontSize = 12.sp)
+                Column(modifier = Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                    Text(
+                        "מה השתנה",
+                        color = ThemeState.accent,
+                        fontSize = 13.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    if (u.changes.isEmpty()) {
+                        Text("שיפורים ותיקונים כלליים", color = Color(0xFFAAAAAA), fontSize = 13.sp)
+                    } else {
+                        u.changes.forEach { change ->
+                            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                                Text("•", color = ThemeState.accent, fontSize = 13.sp)
+                                Spacer(Modifier.height(0.dp))
+                                Text(
+                                    change,
+                                    color = Color(0xFFDDDDDD),
+                                    fontSize = 13.sp,
+                                    lineHeight = 18.sp,
+                                    modifier = Modifier.padding(start = 8.dp),
+                                )
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -470,7 +492,15 @@ fun AppRoot() {
                     TextButton(onClick = { pendingUpdate = null }) { Text("סגור") }
                 }
             },
-            dismissButton = { TextButton(onClick = { pendingUpdate = null }) { Text("אחר כך") } },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        settings.skippedUpdateBuild = u.build
+                        pendingUpdate = null
+                    }) { Text("דלג על גרסה זו") }
+                    TextButton(onClick = { pendingUpdate = null }) { Text("אחר כך") }
+                }
+            },
             containerColor = Color(0xFF1F1F1F),
             titleContentColor = Color.White,
             textContentColor = Color.White,

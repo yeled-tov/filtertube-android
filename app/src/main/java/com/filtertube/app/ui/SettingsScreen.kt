@@ -595,7 +595,7 @@ private fun AboutDialog(onDismiss: () -> Unit) {
                 Text("פלטפורמת וידאו מסוננת — מציגה אך ורק ערוצים מאושרים. כל התוכן מסונן לפי רמת הסינון שנבחרה.",
                     color = ThemeState.subtext2, fontSize = 13.sp, lineHeight = 18.sp)
                 Spacer(Modifier.height(10.dp))
-                Text("גרסה ${BuildConfig.VERSION_NAME}",
+                Text("גרסה ${BuildConfig.VERSION_NAME} (בנייה ${BuildConfig.VERSION_CODE})",
                     color = ThemeState.subtext, fontSize = 13.sp)
                 Spacer(Modifier.height(8.dp))
                 Text("נוצרה על־ידי FilterPhone", color = ThemeState.text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -755,11 +755,25 @@ private fun UpdateDialog(onDismiss: () -> Unit) {
                         Text("גרסת בדיקה", color = ThemeState.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(4.dp))
                     }
-                    Text("יש גרסה חדשה: ${u.name}", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    Text("מה השתנה:", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("יש גרסה חדשה — ${u.displayName}", color = ThemeState.text,
+                        fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
-                    Text(u.changelog.ifEmpty { "—" }, color = ThemeState.subtext2, fontSize = 12.sp, lineHeight = 16.sp)
+                    Text("הגרסה שלך: ${BuildConfig.VERSION_NAME} (בנייה ${BuildConfig.VERSION_CODE})",
+                        color = ThemeState.subtext, fontSize = 11.5.sp)
+                    Spacer(Modifier.height(10.dp))
+                    Text("מה השתנה", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    if (u.changes.isEmpty()) {
+                        Text("שיפורים ותיקונים כלליים", color = ThemeState.subtext2, fontSize = 12.5.sp)
+                    } else {
+                        u.changes.forEach { change ->
+                            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp)) {
+                                Text("•", color = ThemeState.accent, fontSize = 12.5.sp)
+                                Text(change, color = ThemeState.subtext2, fontSize = 12.5.sp,
+                                    lineHeight = 17.sp, modifier = Modifier.padding(start = 8.dp))
+                            }
+                        }
+                    }
                 } else {
                     Text(status, color = ThemeState.text, fontSize = 14.sp)
                 }

@@ -15,10 +15,18 @@ android {
         minSdk = 24            // Android 7.0 — תומך ב-99% מהמכשירים
         targetSdk = 34         // Android 14
 
-        // versionCode נקבע ממספר ה-build של GitHub Actions. מקומית ברירת המחדל 3.
+        // versionCode = מספר הריצה של GitHub Actions. הוא משותף לבניות טסט
+        // ולבניות יציבות (אותו workflow), כך שהוא תמיד עולה ולעולם לא קורה
+        // מצב שבו גרסת טסט חדשה נראית "ישנה" מול גרסה יציבה. מקומית: 3.
         val buildNum = (project.findProperty("buildNumber") as String?)?.toIntOrNull() ?: 3
         versionCode = buildNum
-        versionName = "1.0.0"
+
+        // versionName = הגרסה השיווקית, מתוך version.properties בשורש הפרויקט.
+        val versionProps = java.util.Properties().apply {
+            val f = rootProject.file("version.properties")
+            if (f.exists()) f.inputStream().use { load(it) }
+        }
+        versionName = versionProps.getProperty("versionName")?.trim() ?: "1.0.0"
 
         // RTL support
         resourceConfigurations += listOf("en", "iw")
