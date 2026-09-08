@@ -2,39 +2,62 @@ package com.filtertube.app.data
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.json.JSONObject
+import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.channel.ChannelInfo
+import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo
+import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs
+import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /**
- * העשרת מטא-דאטה אמיתי לסרטונים (משך, צפיות, תאריך העלאה אמיתי, שידור חי).
+ * העשרת מטא-דאטה לסרטונים (משך, צפיות, תאריך העלאה, שידור חי) — דרך NewPipe בלבד.
  *
- * למה זה קיים:
- * ה-RSS של הערוצים (המקור של הפיד) מחזיר רק כותרת + תאריך, בלי משך ובלי צפיות.
- * לכן עד היום הפיד הציג סרטונים בלי משך ובלי נתונים אמיתיים.
+ * ## למה זה לא משתמש יותר ב-YouTube Data API
+ * הגרסה הקודמת משכה `videos.list` עם מפתח API. גם כשזה "זול" (יחידת מכסה אחת
+ * לכל 50 סרטונים), המכסה היומית של הפרויקט היא 10,000 יחידות **לכל המשתמשים
+ * ביחד**. ברגע שהיא נגמרה — מכל סיבה שהיא — כל קריאה החזירה 403, ומסך הבית
+ * הציג "שגיאה בטעינה" במקום סרטונים. תלות במשאב משותף ומוגבל היא הבעיה עצמה,
+ * לא גודל הבקשה.
  *
- * הפתרון: `videos.list` של YouTube Data API — עולה **יחידת מכסה אחת לכל 50 סרטונים**
- * (לעומת `search.list` שעולה 100 יחידות לקריאה בודדת). מטמון קבוע על הדיסק מוודא
- * שכל סרטון נמשך פעם אחת בלבד: משך ותאריך העלאה לא משתנים לעולם, ומספר הצפיות
- * מתרענן רק אחרי [VIEWS_TTL_MS].
+ * ## מה במקום
+ * NewPipe מחלץ את דף הערוץ ישירות מיוטיוב, בלי מפתח ובלי מכסה. חילוץ אחד של
+ * ערוץ מחזיר את הסרטונים האחרונים שלו **כולל משך, צפיות, תאריך וסטטוס שידור
+ * חי** — כלומר בקשה אחת מעשירה עשרות סרטונים בבת אחת. התוצאה נשמרת במטמון
+ * קבוע על הדיסק, כך שכל ערוץ נמשך פעם אחת ומספר הצפיות מתרענן רק אחרי
+ * [VIEWS_TTL_MS].
+ *
+ * ההעשרה היא תמיד שיפור ולעולם לא תנאי: אם החילוץ נכשל, הרשימה חוזרת כמו
+ * שהיא (בלי משך וצפיות) ושום מסך לא נחסם.
  */
 object VideoMetadata {
 
-    private const val KEY = "AIzaSyDLAo5cUv4lt1Tsad50aMGFE0jl-mfRtOk"
-    private const val BASE = "https://www.googleapis.com/youtube/v3"
     private const val CACHE_FILE = "video_metadata.json"
     private const val CACHE_CAP = 4000
     private const val VIEWS_TTL_MS = 12 * 60 * 60 * 1000L // מספר הצפיות מתיישן אחרי 12 שעות
-    private const val BATCH = 50                          // המקסימום ש-videos.list מקבל בקריאה אחת
-    private const val MAX_BATCHES_PER_CALL = 6            // תקרת בטיחות: עד 300 סרטונים (6 יחידות מכסה)
+
+    /** כמה ערוצים לחלץ בקריאה אחת. כל ערוץ מעשיר עשרות סרטונים, אז זה מתכנס מהר. */
+    private const val MAX_CHANNELS_PER_CALL = 12
+
+    /**
+     * מסך "שידורים חיים" בודק יותר ערוצים: שידור חי הוא אירוע נדיר, וכיסוי של
+     * 12 ערוצים בלבד היה מפספס את רובם. הסרטונים ממוינים לפי טריות, אז 40
+     * הערוצים הראשונים הם אלה שהכי סביר שמשדרים עכשיו.
+     */
+    private const val LIVE_MAX_CHANNELS = 40
+
+    /** חילוצים מקבילים. גבוה מדי חונק את מאגר ה-IO (ראה הקריסה ב-ChannelAdmin). */
+    private const val CONCURRENCY = 4
 
     @Serializable
     data class Meta(
@@ -46,20 +69,11 @@ object VideoMetadata {
     )
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val http = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .build()
 
     private val cache = LinkedHashMap<String, Meta>()
     private val lock = Mutex()
 
     @Volatile private var loaded = false
-
-    /** כשהמכסה נגמרה אין טעם להמשיך לנסות — נחכה עד תחילת היום הבא (שעון PT). */
-    @Volatile private var quotaBlockedUntil = 0L
-
-    val quotaBlocked: Boolean get() = System.currentTimeMillis() < quotaBlockedUntil
 
     // ── מטמון על הדיסק ────────────────────────────────────────────────────
     private fun file(context: Context) = File(context.cacheDir, CACHE_FILE)
@@ -98,8 +112,7 @@ object VideoMetadata {
      * חשוב שזה יהיה snapshot ולא קריאה נעולה לכל מזהה בנפרד: [enrich] רץ על
      * הפיד המלא של מסך הבית — כ-2,500 סרטונים מ-166 ערוצים. נעילה לכל סרטון
      * פירושה ~2,800 רכישות Mutex ברצף, כל אחת נקודת השהיה של קורוטינה, בתוך
-     * המסלול שחוסם את הצגת מסך הבית. זו הסיבה שמסך הבית נתקע בעוד החיפוש
-     * (60 תוצאות) עבד תקין.
+     * המסלול שחוסם את הצגת מסך הבית.
      */
     private suspend fun snapshot(): Map<String, Meta> = lock.withLock { cache.toMap() }
 
@@ -110,9 +123,8 @@ object VideoMetadata {
     /**
      * מחזיר את [videos] עם משך, צפיות ותאריך העלאה אמיתיים.
      *
-     * מה שכבר במטמון מוחזר מיד ובלי רשת. רק מזהים חסרים נמשכים, בקבוצות של 50.
-     * אם הרשת או המכסה נכשלות — מוחזרת הרשימה המקורית כמו שהיא, בלי לזרוק חריגה.
-     * הסינון לרשימה הלבנה לא מושפע: הפונקציה לא מוסיפה ולא מסירה סרטונים.
+     * מה שכבר במטמון מוחזר מיד ובלי רשת. הסינון לרשימה הלבנה לא מושפע:
+     * הפונקציה לא מוסיפה ולא מסירה סרטונים, רק ממלאת שדות ריקים.
      */
     suspend fun enrich(context: Context, videos: List<Video>, limit: Int = 300): List<Video> {
         if (videos.isEmpty()) return videos
@@ -120,13 +132,10 @@ object VideoMetadata {
 
         val known = snapshot()
         val missing = videos.take(limit)
-            .map { it.id }
-            .filter { it.isNotBlank() }
-            .distinct()
-            .filter { id -> known[id]?.takeIf { isFresh(it) } == null }
+            .filter { it.id.isNotBlank() && known[it.id]?.takeIf { meta -> isFresh(meta) } == null }
 
-        if (missing.isNotEmpty() && !quotaBlocked) {
-            fetchInto(missing.take(BATCH * MAX_BATCHES_PER_CALL))
+        if (missing.isNotEmpty()) {
+            fetchFromNewPipe(missing)
             persist(context)
         }
 
@@ -141,18 +150,15 @@ object VideoMetadata {
         }
     }
 
-    /** מזהי הסרטונים מתוך [videos] שמשודרים כרגע בשידור חי. עלות: יחידה אחת לכל 50. */
+    /** מזהי הסרטונים מתוך [videos] שמשודרים כרגע בשידור חי. */
     suspend fun liveIds(context: Context, videos: List<Video>): Set<String> {
         if (videos.isEmpty()) return emptySet()
         ensureLoaded(context)
-        val ids = videos.map { it.id }.filter { it.isNotBlank() }.distinct().take(BATCH * MAX_BATCHES_PER_CALL)
-        // שידור חי משתנה כל הזמן — תמיד מרעננים, גם אם יש ערך במטמון.
-        if (!quotaBlocked) {
-            fetchInto(ids)
-            persist(context)
-        }
+        // שידור חי משתנה כל הזמן — תמיד מרעננים את הערוצים הרלוונטיים.
+        fetchFromNewPipe(videos, LIVE_MAX_CHANNELS)
+        persist(context)
         val known = snapshot()
-        return ids.filter { known[it]?.live == true }.toSet()
+        return videos.filter { known[it.id]?.live == true }.map { it.id }.toSet()
     }
 
     /** משך הסרטון בלבד, מהמטמון, בלי גישה לרשת. */
@@ -161,65 +167,77 @@ object VideoMetadata {
         return snapshot()[videoId]?.durationSec ?: 0L
     }
 
-    // ── משיכה מהשרת ───────────────────────────────────────────────────────
-    private suspend fun fetchInto(ids: List<String>) = withContext(Dispatchers.IO) {
-        ids.chunked(BATCH).forEach { chunk ->
-            if (quotaBlocked) return@withContext
-            val url = "$BASE/videos?part=snippet,contentDetails,statistics" +
-                "&id=${chunk.joinToString(",")}&maxResults=$BATCH&key=$KEY"
-            runCatching {
-                http.newCall(Request.Builder().url(url).build()).execute().use { response ->
-                    val body = response.body?.string().orEmpty()
-                    if (!response.isSuccessful) {
-                        if (isQuotaError(response.code, body)) {
-                            // עד חצות בשעון האוקיינוס השקט, שם מתאפסת המכסה של גוגל.
-                            quotaBlockedUntil = System.currentTimeMillis() + 60 * 60 * 1000L
-                            Diagnostics.log("META: מכסת YouTube API נגמרה — עוברים למצב חסכוני")
-                        } else {
-                            Diagnostics.log("META: HTTP ${response.code}")
-                        }
-                        return@use
-                    }
-                    val items = JSONObject(body).optJSONArray("items") ?: return@use
-                    val now = System.currentTimeMillis()
-                    val parsed = buildMap {
-                        for (i in 0 until items.length()) {
-                            val item = items.optJSONObject(i) ?: continue
-                            val id = item.optString("id")
-                            if (id.isBlank()) continue
-                            val snippet = item.optJSONObject("snippet")
-                            put(
-                                id,
-                                Meta(
-                                    durationSec = IsoDurationParser.parseToSeconds(
-                                        item.optJSONObject("contentDetails")?.optString("duration"),
-                                    ),
-                                    viewCount = item.optJSONObject("statistics")
-                                        ?.optString("viewCount")?.toLongOrNull() ?: 0L,
-                                    publishedAt = parseIsoDate(snippet?.optString("publishedAt")),
-                                    live = snippet?.optString("liveBroadcastContent") == "live",
-                                    fetchedAt = now,
-                                ),
-                            )
-                        }
-                    }
-                    lock.withLock { cache.putAll(parsed) }
-                    Diagnostics.log("META: הועשרו ${parsed.size}/${chunk.size} סרטונים (יחידת מכסה אחת)")
+    // ── חילוץ דרך NewPipe ─────────────────────────────────────────────────
+    /**
+     * מחלץ את הערוצים של [videos] ושומר במטמון את המטא-דאטה של כל סרטון שהוחזר.
+     *
+     * מקובץ לפי ערוץ בכוונה: חילוץ אחד מחזיר את כל הסרטונים האחרונים של הערוץ,
+     * כך שבקשה אחת מכסה עשרות סרטונים מהפיד במקום בקשה לכל סרטון.
+     */
+    private suspend fun fetchFromNewPipe(
+        videos: List<Video>,
+        maxChannels: Int = MAX_CHANNELS_PER_CALL,
+    ) = coroutineScope {
+        val channelIds = videos.asSequence()
+            .map { it.channelId }
+            .filter { it.startsWith("UC") }
+            .distinct()
+            .take(maxChannels)
+            .toList()
+        if (channelIds.isEmpty()) return@coroutineScope
+
+        val gate = Semaphore(CONCURRENCY)
+        val results = channelIds.map { channelId ->
+            async(Dispatchers.IO) {
+                gate.withPermit {
+                    runCatching { extractChannel(channelId) }
+                        .onFailure { Diagnostics.log("META: חילוץ ערוץ $channelId נכשל — ${it.message}") }
+                        .getOrDefault(emptyMap())
                 }
-            }.onFailure { Diagnostics.log("META: נכשל — ${it.message}") }
+            }
+        }.awaitAll()
+
+        val merged = HashMap<String, Meta>()
+        results.forEach { merged.putAll(it) }
+        if (merged.isNotEmpty()) {
+            lock.withLock { cache.putAll(merged) }
+            Diagnostics.log("META: הועשרו ${merged.size} סרטונים מ-${channelIds.size} ערוצים (NewPipe, אפס מכסה)")
         }
     }
 
-    private fun isQuotaError(code: Int, body: String): Boolean =
-        code == 403 && (body.contains("quotaExceeded") || body.contains("dailyLimitExceeded"))
+    /** חילוץ יחיד של ערוץ → מטא-דאטה לכל סרטון שהוחזר. רץ על thread של IO. */
+    private fun extractChannel(channelId: String): Map<String, Meta> {
+        val info = ChannelInfo.getInfo(ServiceList.YouTube, "https://www.youtube.com/channel/$channelId")
+        val tab = info.tabs.firstOrNull { it.contentFilters.contains(ChannelTabs.VIDEOS) }
+            ?: info.tabs.firstOrNull()
+            ?: return emptyMap()
+        val items = ChannelTabInfo.getInfo(ServiceList.YouTube, tab).relatedItems
+            .filterIsInstance<StreamInfoItem>()
 
-    private fun parseIsoDate(value: String?): Long {
-        if (value.isNullOrBlank()) return 0L
-        val clean = value.substringBefore(".").substringBefore("+").substringBefore("Z").trim()
-        return runCatching {
-            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).apply {
-                timeZone = java.util.TimeZone.getTimeZone("UTC")
-            }.parse(clean)?.time
-        }.getOrNull() ?: 0L
+        val now = System.currentTimeMillis()
+        val out = HashMap<String, Meta>()
+        items.forEach { item ->
+            val id = videoIdFrom(item.url) ?: return@forEach
+            out[id] = Meta(
+                durationSec = runCatching { item.duration }.getOrNull()?.takeIf { it > 0L } ?: 0L,
+                viewCount = runCatching { item.viewCount }.getOrNull()?.takeIf { it > 0L } ?: 0L,
+                publishedAt = runCatching {
+                    item.uploadDate?.offsetDateTime()?.toInstant()?.toEpochMilli()
+                }.getOrNull() ?: 0L,
+                // השוואה לפי שם הקבוע ולא לפי הטיפוס: מכסה גם LIVE_STREAM וגם
+                // AUDIO_LIVE_STREAM בלי להיות תלוי בגרסת NewPipe.
+                live = runCatching { item.streamType?.name?.contains("LIVE") == true }.getOrDefault(false),
+                fetchedAt = now,
+            )
+        }
+        return out
+    }
+
+    private fun videoIdFrom(url: String?): String? {
+        if (url == null) return null
+        Regex("[?&]v=([A-Za-z0-9_-]{11})").find(url)?.let { return it.groupValues[1] }
+        Regex("/shorts/([A-Za-z0-9_-]{11})").find(url)?.let { return it.groupValues[1] }
+        Regex("youtu\\.be/([A-Za-z0-9_-]{11})").find(url)?.let { return it.groupValues[1] }
+        return null
     }
 }

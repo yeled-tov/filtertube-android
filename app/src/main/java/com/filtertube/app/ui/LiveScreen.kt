@@ -27,7 +27,7 @@ import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.FeedCache
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
-import com.filtertube.app.data.YouTubeDataApi
+import com.filtertube.app.data.LiveDetector
 import com.filtertube.app.data.YouTubeRepository
 import com.filtertube.app.data.forLevel
 import kotlinx.coroutines.launch
@@ -74,7 +74,7 @@ fun LiveScreen(onVideoClick: (Video) -> Unit, onBack: () -> Unit) {
                     .ifEmpty {
                         if (force) YouTubeRepository.fetchAllChannelsFeed(approved) else emptyList()
                     }
-                autoLive = YouTubeDataApi.liveFromVideos(context, recent)
+                autoLive = LiveDetector.liveFromVideos(context, recent)
             } catch (e: Exception) {
                 error = e.message ?: "לא ניתן לעדכן שידורים חיים כרגע"
             } finally {

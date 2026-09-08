@@ -149,7 +149,6 @@ fun HomeScreen(
                         latest = enriched
                         state = HomeState.Success(enriched)
                     }
-                    if (VideoMetadata.quotaBlocked) break
                 }
                 // כתיבה אחת בסוף — הפיד המלא הוא ~2,500 רשומות, אין טעם
                 // לסרייל אותו שלוש פעמים באותו רענון.
