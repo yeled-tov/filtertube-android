@@ -25,6 +25,7 @@ class IsoDurationParserTest {
         val v2 = Video("id2", "Title2", "Channel", "UC1", "thumb", System.currentTimeMillis() - 3600000L, durationSec = 4328L, viewCount = 1250000L)
         assertEquals("1:12:08", v2.formattedDuration())
         assertEquals("1.25M צפיות", v2.formattedViewCount())
-        assertEquals("לפני 1 שעות", v2.timeAgoHe())
+        // צורת יחיד תקינה: "לפני שעה", לא "לפני 1 שעות" (ראה VideoMetadataDisplayTest)
+        assertEquals("לפני שעה", v2.timeAgoHe())
     }
 }
