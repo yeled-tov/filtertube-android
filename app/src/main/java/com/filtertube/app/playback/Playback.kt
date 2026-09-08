@@ -12,6 +12,7 @@ import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.StreamData
+import com.filtertube.app.data.defaultTrackIndex
 import com.filtertube.app.data.StreamRepository
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.audioOnlyCategories
@@ -88,25 +89,9 @@ object Playback {
         }
     }
 
-    /**
-     * אינדקס איכות ברירת מחדל.
-     */
-    fun defaultQuality(data: StreamData, preferred: Int = 0): Int {
-        if (data.tracks.isEmpty()) return 0
-        val idx = if (preferred > 0) {
-            data.tracks.indexOfFirst { it.height in 1..preferred }.takeIf { it >= 0 } ?: data.tracks.lastIndex
-        } else {
-            // הרשימה ממוינת מהגבוה לנמוך, אז זו האיכות הטובה ביותר עד 720p.
-            //
-            // קודם לכן נבחר כאן `audioUrl == null` — כלומר זרם muxed. יוטיוב
-            // מספק muxed רק בפורמט הישן, שמוגבל ל-360p (ולעתים 720p), ולכן
-            // סרטון עם 6 איכויות זמינות התנגן ב-360p. הזרמים המתקדמים (וידאו
-            // ואודיו בנפרד) כבר נתמכים ב-buildItem, אז אין סיבה להעדיף muxed.
-            data.tracks.indexOfFirst { it.height in 1..720 }.takeIf { it >= 0 }
-                ?: 0
-        }
-        return idx.coerceIn(0, data.tracks.lastIndex)
-    }
+    /** אינדקס איכות ברירת מחדל. ראה [com.filtertube.app.data.defaultTrackIndex]. */
+    fun defaultQuality(data: StreamData, preferred: Int = 0): Int =
+        data.defaultTrackIndex(preferred)
 
     fun forcedAudio(category: String?, level: Int): Boolean =
         category in audioOnlyCategories || (level == 1 && category == "music")

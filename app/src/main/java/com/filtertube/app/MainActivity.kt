@@ -237,6 +237,10 @@ fun AppRoot() {
         }
     }
     LaunchedEffect(Unit) {
+        // רושמים את הגרסה ביומן כדי שכל דוח אבחון יגיד באיזו בנייה הוא נוצר.
+        com.filtertube.app.data.Diagnostics.log(
+            "גרסה ${BuildConfig.VERSION_NAME} (בנייה ${BuildConfig.VERSION_CODE})"
+        )
         try {
             // לקוחות מקבלים רק גרסאות יציבות; גרסאות טסט רק אם הופעל ערוץ בדיקות.
             val u = com.filtertube.app.data.UpdateChecker.check(includeTestBuilds = settings.testChannel)

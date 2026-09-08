@@ -1,9 +1,12 @@
 package com.filtertube.app.data
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -16,6 +19,27 @@ data class StreamTrack(
     val videoUrl: String,
     val audioUrl: String?,
 )
+
+/**
+ * האיכות שתנוגן כברירת מחדל — **מקור אמת יחיד** לבחירת האיכות.
+ *
+ * הרשימה ממוינת מהגבוה לנמוך, ולכן הראשון שעומד בתנאי הוא הטוב ביותר.
+ * במצב אוטומטי לוקחים עד 720p; אם המשתמש בחר איכות מועדפת, לוקחים את
+ * הגבוהה ביותר שאינה עולה עליה.
+ *
+ * חשוב שזה יישאר במקום אחד: קודם לכן הייתה כאן לוגיקה כפולה — אחת לניגון
+ * ואחת ליומן האבחון — והן נפרדו זו מזו, כך שהיומן דיווח "360p [muxed]"
+ * בזמן שהניגון בחר משהו אחר לגמרי.
+ */
+fun StreamData.defaultTrackIndex(preferred: Int = 0): Int {
+    if (tracks.isEmpty()) return 0
+    val idx = if (preferred > 0) {
+        tracks.indexOfFirst { it.height in 1..preferred }.takeIf { it >= 0 } ?: tracks.lastIndex
+    } else {
+        tracks.indexOfFirst { it.height in 1..720 }.takeIf { it >= 0 } ?: 0
+    }
+    return idx.coerceIn(0, tracks.lastIndex)
+}
 
 data class StreamData(
     val title: String,
@@ -116,11 +140,11 @@ object StreamRepository {
         deferred.await()
     }
 
-    private suspend fun resolveInternal(videoId: String): StreamData {
+    private suspend fun resolveInternal(videoId: String): StreamData = coroutineScope {
         val t0 = System.currentTimeMillis()
         val priorityKeys = RemoteConfig.resolverPriority()
 
-        // סינון יזיר ומהיר: בוחרים רק מנועים זמינים שאינם ב-cooldown
+        // סינון זריז: בוחרים רק מנועים זמינים שאינם ב-cooldown
         val activeResolvers = buildList {
             for (key in priorityKeys) {
                 if (ResolverHealthMonitor.isAvailable(key) && RemoteConfig.isResolverEnabled(key, true)) {
@@ -133,27 +157,62 @@ object StreamRepository {
             }
         }
 
-        for (resolver in activeResolvers) {
-            val rT0 = System.currentTimeMillis()
-            val result = runCatching { resolver.resolve(videoId) }.getOrNull()
-            if (result != null) {
-                putCache(videoId, result)
-                Diagnostics.log(
-                    "StreamRepository $videoId: ${resolver.name} ניצח ב-${System.currentTimeMillis() - rT0}ms (סה\"כ ${System.currentTimeMillis() - t0}ms) · ${trackSummary(result)}"
-                )
-                return result
+        // כל המנועים רצים **במקביל**, והראשון שמצליח מנצח.
+        //
+        // קודם לכן זו הייתה לולאה טורית: כל מנוע כושל היה חייב להיכשל עד הסוף
+        // לפני שהבא בתור התחיל. כששני מנועי InnerTube לא עובדים, זה הוסיף
+        // כשנייה שלמה של המתנה לכל סרטון לפני ש-NewPipe בכלל יצא לדרך:
+        //   IOS נכשל 642ms → VR נכשל 335ms → NewPipe הצליח 1943ms = 2922ms
+        // במקביל, הסרטון עולה כזמן המנוע המהיר שהצליח, וכישלון של מנוע אחר
+        // כבר לא עולה למשתמש כלום.
+        val winner = CompletableDeferred<StreamData>()
+        val attempts = activeResolvers.map { resolver ->
+            launch(Dispatchers.IO) {
+                val rT0 = System.currentTimeMillis()
+                val result = runCatching { resolver.resolve(videoId) }.getOrNull()
+                if (result == null) {
+                    Diagnostics.log("StreamRepository $videoId: ${resolver.name} נכשל (${System.currentTimeMillis() - rT0}ms)")
+                } else if (winner.complete(result)) {
+                    Diagnostics.log(
+                        "StreamRepository $videoId: ${resolver.name} ניצח ב-${System.currentTimeMillis() - rT0}ms " +
+                            "(סה\"כ ${System.currentTimeMillis() - t0}ms) · ${trackSummary(result)}"
+                    )
+                }
             }
-            Diagnostics.log("StreamRepository $videoId: ${resolver.name} נכשל → מעבר למנוע הבא")
         }
 
-        Diagnostics.log("StreamRepository $videoId: כל המנועים נכשלו ${System.currentTimeMillis() - t0}ms ✖")
-        throw IllegalStateException("לא הצלחנו להפעיל את הסרטון. נסה שוב בעוד רגע.")
+        // אם כל המנועים נכשלו, ההמתנה חייבת להשתחרר במקום להיתקע לנצח.
+        val allFailed = launch {
+            attempts.joinAll()
+            Diagnostics.log("StreamRepository $videoId: כל המנועים נכשלו ${System.currentTimeMillis() - t0}ms ✖")
+            winner.completeExceptionally(
+                IllegalStateException("לא הצלחנו להפעיל את הסרטון. נסה שוב בעוד רגע."),
+            )
+        }
+
+        val won = try {
+            winner.await()
+        } finally {
+            // ברגע שיש מנצח אין טעם להמשיך לחכות לשאר.
+            attempts.forEach { it.cancel() }
+            allFailed.cancel()
+        }
+
+        putCache(videoId, won)
+        won
     }
 
-    /** תקציר האיכויות שנבחרו — האם ברירת המחדל משולבת (muxed) או DASH (מיזוג). */
+    /**
+     * תקציר האיכויות — ברירת המחדל נלקחת מ-[Playback.defaultQuality], שהיא
+     * הבחירה האמיתית בזמן ניגון.
+     *
+     * קודם לכן היה כאן עותק נפרד של הלוגיקה (`firstOrNull { audioUrl == null }`),
+     * שדיווח תמיד על הזרם ה-muxed בלי קשר למה שנבחר בפועל. כלומר היומן הציג
+     * "360p [muxed]" גם אחרי שברירת המחדל שונתה — אבחון שמטעה במקום לעזור.
+     */
     private fun trackSummary(d: StreamData): String {
         val muxed = d.tracks.count { it.audioUrl == null }
-        val def = d.tracks.firstOrNull { it.audioUrl == null } ?: d.tracks.firstOrNull()
+        val def = d.tracks.getOrNull(d.defaultTrackIndex())
         val kind = if (def?.audioUrl == null) "muxed" else "DASH"
         return "${d.tracks.size} איכויות ($muxed muxed), ברירת מחדל ${def?.label ?: "?"} [$kind]"
     }
