@@ -1,12 +1,16 @@
 package com.filtertube.app.data
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -140,6 +144,46 @@ object StreamRepository {
         deferred.await()
     }
 
+    /** מגביל את החימום ברקע כדי שלא יתחרה בסרטון שהמשתמש באמת מנגן עכשיו. */
+    private val prefetchGate = Semaphore(2)
+
+    /**
+     * scope עצמאי לחימום מראש — **בכוונה לא ה-scope של המסך**.
+     *
+     * [getStream] יוצר את ה-Deferred שלו כילד של ה-scope הקורא. אילו החימום היה
+     * רץ מ-scope של Composable, יציאה מהמסך הייתה מבטלת אותו — וגרוע מכך, אם
+     * הנגן כבר המתין לאותו Deferred דרך inFlight, גם הוא היה נופל יחד איתו.
+     */
+    private val prefetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * מחמם מראש את הזרמים של [videoIds] כדי שלחיצה על סרטון תהיה מיידית.
+     *
+     * הבעיה שזה פותר: פתרון הזרם עצמו לוקח ~1.5 שניות (NewPipe), וכל הזמן הזה
+     * נגבה מהמשתמש *אחרי* הלחיצה. אין דרך להאיץ את יוטיוב עצמו — אבל אפשר
+     * לשלם את המחיר מראש, ברקע, בזמן שהמשתמש עוד גולל. אז הלחיצה פוגעת
+     * במטמון ומחזירה "cache hit (0ms)".
+     *
+     * לא suspend ולא חוסם: יורה ומשחרר. כישלונות נבלעים בשקט — זה שיפור, לא תנאי.
+     */
+    fun prefetch(videoIds: List<String>, max: Int = 5) {
+        val targets = videoIds.asSequence()
+            .filter { it.isNotBlank() && getCached(it) == null }
+            .distinct()
+            .take(max)
+            .toList()
+        if (targets.isEmpty()) return
+
+        Diagnostics.log("PREFETCH: מחמם ${targets.size} סרטונים ברקע")
+        targets.forEach { id ->
+            prefetchScope.launch {
+                prefetchGate.withPermit {
+                    if (getCached(id) == null) runCatching { getStream(id) }
+                }
+            }
+        }
+    }
+
     private suspend fun resolveInternal(videoId: String): StreamData = coroutineScope {
         val t0 = System.currentTimeMillis()
         val priorityKeys = RemoteConfig.resolverPriority()
@@ -184,6 +228,9 @@ object StreamRepository {
         // אם כל המנועים נכשלו, ההמתנה חייבת להשתחרר במקום להיתקע לנצח.
         val allFailed = launch {
             attempts.joinAll()
+            // joinAll חוזר גם כשמנוע הצליח — כל הניסיונות פשוט הסתיימו. בלי
+            // הבדיקה הזו נרשם "כל המנועים נכשלו" מיד אחרי "NewPipe ניצח".
+            if (winner.isCompleted) return@launch
             Diagnostics.log("StreamRepository $videoId: כל המנועים נכשלו ${System.currentTimeMillis() - t0}ms ✖")
             winner.completeExceptionally(
                 IllegalStateException("לא הצלחנו להפעיל את הסרטון. נסה שוב בעוד רגע."),

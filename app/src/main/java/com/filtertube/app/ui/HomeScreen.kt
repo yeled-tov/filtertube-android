@@ -51,6 +51,7 @@ import com.filtertube.app.data.FeedCache
 import com.filtertube.app.data.LibraryBadges
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
+import com.filtertube.app.data.StreamRepository
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.VideoMetadata
 import com.filtertube.app.data.YouTubeRepository
@@ -139,11 +140,21 @@ fun HomeScreen(
                 state = HomeState.Success(ordered)
                 FeedCache.saveFeed(context, ordered)
 
+                // חימום מראש של ראש הפיד: פתרון הזרם לוקח ~1.5 שניות, וכל הזמן
+                // הזה נגבה מהמשתמש אחרי הלחיצה. מחממים ברקע בזמן שהוא עוד גולל,
+                // כך שהלחיצה עצמה פוגעת במטמון ומתחילה לנגן מיד.
+                StreamRepository.prefetch(ordered.map { it.id })
+
                 // ההעשרה רצה אחרי ההצגה: קודם מה שנראה על המסך, אחר כך השאר.
                 var latest = ordered
                 for (limit in listOf(60, 300)) {
                     val enriched = runCatching { VideoMetadata.enrich(context, ordered, limit) }
-                        .onFailure { Diagnostics.log("HOME: העשרה נכשלה — ${it.message}") }
+                        // יציאה מהמסך היא ביטול תקין, לא תקלה — אין טעם לרשום אותה.
+                        .onFailure {
+                            if (it !is kotlinx.coroutines.CancellationException) {
+                                Diagnostics.log("HOME: העשרה נכשלה — ${it.message}")
+                            }
+                        }
                         .getOrNull() ?: break
                     if (enriched != latest) {
                         latest = enriched
