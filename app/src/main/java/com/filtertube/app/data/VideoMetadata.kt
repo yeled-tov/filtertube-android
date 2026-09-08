@@ -100,6 +100,7 @@ object VideoMetadata {
      * פירושה ~2,800 רכישות Mutex ברצף, כל אחת נקודת השהיה של קורוטינה, בתוך
      * המסלול שחוסם את הצגת מסך הבית. זו הסיבה שמסך הבית נתקע בעוד החיפוש
      * (60 תוצאות) עבד תקין.
+     */
     private suspend fun snapshot(): Map<String, Meta> = lock.withLock { cache.toMap() }
 
     private fun isFresh(meta: Meta): Boolean =
