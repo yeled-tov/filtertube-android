@@ -43,7 +43,7 @@ object UpdateChecker {
      *
      * [includeTestBuilds] = false (ברירת המחדל, וכל הלקוחות): רק Release יציב
      * מסוג `build-N`. Pre-release מסוג `test-N` נדחה, כדי שגרסאות בדיקה שנבנות
-     * בענפי `test/**` לא יגיעו בטעות ללקוחות כהתראת עדכון.
+     * בענפים שמתחילים ב-`test/` לא יגיעו בטעות ללקוחות כהתראת עדכון.
      *
      * [includeTestBuilds] = true: נלקח גם `test-N`, למכשיר שהפעיל "ערוץ בדיקות".
      */

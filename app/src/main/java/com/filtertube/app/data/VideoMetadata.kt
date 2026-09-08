@@ -110,12 +110,13 @@ object VideoMetadata {
         ensureLoaded(context)
 
         val head = videos.take(limit)
-        val missing = head.asSequence()
+        // בלי asSequence: פעולות על List הן inline, כך שמותר לקרוא ל-cached (suspend)
+        // מתוך ה-lambda. ב-Sequence ה-lambda לא inline והקריאה הזו לא מתקמפלת.
+        val missing = head
             .map { it.id }
             .filter { it.isNotBlank() }
             .distinct()
             .filter { id -> cached(id)?.takeIf { isFresh(it) } == null }
-            .toList()
 
         if (missing.isNotEmpty() && !quotaBlocked) {
             fetchInto(missing.take(BATCH * MAX_BATCHES_PER_CALL))
