@@ -166,7 +166,7 @@ object StreamRepository {
      *
      * לא suspend ולא חוסם: יורה ומשחרר. כישלונות נבלעים בשקט — זה שיפור, לא תנאי.
      */
-    fun prefetch(videoIds: List<String>, max: Int = 5) {
+    fun prefetch(videoIds: List<String>, max: Int = 8) {
         val targets = videoIds.asSequence()
             .filter { it.isNotBlank() && getCached(it) == null }
             .distinct()
