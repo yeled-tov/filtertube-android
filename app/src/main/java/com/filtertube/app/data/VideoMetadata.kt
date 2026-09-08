@@ -92,7 +92,15 @@ object VideoMetadata {
         }
     }
 
-    private suspend fun cached(id: String): Meta? = lock.withLock { cache[id] }
+    /**
+     * צילום מצב אחד של המטמון תחת נעילה אחת.
+     *
+     * חשוב שזה יהיה snapshot ולא קריאה נעולה לכל מזהה בנפרד: [enrich] רץ על
+     * הפיד המלא של מסך הבית — כ-2,500 סרטונים מ-166 ערוצים. נעילה לכל סרטון
+     * פירושה ~2,800 רכישות Mutex ברצף, כל אחת נקודת השהיה של קורוטינה, בתוך
+     * המסלול שחוסם את הצגת מסך הבית. זו הסיבה שמסך הבית נתקע בעוד החיפוש
+     * (60 תוצאות) עבד תקין.
+    private suspend fun snapshot(): Map<String, Meta> = lock.withLock { cache.toMap() }
 
     private fun isFresh(meta: Meta): Boolean =
         System.currentTimeMillis() - meta.fetchedAt < VIEWS_TTL_MS
@@ -109,22 +117,21 @@ object VideoMetadata {
         if (videos.isEmpty()) return videos
         ensureLoaded(context)
 
-        val head = videos.take(limit)
-        // בלי asSequence: פעולות על List הן inline, כך שמותר לקרוא ל-cached (suspend)
-        // מתוך ה-lambda. ב-Sequence ה-lambda לא inline והקריאה הזו לא מתקמפלת.
-        val missing = head
+        val known = snapshot()
+        val missing = videos.take(limit)
             .map { it.id }
             .filter { it.isNotBlank() }
             .distinct()
-            .filter { id -> cached(id)?.takeIf { isFresh(it) } == null }
+            .filter { id -> known[id]?.takeIf { isFresh(it) } == null }
 
         if (missing.isNotEmpty() && !quotaBlocked) {
             fetchInto(missing.take(BATCH * MAX_BATCHES_PER_CALL))
             persist(context)
         }
 
+        val fresh = if (missing.isEmpty()) known else snapshot()
         return videos.map { video ->
-            val meta = cached(video.id) ?: return@map video
+            val meta = fresh[video.id] ?: return@map video
             video.copy(
                 publishedAt = meta.publishedAt.takeIf { it > 0L } ?: video.publishedAt,
                 durationSec = meta.durationSec.takeIf { it > 0L } ?: video.durationSec,
@@ -143,13 +150,14 @@ object VideoMetadata {
             fetchInto(ids)
             persist(context)
         }
-        return ids.filter { cached(it)?.live == true }.toSet()
+        val known = snapshot()
+        return ids.filter { known[it]?.live == true }.toSet()
     }
 
     /** משך הסרטון בלבד, מהמטמון, בלי גישה לרשת. */
     suspend fun cachedDuration(context: Context, videoId: String): Long {
         ensureLoaded(context)
-        return cached(videoId)?.durationSec ?: 0L
+        return snapshot()[videoId]?.durationSec ?: 0L
     }
 
     // ── משיכה מהשרת ───────────────────────────────────────────────────────

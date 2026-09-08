@@ -44,6 +44,7 @@ import coil.compose.AsyncImage
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.Channel
 import com.filtertube.app.data.ChannelsRepository
+import com.filtertube.app.data.Diagnostics
 import com.filtertube.app.data.BugReport
 import com.filtertube.app.data.DownloadEngine
 import com.filtertube.app.data.FeedCache
@@ -112,19 +113,51 @@ fun HomeScreen(
             try {
                 val chans = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel, settings.userGender)
                 channels = chans
-                val videos = YouTubeRepository.fetchAllChannelsFeed(chans)
-                if (videos.isNotEmpty()) {
-                    val ordered = sanitizeFeed(personalizeFeed(videos, store.localHistory()))
-                    // ה-RSS לא מחזיר משך ולא צפיות. ההעשרה מוסיפה נתונים אמיתיים
-                    // בעלות של יחידת מכסה אחת לכל 50 סרטונים, ונשמרת במטמון.
-                    val enriched = runCatching { VideoMetadata.enrich(context, ordered) }
-                        .getOrDefault(ordered)
-                    FeedCache.saveFeed(context, enriched)
-                    state = HomeState.Success(enriched)
-                } else if (state !is HomeState.Success) {
-                    state = HomeState.Error("לא נמצאו סרטונים בערוצים המאושרים")
+                Diagnostics.log("HOME: ${chans.size} ערוצים מאושרים אחרי סינון (רמה ${settings.filterLevel})")
+                if (chans.isEmpty()) {
+                    if (state !is HomeState.Success) {
+                        state = HomeState.Error("רשימת הערוצים המאושרים ריקה — בדוק חיבור לאינטרנט")
+                    }
+                    return@launch
                 }
+
+                val videos = YouTubeRepository.fetchAllChannelsFeed(chans)
+                Diagnostics.log("HOME: ${videos.size} סרטונים מה-RSS")
+                if (videos.isEmpty()) {
+                    if (state !is HomeState.Success) {
+                        state = HomeState.Error("לא התקבלו סרטונים מהערוצים המאושרים")
+                    }
+                    return@launch
+                }
+
+                val ordered = sanitizeFeed(personalizeFeed(videos, store.localHistory()))
+
+                // הפיד מוצג *מיד*. העשרת המטא-דאטה היא שיפור, לא תנאי:
+                // כשהיא הייתה חוסמת את ההצגה, מסך הבית חיכה לעד 6 קריאות רשת
+                // רצופות (8+10 שניות timeout כל אחת) לפני שהראה משהו, וכל תקלה
+                // בדרך הופיעה כ"שגיאה בטעינה".
+                state = HomeState.Success(ordered)
+                FeedCache.saveFeed(context, ordered)
+
+                // ההעשרה רצה אחרי ההצגה: קודם מה שנראה על המסך, אחר כך השאר.
+                var latest = ordered
+                for (limit in listOf(60, 300)) {
+                    val enriched = runCatching { VideoMetadata.enrich(context, ordered, limit) }
+                        .onFailure { Diagnostics.log("HOME: העשרה נכשלה — ${it.message}") }
+                        .getOrNull() ?: break
+                    if (enriched != latest) {
+                        latest = enriched
+                        state = HomeState.Success(enriched)
+                    }
+                    if (VideoMetadata.quotaBlocked) break
+                }
+                // כתיבה אחת בסוף — הפיד המלא הוא ~2,500 רשומות, אין טעם
+                // לסרייל אותו שלוש פעמים באותו רענון.
+                if (latest !== ordered) FeedCache.saveFeed(context, latest)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
+                Diagnostics.log("HOME: נכשל — ${e::class.simpleName}: ${e.message}")
                 if (state !is HomeState.Success) state = HomeState.Error(e.message ?: "שגיאה")
             } finally {
                 refreshing = false
