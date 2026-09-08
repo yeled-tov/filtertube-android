@@ -1,0 +1,97 @@
+name: Deps Audit
+
+# בדיקת גרסאות בלבד — לא בונה כלום ולא יוצר Release.
+# רץ על ענפי audit/** כי סביבת הפיתוח חסומה מול dl.google.com ו-jitpack.io,
+# בעוד שה-runner של GitHub לא. כך מקבלים את הגרסאות האמיתיות במקום לנחש.
+on:
+  push:
+    branches: ['audit/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Latest stable versions
+        run: |
+          python3 - <<'PY'
+          import re, urllib.request
+
+          def fetch(url):
+              return urllib.request.urlopen(url, timeout=40).read().decode('utf-8', 'replace')
+
+          def stable(v):
+              return not re.search(r'(alpha|beta|rc|dev|snapshot|eap|-M)', v, re.I)
+
+          def vkey(v):
+              return [int(p) if p.isdigit() else 0 for p in re.split(r'[.\-+]', v)]
+
+          def google(group, artifact):
+              xml = fetch(f"https://dl.google.com/dl/android/maven2/{group.replace('.','/')}/group-index.xml")
+              m = re.search(rf'<{re.escape(artifact)}\b[^>]*versions="([^"]+)"', xml)
+              if not m: return None
+              vs = [v.strip() for v in m.group(1).split(',') if stable(v.strip())]
+              return max(vs, key=vkey) if vs else None
+
+          def central(group, artifact):
+              xml = fetch(f"https://repo1.maven.org/maven2/{group.replace('.','/')}/{artifact}/maven-metadata.xml")
+              vs = [v for v in re.findall(r'<version>([^<]+)</version>', xml) if stable(v)]
+              return max(vs, key=vkey) if vs else None
+
+          ROWS = [
+            ("PLAYER",  "androidx.media3","media3-exoplayer","1.4.1",google),
+            ("compose", "androidx.compose","compose-bom","2024.10.00",google),
+            ("androidx","androidx.core","core-ktx","1.13.1",google),
+            ("androidx","androidx.lifecycle","lifecycle-runtime-ktx","2.8.6",google),
+            ("androidx","androidx.activity","activity-compose","1.9.2",google),
+            ("androidx","androidx.navigation","navigation-compose","2.8.2",google),
+            ("androidx","androidx.work","work-runtime-ktx","2.9.1",google),
+            ("firebase","com.google.firebase","firebase-bom","33.1.2",google),
+            ("gms",     "com.google.android.gms","play-services-auth","21.2.0",google),
+            ("build",   "com.android.tools","desugar_jdk_libs","2.0.4",google),
+            ("build",   "com.android.tools.build","gradle","8.7.0",google),
+            ("build",   "com.google.gms","google-services","4.4.2",google),
+            ("net",     "com.squareup.okhttp3","okhttp","4.12.0",central),
+            ("kotlin",  "org.jetbrains.kotlinx","kotlinx-coroutines-android","1.8.1",central),
+            ("kotlin",  "org.jetbrains.kotlinx","kotlinx-serialization-json","1.7.3",central),
+            ("kotlin",  "org.jetbrains.kotlin","kotlin-gradle-plugin","2.0.20",central),
+            ("image",   "io.coil-kt","coil-compose","2.7.0",central),
+          ]
+
+          print(f"{'':<9}{'artifact':<48}{'current':<14}{'latest':<14}")
+          print("-"*95)
+          for tag, g, a, cur, fn in ROWS:
+              try:
+                  l = fn(g, a)
+              except Exception as e:
+                  l = f"ERR:{type(e).__name__}"
+              mark = "" if str(l) == cur else "   <-- UPDATE"
+              print(f"{tag:<9}{g+':'+a:<48}{cur:<14}{str(l):<14}{mark}")
+
+          # okhttp 4.x line specifically (5.x is a major bump)
+          try:
+              xml = fetch("https://repo1.maven.org/maven2/com/squareup/okhttp3/okhttp/maven-metadata.xml")
+              v4 = [v for v in re.findall(r'<version>([^<]+)</version>', xml) if v.startswith('4.') and stable(v)]
+              print(f"\nokhttp newest 4.x (same major): {max(v4, key=vkey) if v4 else '?'}")
+          except Exception as e:
+              print("okhttp 4.x check failed:", e)
+
+          # NewPipeExtractor via JitPack
+          for url in ["https://jitpack.io/com/github/TeamNewPipe/NewPipeExtractor/maven-metadata.xml",
+                      "https://api.github.com/repos/TeamNewPipe/NewPipeExtractor/tags?per_page=10"]:
+              try:
+                  body = fetch(url)
+                  if url.endswith('.xml'):
+                      vs = re.findall(r'<version>([^<]+)</version>', body)
+                      print(f"\nNewPipeExtractor (jitpack, current v0.26.3) last 12: {', '.join(vs[-12:])}")
+                  else:
+                      print("NewPipeExtractor tags:", ', '.join(re.findall(r'"name":\s*"([^"]+)"', body)[:10]))
+              except Exception as e:
+                  print(f"NewPipeExtractor via {url.split('/')[2]} failed: {type(e).__name__}")
+          PY
