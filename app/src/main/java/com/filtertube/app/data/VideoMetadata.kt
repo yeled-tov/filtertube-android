@@ -194,6 +194,7 @@ object VideoMetadata {
         val results = channelIds.map { channelId ->
             async(Dispatchers.IO) {
                 gate.withPermit {
+                    PlaybackPriority.awaitIdle()   // הנגן קודם
                     runCatching { extractChannel(channelId) }
                         .onFailure { Diagnostics.log("META: חילוץ ערוץ $channelId נכשל — ${it.message}") }
                         .getOrDefault(emptyMap())

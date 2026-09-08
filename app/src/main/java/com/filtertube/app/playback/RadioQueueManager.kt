@@ -74,6 +74,9 @@ object RadioQueueManager {
             activeQueueIds.clear()
             activeQueueIds.add(currentVideo.id)
 
+            // התור נבנה מיד אחרי play(), כלומר בדיוק כשהנגן ממלא באפר.
+            // ממתינים שהניגון יתייצב לפני שמתחילים לחלץ עוד סרטונים.
+            com.filtertube.app.data.PlaybackPriority.awaitIdle()
             refillInternal(context, c, currentVideo)
         }
     }

@@ -178,6 +178,7 @@ object StreamRepository {
         targets.forEach { id ->
             prefetchScope.launch {
                 prefetchGate.withPermit {
+                    PlaybackPriority.awaitIdle()   // הנגן קודם
                     if (getCached(id) == null) runCatching { getStream(id) }
                 }
             }

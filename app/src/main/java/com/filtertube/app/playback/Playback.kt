@@ -11,6 +11,7 @@ import com.filtertube.app.data.AccountDataGuard
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
+import com.filtertube.app.data.PlaybackPriority
 import com.filtertube.app.data.StreamData
 import com.filtertube.app.data.defaultTrackIndex
 import com.filtertube.app.data.StreamRepository
@@ -20,6 +21,8 @@ import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -128,6 +131,24 @@ object Playback {
      */
     suspend fun start(context: Context, controller: MediaController?, video: Video) {
         val c = controller ?: return
+        // מכריזים על חזית: עבודות הרקע (רדיו, חימום, העשרה) ימתינו כדי לא
+        // לחנוק את ההורדה של הזרם שהמשתמש מחכה לו ממש עכשיו.
+        PlaybackPriority.begin()
+        try {
+            startInternal(context, c, video)
+        } finally {
+            // משחררים רק אחרי שהנגן הספיק למלא באפר, לא ברגע ש-play() חזר.
+            playbackScope.launch {
+                delay(PLAYBACK_GRACE_MS)
+                PlaybackPriority.end()
+            }
+        }
+    }
+
+    /** זמן החסד שבו הרשת שמורה לנגן אחרי הלחיצה. */
+    private const val PLAYBACK_GRACE_MS = 3_000L
+
+    private suspend fun startInternal(context: Context, c: MediaController, video: Video) {
         activeController = c
         val firebaseUser = FirebaseAuth.getInstance().currentUser
             ?.takeIf { it.isEmailVerified }
@@ -152,6 +173,17 @@ object Playback {
         if (!sessionCurrent()) return
         cache(video.id, data)
 
+        com.filtertube.app.data.LibraryBadges.markWatched(video.id)
+        val audio = forcedAudio(catById[data.channelId], level)
+        val firstItem = buildItem(data, video.id, audio, defaultQuality(data, preferred))
+
+        if (!sessionCurrent()) return
+        c.setMediaItem(firstItem)
+        c.prepare()
+        c.play()
+
+        // כתיבת ההיסטוריה מפענחת ומקודדת JSON שלם ומתזמנת גיבוי לענן. אין שום
+        // סיבה שהמשתמש יחכה לזה לפני שהצליל יוצא, אז זה עבר לכאן.
         runCatching {
             library.addToHistory(
                 Video(
@@ -167,14 +199,6 @@ object Playback {
                 ),
             )
         }
-        com.filtertube.app.data.LibraryBadges.markWatched(video.id)
-        val audio = forcedAudio(catById[data.channelId], level)
-        val firstItem = buildItem(data, video.id, audio, defaultQuality(data, preferred))
-
-        if (!sessionCurrent()) return
-        c.setMediaItem(firstItem)
-        c.prepare()
-        c.play()
         addPendingNext(context, c)
 
         // הפעלה מבוזרת ומהירה ברקע של תור הרדיו (ללא שום delay חוסם!)
