@@ -74,6 +74,29 @@ jobs:
               mark = "" if str(l) == cur else "   <-- UPDATE"
               print(f"{tag:<9}{g+':'+a:<48}{cur:<14}{str(l):<14}{mark}")
 
+          # שרשראות גרסאות לפי major/minor — כדי לבחור מסלול שדרוג ולא לקפוץ לעיוור
+          def lines(name, fetcher, group, artifact, prefixes):
+              try:
+                  if fetcher is google:
+                      xml = fetch(f"https://dl.google.com/dl/android/maven2/{group.replace('.','/')}/group-index.xml")
+                      m = re.search(rf'<{re.escape(artifact)}\b[^>]*versions="([^"]+)"', xml)
+                      vs = [v.strip() for v in m.group(1).split(',')] if m else []
+                  else:
+                      xml = fetch(f"https://repo1.maven.org/maven2/{group.replace('.','/')}/{artifact}/maven-metadata.xml")
+                      vs = re.findall(r'<version>([^<]+)</version>', xml)
+                  vs = [v for v in vs if stable(v)]
+                  print(f"\n{name}:")
+                  for pfx in prefixes:
+                      cand = [v for v in vs if v.startswith(pfx)]
+                      print(f"   newest {pfx}x -> {max(cand, key=vkey) if cand else '(none)'}")
+              except Exception as e:
+                  print(f"{name}: ERR {type(e).__name__}")
+
+          lines("AGP (com.android.tools.build:gradle)", google, "com.android.tools.build","gradle", ["8.","9."])
+          lines("Kotlin", central, "org.jetbrains.kotlin","kotlin-gradle-plugin", ["2.0.","2.1.","2.2.","2.3.","2.4."])
+          lines("media3", google, "androidx.media3","media3-exoplayer", ["1.4.","1.5.","1.6.","1.7.","1.8.","1.9.","1.10.","1.11."])
+          lines("core-ktx", google, "androidx.core","core-ktx", ["1.13.","1.15.","1.16.","1.17.","1.19."])
+
           # okhttp 4.x line specifically (5.x is a major bump)
           try:
               xml = fetch("https://repo1.maven.org/maven2/com/squareup/okhttp3/okhttp/maven-metadata.xml")
