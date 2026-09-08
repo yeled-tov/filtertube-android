@@ -117,6 +117,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # נדרש כדי להוריד את ה-APK מה-job הקודם: כשמצהירים permissions ברמת
+      # job, ההצהרה *מחליפה* את כל הסט — ובלי actions:read הקריאה
+      # ListArtifacts מוחזרת 403 ו-download-artifact נכשל.
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -149,6 +153,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # נדרש כדי להוריד את ה-APK מה-job הקודם: כשמצהירים permissions ברמת
+      # job, ההצהרה *מחליפה* את כל הסט — ובלי actions:read הקריאה
+      # ListArtifacts מוחזרת 403 ו-download-artifact נכשל.
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
