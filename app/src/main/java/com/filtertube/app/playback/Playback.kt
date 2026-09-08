@@ -96,8 +96,13 @@ object Playback {
         val idx = if (preferred > 0) {
             data.tracks.indexOfFirst { it.height in 1..preferred }.takeIf { it >= 0 } ?: data.tracks.lastIndex
         } else {
-            data.tracks.indexOfFirst { it.audioUrl == null }.takeIf { it >= 0 }
-                ?: data.tracks.indexOfFirst { it.height in 1..720 }.takeIf { it >= 0 }
+            // הרשימה ממוינת מהגבוה לנמוך, אז זו האיכות הטובה ביותר עד 720p.
+            //
+            // קודם לכן נבחר כאן `audioUrl == null` — כלומר זרם muxed. יוטיוב
+            // מספק muxed רק בפורמט הישן, שמוגבל ל-360p (ולעתים 720p), ולכן
+            // סרטון עם 6 איכויות זמינות התנגן ב-360p. הזרמים המתקדמים (וידאו
+            // ואודיו בנפרד) כבר נתמכים ב-buildItem, אז אין סיבה להעדיף muxed.
+            data.tracks.indexOfFirst { it.height in 1..720 }.takeIf { it >= 0 }
                 ?: 0
         }
         return idx.coerceIn(0, data.tracks.lastIndex)

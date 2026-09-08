@@ -1,9 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.gms.google-services")
+}
+
+// נקרא ברמת הקובץ ולא בתוך defaultConfig: שם קיים מאפיין בשם `java`
+// שמסתיר את *החבילה* java, ו-java.util.Properties לא מתקמפל שם.
+val appVersionName: String = Properties().let { props ->
+    val f = rootProject.file("version.properties")
+    if (f.exists()) f.inputStream().use { props.load(it) }
+    props.getProperty("versionName")?.trim()?.takeIf { it.isNotEmpty() } ?: "1.0.0"
 }
 
 android {
@@ -22,11 +32,7 @@ android {
         versionCode = buildNum
 
         // versionName = הגרסה השיווקית, מתוך version.properties בשורש הפרויקט.
-        val versionProps = java.util.Properties().apply {
-            val f = rootProject.file("version.properties")
-            if (f.exists()) f.inputStream().use { load(it) }
-        }
-        versionName = versionProps.getProperty("versionName")?.trim() ?: "1.0.0"
+        versionName = appVersionName
 
         // RTL support
         resourceConfigurations += listOf("en", "iw")
