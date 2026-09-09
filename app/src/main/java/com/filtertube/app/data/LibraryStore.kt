@@ -68,6 +68,24 @@ class LibraryStore(context: Context) {
 
     fun downloads(): List<Video> = videos(KEY_DOWNLOADS)
 
+    /**
+     * רושם את מיקום הקובץ אחרי שההורדה הסתיימה בפועל.
+     *
+     * addDownload נקרא כשההורדה *מתחילה*, כדי שהפריט יופיע מיד בספרייה. באותו
+     * רגע עוד אין קובץ, ולכן המיקום נרשם רק כאן — וזה מה שהופך את הפריט
+     * מ"רשומה ברשימה" למשהו שאפשר באמת לנגן, גם בלי רשת.
+     */
+    fun setDownloadLocalUri(videoId: String, uri: String) {
+        if (videoId.isBlank() || uri.isBlank()) return
+        val current = downloads()
+        val updated = current.map { if (it.id == videoId) it.copy(localUri = uri) else it }
+        if (updated != current && saveVideos(KEY_DOWNLOADS, updated)) queueCloudBackup()
+    }
+
+    /** הסרטון שהורד, אם יש — כולל מיקום הקובץ המקומי. */
+    fun downloadedVideo(videoId: String): Video? =
+        downloads().firstOrNull { it.id == videoId && it.localUri.isNotBlank() }
+
     fun addDownload(video: Video) {
         val current = downloads().toMutableList()
         current.removeAll { it.id == video.id }

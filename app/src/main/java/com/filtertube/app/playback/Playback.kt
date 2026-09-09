@@ -100,6 +100,25 @@ object Playback {
     fun forcedAudio(category: String?, level: Int): Boolean =
         category in audioOnlyCategories || (level == 1 && category == "music")
 
+    /**
+     * פריט מדיה מקובץ מקומי — בלי פתרון זרם ובלי רשת.
+     *
+     * אין כאן EXTRA_AUDIO_URL ואין User-Agent: הקובץ כבר ממוזג ושמור על
+     * המכשיר, ולכן FilterTubeMediaSourceFactory מנגן אותו כמו שהוא.
+     */
+    fun localItem(video: Video): MediaItem =
+        MediaItem.Builder()
+            .setUri(Uri.parse(video.localUri))
+            .setMediaId(video.id)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(video.title)
+                    .setArtist(video.channelName)
+                    .setArtworkUri(video.thumbnailUrl.takeIf { it.isNotBlank() }?.let(Uri::parse))
+                    .build(),
+            )
+            .build()
+
     fun buildItem(data: StreamData, videoId: String, audio: Boolean, qualityIndex: Int = defaultQuality(data)): MediaItem {
         val extras = Bundle().apply { putBoolean(EXTRA_IS_AUDIO, audio) }
         data.streamUserAgent?.let { extras.putString(FilterTubeMediaSourceFactory.EXTRA_USER_AGENT, it) }
@@ -186,6 +205,21 @@ object Playback {
 
         val channels = ChannelsRepository.getCachedChannelsFast(context)
         val catById = channels.associate { it.youtubeChannelId to it.category }
+
+        // ── קובץ שהורד קודם לרשת ────────────────────────────────────────
+        // אם הסרטון כבר על המכשיר, אין שום סיבה לפתור זרם: זה מיידי, זה לא
+        // צורך נתונים, וזה עובד גם בלי חיבור. עד עכשיו ההורדות נשמרו ולא
+        // נוגנו אף פעם מתוך האפליקציה.
+        val offlineCopy = LibraryStore(context).downloadedVideo(video.id)
+        if (offlineCopy != null) {
+            Diagnostics.log("PLAYBACK ${video.id}: מנגן מקובץ שהורד")
+            if (!sessionCurrent()) return
+            c.setMediaItem(localItem(offlineCopy))
+            c.prepare()
+            c.play()
+            runCatching { library.addToHistory(offlineCopy) }
+            return
+        }
 
         val preferred = settings.preferredQuality
         val data = StreamRepository.getStream(video.id)

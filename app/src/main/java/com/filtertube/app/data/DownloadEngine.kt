@@ -86,9 +86,15 @@ object DownloadEngine {
             scope.launch {
                 runCatching {
                     task.status = "מוריד"
-                    downloadFile(spec, task)
+                    val uri = downloadFile(spec, task)
+                    // רק עכשיו הסרטון באמת זמין לניגון מקומי.
+                    LibraryStore(spec.context).setDownloadLocalUri(task.video.id, uri)
                     task.progress = 100; task.status = "הושלם"
-                }.onFailure { task.status = "נכשל" }
+                    Diagnostics.log("DOWNLOAD ${task.video.id}: נשמר ב-$uri")
+                }.onFailure {
+                    task.status = "נכשל"
+                    Diagnostics.log("DOWNLOAD ${task.video.id}: נכשל — ${it.message}")
+                }
                 synchronized(this@DownloadEngine) { running--; pump() }
             }
         }
@@ -99,7 +105,7 @@ object DownloadEngine {
         return "$safe.${if (isAudio) "m4a" else "mp4"}"
     }
 
-    private suspend fun downloadFile(spec: Spec, task: DownloadTask) {
+    private suspend fun downloadFile(spec: Spec, task: DownloadTask): String {
         val tmp = File(spec.context.cacheDir, "ft_dl_${System.nanoTime()}.tmp")
         try {
             // בדיקה: גודל הקובץ + תמיכה ב-Range
@@ -114,7 +120,7 @@ object DownloadEngine {
             }
             if (len > 0 && ranges && spec.connections > 1) multiConn(spec, tmp, len, task)
             else single(spec, tmp, len, task)
-            publish(spec, tmp)
+            return publish(spec, tmp)
         } finally {
             runCatching { tmp.delete() }
         }
@@ -171,8 +177,14 @@ object DownloadEngine {
         }
     }
 
-    /** שמירה ל"הורדות" הציבוריות — דרך MediaStore ב-Android 10+, אחרת ישירות לתיקייה. */
-    private fun publish(spec: Spec, tmp: File) {
+    /**
+     * שמירה ל"הורדות" הציבוריות — דרך MediaStore ב-Android 10+, אחרת ישירות
+     * לתיקייה. מחזיר את מיקום הקובץ שנוצר.
+     *
+     * הערך המוחזר הוא העיקר: בלעדיו האפליקציה שמרה קובץ ומיד שכחה איפה הוא,
+     * ולכן לא ידעה לנגן את מה שהיא עצמה הורידה.
+     */
+    private fun publish(spec: Spec, tmp: File): String {
         val resolver = spec.context.contentResolver
         val mime = if (spec.isAudio) "audio/mp4" else "video/mp4"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -186,12 +198,14 @@ object DownloadEngine {
             resolver.openOutputStream(uri).use { out -> tmp.inputStream().use { it.copyTo(out!!) } }
             values.clear(); values.put(MediaStore.Downloads.IS_PENDING, 0)
             resolver.update(uri, values, null, null)
+            return uri.toString()
         } else {
             val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             if (!dir.exists()) dir.mkdirs()
             var out = File(dir, spec.fileName)
             if (out.exists()) out = File(dir, spec.fileName.substringBeforeLast('.') + "_" + System.currentTimeMillis() + "." + spec.fileName.substringAfterLast('.'))
             tmp.copyTo(out, overwrite = true)
+            return android.net.Uri.fromFile(out).toString()
         }
     }
 }

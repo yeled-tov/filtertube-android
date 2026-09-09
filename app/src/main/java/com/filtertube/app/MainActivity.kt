@@ -497,6 +497,7 @@ fun AppRoot() {
                     onSearch = { navController.navigate("search") },
                     onInbox = { navController.navigate("newvideos") },
                     onStartRadio = ::openRadio,
+                    onOpenDownloads = { navController.navigate("collection/downloads") },
                     onLive = { navController.navigate("live") },
                 )
             }

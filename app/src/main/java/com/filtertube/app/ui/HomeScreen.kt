@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -78,6 +79,7 @@ fun HomeScreen(
     onInbox: () -> Unit = {},
     onLive: () -> Unit = {},
     onStartRadio: () -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -89,6 +91,8 @@ fun HomeScreen(
     var selectedCategory by remember { mutableStateOf<String?>(null) }
     /** true בזמן שנבחר סרטון הפתיחה לרדיו — מונע לחיצה כפולה. */
     var radioStarting by remember { mutableStateOf(false) }
+    /** null = עוד לא נבדק. false = אין חיבור, ואז מוצגת רצועת האופליין. */
+    var online by remember { mutableStateOf<Boolean?>(null) }
     val newCount = remember { store.newVideos().size }   // מספר הסרטונים החדשים לתג הפעמון
 
     fun refresh(showSpinner: Boolean) {
@@ -164,6 +168,13 @@ fun HomeScreen(
         }
     }
 
+    // מצב הרשת נבדק בכל חזרה למסך, לא פעם אחת: המשתמש יוצא מטווח וחוזר,
+    // ורצועת "אין חיבור" שנתקעת על המסך אחרי שהרשת חזרה גרועה מלא להציג
+    // אותה בכלל.
+    LaunchedEffect(state, refreshing) {
+        online = com.filtertube.app.data.Connectivity.isOnline(context)
+    }
+
     // טעינה מיידית מהקאש (אם יש), ואז רענון ברקע
     LaunchedEffect(Unit) {
         runCatching { LibraryBadges.refresh(context) }
@@ -220,6 +231,35 @@ fun HomeScreen(
                     categories.forEach { cat ->
                         CategoryChip(categoryLabelHe(cat), selectedCategory == cat) { selectedCategory = cat }
                     }
+                }
+            }
+            // ── אין חיבור ─────────────────────────────────────────────────
+            // במקום פיד שנכשל בשקט: אמירה ברורה מה קרה, ומעבר למה שכבר
+            // נמצא על המכשיר ואפשר לשמוע עכשיו.
+            if (online == false) {
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(ThemeState.card)
+                        .clickable(onClick = onOpenDownloads)
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Default.CloudOff, null,
+                        tint = Color(0xFFFFAA00), modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("אין חיבור לאינטרנט", color = ThemeState.text,
+                            fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                        Text("אפשר להאזין למה שהורדת — הקש כאן", color = ThemeState.subtext, fontSize = 11.5.sp)
+                    }
+                    Icon(
+                        Icons.Default.Download, null,
+                        tint = ThemeState.accent, modifier = Modifier.size(18.dp),
+                    )
                 }
             }
             if (refreshing && state is HomeState.Success) {
