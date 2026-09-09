@@ -76,6 +76,21 @@ jobs:
             --no-daemon --stacktrace \
             -PbuildNumber=${{ github.run_number }} 2>&1 | tee build-output.txt
 
+      # מדפיס את השגיאות עצמן בסוף ה-log של ה-job.
+      #
+      # בלי זה, סוף ה-log הוא stack trace של Gradle ואחריו שלבי ההעלאה, וכדי
+      # להגיע לשורה שבאמת מסבירה מה נשבר צריך לגלול מאות שורות אחורה או להוריד
+      # את ה-artifact. השורות הרלוונטיות תמיד נראות אותו דבר: "e:" של קוטלין,
+      # "error:", או בלוק ה-FAILURE/What went wrong של Gradle.
+      - name: Show build errors
+        if: failure()
+        run: |
+          echo "──────── שגיאות מתוך build-output.txt ────────"
+          grep -nE '^e: |error: |^\s+> |What went wrong|FAILURE:|Execution failed|requires|Caused by:' \
+            build-output.txt | tail -n 120 || true
+          echo "──────── 80 השורות האחרונות ────────"
+          tail -n 80 build-output.txt || true
+
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

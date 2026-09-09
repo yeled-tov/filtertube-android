@@ -18,9 +18,9 @@ import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.xmlpull.v1.XmlPullParser
 import java.io.StringReader
-import java.text.SimpleDateFormat
-import java.util.Locale
-import java.util.TimeZone
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import java.util.concurrent.TimeUnit
 
 object YouTubeRepository {
@@ -30,8 +30,30 @@ object YouTubeRepository {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    private val iso8601Date = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply {
-        timeZone = TimeZone.getTimeZone("UTC")
+    /**
+     * תאריך ההעלאה מתוך ה-RSS, למשל "2026-09-08T14:23:11+00:00".
+     *
+     * כאן היה SimpleDateFormat יחיד ומשותף. SimpleDateFormat אינו
+     * thread-safe, ו-parseChannelXml רץ משמונה קורוטינות IO במקביל — כלומר
+     * שמונה קריאות parse בו-זמנית על אותו אובייקט. התוצאה היא תאריך שגוי או
+     * חריגה, והחריגה נבלעה ב-catch והפכה ל-publishedAt = 0. משם זה זולג
+     * לכל מקום: הפיד ממוין לפי publishedAt, אז סרטונים קפצו למטה, ובממשק
+     * הופיע "תאריך לא זמין" באקראי על שורות שיש להן תאריך מצוין.
+     *
+     * java.time אימיוטבילי ובטוח לשימוש מקבילי (java.time זמין ב-minSdk 24
+     * דרך coreLibraryDesugaring, וכבר בשימוש ב-VideoMetadata).
+     */
+    private fun parsePublished(raw: String): Long {
+        val text = raw.trim()
+        if (text.isEmpty()) return 0L
+        val withOffset = runCatching { OffsetDateTime.parse(text).toInstant().toEpochMilli() }
+        if (withOffset.isSuccess) return withOffset.getOrThrow()
+        // גיבוי לפורמט בלי אזור זמן — מפורש כ-UTC, כמו קודם.
+        return runCatching {
+            LocalDateTime.parse(text.substringBefore('+').substringBefore('Z'))
+                .toInstant(ZoneOffset.UTC)
+                .toEpochMilli()
+        }.getOrDefault(0L)
     }
 
     // ───────────────────────────────────────────────────────────────────────
@@ -113,8 +135,7 @@ object YouTubeRepository {
                     "yt:videoId" -> if (inEntry) vId = parser.nextText()
                     "title" -> if (inEntry && vTitle == null) vTitle = parser.nextText()
                     "published" -> if (inEntry) try {
-                        val cleaned = parser.nextText().substringBefore("+").substringBefore("Z").trim()
-                        vPublished = iso8601Date.parse(cleaned)?.time ?: 0L
+                        vPublished = parsePublished(parser.nextText())
                     } catch (_: Exception) {}
                     "media:thumbnail" -> if (inEntry) vThumb = parser.getAttributeValue(null, "url")
                 }
