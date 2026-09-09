@@ -11,7 +11,17 @@ import java.util.concurrent.TimeUnit
 
 enum class InnerTubeClientType {
     ANDROID_VR,
-    IOS
+    IOS,
+
+    /**
+     * נגן מוטמע של ממשק הטלוויזיה. הוא לא דורש PO token והוא המנוע שנוטה
+     * להחזיק כשהאחרים מקבלים LOGIN_REQUIRED, ולכן הוא הגיבוי הטוב ביותר
+     * ל-IOS. דורש thirdParty.embedUrl בבקשה.
+     */
+    TVHTML5_EMBED,
+
+    /** יוטיוב לנייד בדפדפן. ההתנהגות הכי קרובה לגלישה רגילה. */
+    MWEB,
 }
 
 /**
@@ -24,6 +34,8 @@ class InnerTubeResolver(
     val clientKey: String = when (clientType) {
         InnerTubeClientType.IOS -> "IOS"
         InnerTubeClientType.ANDROID_VR -> "ANDROID_VR"
+        InnerTubeClientType.TVHTML5_EMBED -> "TVHTML5_EMBED"
+        InnerTubeClientType.MWEB -> "MWEB"
     }
 
     override val name: String = "InnerTube $clientKey"
@@ -41,6 +53,14 @@ class InnerTubeResolver(
 
         private const val DEF_VR_VER = "1.60.19"
         private const val DEF_VR_UA = "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip"
+
+        private const val DEF_TV_VER = "2.0"
+        private const val DEF_TV_UA =
+            "Mozilla/5.0 (PlayStation; PlayStation 4/12.00) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15"
+
+        private const val DEF_MWEB_VER = "2.20260901.00.00"
+        private const val DEF_MWEB_UA =
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
 
         /**
          * visitorData לכל סוג לקוח בנפרד.
@@ -116,6 +136,24 @@ class InnerTubeResolver(
                     put("gl", "IL")
                 }
             }
+            InnerTubeClientType.TVHTML5_EMBED -> {
+                ua = RemoteConfig.clientUserAgent("tv", DEF_TV_UA)
+                client.apply {
+                    put("clientName", "TVHTML5_SIMPLY_EMBEDDED_PLAYER")
+                    put("clientVersion", RemoteConfig.clientVersion("tv", DEF_TV_VER))
+                    put("hl", "he")
+                    put("gl", "IL")
+                }
+            }
+            InnerTubeClientType.MWEB -> {
+                ua = RemoteConfig.clientUserAgent("mweb", DEF_MWEB_UA)
+                client.apply {
+                    put("clientName", "MWEB")
+                    put("clientVersion", RemoteConfig.clientVersion("mweb", DEF_MWEB_VER))
+                    put("hl", "he")
+                    put("gl", "IL")
+                }
+            }
         }
         visitorDataByClient[clientKey]?.takeIf { it.isNotBlank() }?.let { client.put("visitorData", it) }
         return client to ua
@@ -141,6 +179,19 @@ class InnerTubeResolver(
             put("contentCheckOk", true)
             put("racyCheckOk", true)
             put("context", JSONObject().put("client", clientObj))
+            // נגן מוטמע חייב להצהיר מאיזה דף הוא מוטמע. בלי זה יוטיוב מחזיר
+            // status=ERROR עבור TVHTML5_SIMPLY_EMBEDDED_PLAYER.
+            if (clientType == InnerTubeClientType.TVHTML5_EMBED) {
+                put(
+                    "context",
+                    JSONObject()
+                        .put("client", clientObj)
+                        .put(
+                            "thirdParty",
+                            JSONObject().put("embedUrl", "https://www.youtube.com/watch?v=$videoId"),
+                        ),
+                )
+            }
             // המיקום הנכון הוא serviceIntegrityDimensions ברמה העליונה.
             // כשדה לא מוכר בתוך context.user, הוא גורם ל-HTTP 400 בגלל
             // הכותרת X-Goog-Api-Format-Version: 2.

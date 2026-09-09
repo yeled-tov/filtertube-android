@@ -23,7 +23,29 @@ import java.util.concurrent.ConcurrentHashMap
 object PlayerRecoveryHandler {
 
     private const val MAX_RECOVERY_ATTEMPTS = 2
-    private val recoveryAttempts = ConcurrentHashMap<String, Int>()
+
+    /**
+     * אחרי כמה זמן מונה הניסיונות מתאפס.
+     *
+     * זה היה הבאג שהשבית סרטון לכל אורך חיי התהליך. המונה עלה ל-2, ומאותו
+     * רגע כל שגיאה חדשה חישבה attempt=3, ראתה שזה מעל המקסימום, ויצאה מיד
+     * בלי לנסות שום דבר. ביומן זה נראה כך, חמש פעמים ברצף על אותו סרטון:
+     *
+     *   PLAYER ERROR videoId=197DFGcL8wE code=ERROR_CODE_IO_BAD_HTTP_STATUS attempt=3
+     *   PLAYER ERROR videoId=197DFGcL8wE חרג מ-2 ניסיונות התאוששות ✖
+     *
+     * המשתמש לחץ נגן שוב ושוב לאורך שתי דקות, והאפליקציה סירבה אפילו לנסות.
+     * שתי דקות שקט מספיקות כדי להניח שזו לחיצה חדשה ולא לולאת כשל.
+     */
+    private const val ATTEMPT_WINDOW_MS = 120_000L
+
+    private data class Attempts(val count: Int, val lastAt: Long)
+
+    private val recoveryAttempts = ConcurrentHashMap<String, Attempts>()
+
+    /** מוצג למשתמש כשההתאוששות ויתרה — במקום מסך שנשאר תקוע בלי הסבר. */
+    @Volatile
+    var onGaveUp: ((String) -> Unit)? = null
 
     fun isStreamIoError(error: PlaybackException): Boolean {
         val code = error.errorCode
@@ -49,7 +71,10 @@ object PlayerRecoveryHandler {
 
         val codeName = error.errorCodeName
         val pos = player.currentPosition.coerceAtLeast(0L)
-        val attempt = (recoveryAttempts[videoId] ?: 0) + 1
+        val now = System.currentTimeMillis()
+        val previous = recoveryAttempts[videoId]
+            ?.takeIf { now - it.lastAt < ATTEMPT_WINDOW_MS }
+        val attempt = (previous?.count ?: 0) + 1
 
         Diagnostics.log("PLAYER ERROR videoId=$videoId code=$codeName attempt=$attempt pos=${pos / 1000}s")
 
@@ -60,24 +85,29 @@ object PlayerRecoveryHandler {
 
         if (attempt > MAX_RECOVERY_ATTEMPTS) {
             Diagnostics.log("PLAYER ERROR videoId=$videoId חרג מ-$MAX_RECOVERY_ATTEMPTS ניסיונות התאוששות ✖")
+            onGaveUp?.invoke(videoId)
             return
         }
 
-        recoveryAttempts[videoId] = attempt
+        recoveryAttempts[videoId] = Attempts(attempt, now)
 
-        // 1. ביטול מטמון עבור הווידאו שנכשל
-        StreamRepository.invalidateCache(videoId)
+        // המנוע שהפיק את הכתובת המתה — כדי לא לבקש ממנו בדיוק אותה כתובת שוב.
+        val failedBy = StreamRepository.getCached(videoId)?.resolvedBy
 
-        // 2. תיעוד כשל בבריאות ה-Resolver
+        // תיעוד כשל בבריאות ה-Resolver
         ResolverHealthMonitor.recordFailure("ExoPlayerIO", codeName)
 
-        // 3. חילוץ חדש והחלפה אוטומטית בנגן
+        // חילוץ חדש והחלפה אוטומטית בנגן
         scope.launch(Dispatchers.IO) {
-            Diagnostics.log("RECOVERY videoId=$videoId מתחיל חילוץ מחדש (ניסיון $attempt)...")
-            val newData = runCatching { StreamRepository.getStream(videoId) }.getOrNull()
+            Diagnostics.log(
+                "RECOVERY videoId=$videoId חילוץ מחדש (ניסיון $attempt" +
+                    (if (failedBy.isNullOrBlank()) ")" else ", בלי $failedBy)") + "...",
+            )
+            val newData = runCatching { StreamRepository.resolveFresh(videoId, failedBy) }.getOrNull()
 
             if (newData == null) {
                 Diagnostics.log("RECOVERY videoId=$videoId חילוץ מחדש נכשל ✖")
+                withContext(Dispatchers.Main) { onGaveUp?.invoke(videoId) }
                 return@launch
             }
 
@@ -93,7 +123,10 @@ object PlayerRecoveryHandler {
                     player.seekTo(currentIndex, pos)
                     player.prepare()
                     player.play()
-                    Diagnostics.log("RECOVERY videoId=$videoId הצליח! הנגינה חודשה מ-${pos / 1000}s ✓")
+                    Diagnostics.log(
+                        "RECOVERY videoId=$videoId הצליח דרך ${newData.resolvedBy} — " +
+                            "הנגינה חודשה מ-${pos / 1000}s ✓",
+                    )
                 }
             }
         }

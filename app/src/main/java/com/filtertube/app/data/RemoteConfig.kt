@@ -59,6 +59,20 @@ object RemoteConfig {
         return res.optBoolean("enabled", default)
     }
 
+    /**
+     * גרסת לקוח / User-Agent לכל מנוע InnerTube, לפי המפתח שלו תחת "innertube".
+     *
+     * כשיוטיוב חוסם גרסת לקוח, זה מה שצריך לעדכן — בענן, בלי בנייה חדשה
+     * ובלי עדכון אפליקציה במכשירים.
+     */
+    fun clientVersion(key: String, default: String): String =
+        cfg?.optJSONObject("innertube")?.optJSONObject(key)?.optString("clientVersion")
+            ?.takeIf { it.isNotBlank() } ?: default
+
+    fun clientUserAgent(key: String, default: String): String =
+        cfg?.optJSONObject("innertube")?.optJSONObject(key)?.optString("userAgent")
+            ?.takeIf { it.isNotBlank() } ?: default
+
     fun resolverPriority(): List<String> {
         val list = mutableListOf<String>()
         val arr = cfg?.optJSONObject("resolvers")?.optJSONArray("priority")
@@ -70,7 +84,10 @@ object RemoteConfig {
         }
         // ברירת מחדל: IOS קודם, לאחר מכן ANDROID_VR, ובסוף NewPipe
         if (list.isEmpty()) {
-            return listOf("IOS", "ANDROID_VR", "NewPipe")
+            // ארבעה מנועים ולא שניים. המרוץ הוא במקביל, אז מנוע שנכשל לא
+            // עולה למשתמש זמן — אבל מנוע שמצליח כשהאחרים נחסמים שווה את
+            // ההבדל בין "הסרטון הזה מוגבל" לבין ניגון.
+            return listOf("IOS", "TVHTML5_EMBED", "MWEB", "ANDROID_VR", "NewPipe")
         }
         return list
     }

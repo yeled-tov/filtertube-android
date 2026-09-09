@@ -210,6 +210,21 @@ class PlaybackService : MediaSessionService() {
             }
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                // כשההתאוששות מוותרת המשתמש חייב לדעת. עד עכשיו המסך פשוט
+                // נשאר תקוע בלי שום הסבר, וזה נראה כמו אפליקציה תקועה.
+                PlayerRecoveryHandler.onGaveUp = {
+                    android.widget.Toast.makeText(
+                        this@PlaybackService,
+                        "לא הצלחנו לנגן את הסרטון הזה — מדלגים לבא",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                    // תור שנתקע על פריט מת הוא תור שבור. אם יש המשך — ממשיכים.
+                    if (player.hasNextMediaItem()) {
+                        player.seekToNextMediaItem()
+                        player.prepare()
+                        player.play()
+                    }
+                }
                 PlayerRecoveryHandler.handlePlayerError(
                     context = this@PlaybackService,
                     player = player,

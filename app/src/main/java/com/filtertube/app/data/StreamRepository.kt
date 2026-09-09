@@ -66,6 +66,14 @@ data class StreamData(
      * ה-User-Agent שבו *חייבים* לנגן את כתובות הזרם.
      */
     val streamUserAgent: String? = null,
+    /**
+     * שם המנוע שהחזיר את הזרם הזה.
+     *
+     * נדרש להתאוששות: כשהנגן מקבל 403 על כתובת, אין טעם לבקש אותה שוב מאותו
+     * מנוע — הוא יחזיר בדיוק את אותה כתובת. עם השם אפשר לפסול אותו לניסיון
+     * הבא ולקבל כתובת ממקור אחר.
+     */
+    val resolvedBy: String = "",
 )
 
 object StreamRepository {
@@ -83,6 +91,8 @@ object StreamRepository {
 
     private val resolverMap: Map<String, StreamResolver> = mapOf(
         "IOS" to InnerTubeResolver(InnerTubeClientType.IOS),
+        "TVHTML5_EMBED" to InnerTubeResolver(InnerTubeClientType.TVHTML5_EMBED),
+        "MWEB" to InnerTubeResolver(InnerTubeClientType.MWEB),
         "ANDROID_VR" to InnerTubeResolver(InnerTubeClientType.ANDROID_VR),
         "NewPipe" to NewPipeResolver()
     )
@@ -204,7 +214,24 @@ object StreamRepository {
         }
     }
 
-    private suspend fun resolveInternal(videoId: String): StreamData = coroutineScope {
+    /**
+     * חילוץ טרי, בלי מטמון ובלי איחוד בקשות, תוך פסילת מנוע מסוים.
+     *
+     * זה המסלול של ההתאוששות בנגן. getStream הרגיל היה מחזיר את אותה כתובת
+     * — או מהמטמון, או מבקשה מקבילה שכבר רצה — וזה בדיוק מה שלא רוצים אחרי
+     * ש-403 הוכיח שהכתובת ההיא מתה.
+     */
+    suspend fun resolveFresh(videoId: String, excludeResolver: String?): StreamData {
+        invalidateCache(videoId)
+        val data = resolveInternal(videoId, excludeResolver)
+        putCache(videoId, data)
+        return data
+    }
+
+    private suspend fun resolveInternal(
+        videoId: String,
+        excludeResolver: String? = null,
+    ): StreamData = coroutineScope {
         val t0 = System.currentTimeMillis()
         val priorityKeys = RemoteConfig.resolverPriority()
 
@@ -219,7 +246,10 @@ object StreamRepository {
             if (isEmpty()) {
                 resolverMap["NewPipe"]?.let { add(it) }
             }
-        }
+        }.filter { it.name != excludeResolver }
+            // פסילה שמרוקנת את הרשימה גרועה מאי-פסילה: עדיף לנסות שוב את
+            // אותו מנוע מאשר לא לנסות כלום.
+            .ifEmpty { activeFallback() }
 
         // כל המנועים רצים **במקביל**, והראשון שמצליח מנצח.
         //
@@ -233,7 +263,21 @@ object StreamRepository {
         val attempts = activeResolvers.map { resolver ->
             launch(Dispatchers.IO) {
                 val rT0 = System.currentTimeMillis()
-                val result = runCatching { resolver.resolve(videoId) }.getOrNull()
+                // CancellationException נתפס בנפרד ולא נספר ככישלון.
+                //
+                // ברגע שמנוע אחד מנצח, כל השאר מבוטלים — וזה בדיוק התכנון.
+                // אבל runCatching בלע גם את הביטול והחזיר null, כך שהיומן
+                // הציג "NewPipe נכשל (1781ms)" בשורה אחת מתחת ל"NewPipe
+                // SUCCESS (1780ms)". שתי שורות סותרות על אותו חילוץ, וכל
+                // ניסיון לאבחן מהיומן התחיל מלנסות להבין מה מהן נכון.
+                val result = try {
+                    resolver.resolve(videoId)?.copy(resolvedBy = resolver.name)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    Diagnostics.log("StreamRepository $videoId: ${resolver.name} בוטל — מנוע אחר כבר ניצח")
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
                 if (result == null) {
                     Diagnostics.log("StreamRepository $videoId: ${resolver.name} נכשל (${System.currentTimeMillis() - rT0}ms)")
                 } else if (winner.complete(result)) {
@@ -268,6 +312,9 @@ object StreamRepository {
         putCache(videoId, won)
         won
     }
+
+    private fun activeFallback(): List<StreamResolver> =
+        listOfNotNull(resolverMap["NewPipe"])
 
     /**
      * תקציר האיכויות — ברירת המחדל נלקחת מ-[Playback.defaultQuality], שהיא
