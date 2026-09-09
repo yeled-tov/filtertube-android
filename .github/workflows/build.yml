@@ -127,21 +127,15 @@ jobs:
 
       # השלב האחרון ב-job, בכוונה.
       #
-      # הכלי שדרכו אני קורא את היומן מחזיר חלון קבוע מסוף ה-job בלבד. שלב
-      # אבחון שממוקם באמצע נדחק אל מחוץ לחלון ע"י שלבי העלאת ה-artifacts,
-      # ואז אני רואה stack trace של Gradle בלי שום שורת שגיאה. כשזה הדבר
-      # האחרון שרץ, הוא תמיד נראה.
+      # הכלי שדרכו אני קורא את היומן מחזיר חלון קבוע מסוף ה-job בלבד. לכן זה
+      # רץ אחרון, ולכן הוא מדפיס מעט ככל האפשר: פלט ארוך דוחף את השורות
+      # החשובות אל מחוץ לחלון, וזה בדיוק מה שקרה עם דוח ה-lint המלא.
       - name: שגיאות הבנייה
         if: failure()
         run: |
-          echo "════════════ שורות שגיאה ════════════"
-          grep -nE '^e: |error: |FAILURE:|What went wrong|Lint found|^\s+> ' \
-            build-output.txt 2>/dev/null | tail -n 50 || echo "(אין build-output.txt)"
-          echo "════════════ דוח lint ════════════"
-          for f in $(find app/build -name 'lint-results-*.txt' 2>/dev/null); do
-            echo "── $f"
-            grep -nE '^[^ ].*: (Error|Warning):' "$f" | head -n 30
-          done
+          echo "════════════ מה נשבר ════════════"
+          grep -nE '^e: |Execution failed|What went wrong|^\s+> ' build-output.txt \
+            2>/dev/null | tail -n 25 || echo "(אין build-output.txt)"
 
   # ── Release יציב — רק מ-main, מגיע לכל הלקוחות ────────────────────────────
   release:
