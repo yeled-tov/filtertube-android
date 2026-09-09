@@ -82,17 +82,28 @@ android {
 }
 
 // תקרת השדרוג כאן היא compileSdk 36 / AGP 8.13, לא "הגרסה האחרונה שקיימת".
-// core-ktx 1.18+, lifecycle 2.10+, activity-compose 1.12+, navigation 2.10+
-// ו-work 2.11+ כולם מצהירים minCompileSdk 37 ודורשים AGP 9.1 ומעלה — הבנייה
-// נכשלת עליהם ב-CheckAarMetadata לפני שהמהדר בכלל רץ. המעבר ל-AGP 9 הוא שינוי
-// נפרד בפני עצמו (Gradle 9, שינויי DSL), ולכן הוא לא מעורבב עם השדרוג הזה.
+//
+// כל AAR נושא minCompileSdk ו-minAgpVersion בתוך
+// META-INF/com/android/build/gradle/aar-metadata.properties, וזה מה שמפיל את
+// הבנייה ב-CheckAarMetadata עוד לפני שהמהדר רץ. מספר הגרסה לא מגלה את זה,
+// ולכן ה-workflow ב-audit/deps מוריד את ה-AAR-ים וקורא את הערך ישירות.
+//
+// הגרסאות כאן הן מה שאותה בדיקה החזירה כחדשות ביותר שעדיין נכנסות מתחת
+// לתקרה. מה שנשאר בחוץ ולמה:
+//   lifecycle 2.11        — lifecycle-viewmodel-compose ו-lifecycle-runtime-compose
+//                           מצהירים minCompileSdk 37 ודורשים AGP 9.1
+//   activity-compose 1.13 — גורר איתו את אותה משפחת lifecycle 2.11
+//   compose-bom 2026.08   — androidx.compose.ui 1.12.0, minCompileSdk 37
+//
+// כלומר התקרה האמיתית היא המעבר ל-AGP 9 ול-compileSdk 37: שינוי בפני עצמו
+// (Gradle 9, שינויי DSL, תוסף Kotlin מובנה) ולא משהו שנכנס אגב שדרוג ספריות.
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 
     val composeBom = platform("androidx.compose:compose-bom:2024.10.00")
     implementation(composeBom)
 
-    implementation("androidx.core:core-ktx:1.17.0")
+    implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
     implementation("androidx.activity:activity-compose:1.11.0")
 
@@ -101,7 +112,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    implementation("androidx.navigation:navigation-compose:2.9.5")
+    implementation("androidx.navigation:navigation-compose:2.9.8")
 
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-exoplayer-hls:1.11.0")
@@ -115,8 +126,8 @@ dependencies {
 
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
-    implementation("com.google.android.gms:play-services-auth:21.4.0")
-    implementation("androidx.work:work-runtime-ktx:2.10.5")
+    implementation("com.google.android.gms:play-services-auth:22.0.0")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
 
     // Firebase נשאר על 33.1.2 בכוונה, ולא בגלל שלא נבדק.
     //
