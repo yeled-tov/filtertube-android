@@ -292,15 +292,27 @@ private fun SettingsSectionHeader(title: String) {
         color = ThemeState.accent,
         fontSize = 12.sp,
         fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp),
+        modifier = Modifier.padding(start = 20.dp, end = 16.dp, top = 18.dp, bottom = 6.dp),
     )
 }
 
+/**
+ * שורת הגדרה כקלף.
+ *
+ * קודם השורות היו טקסט על הרקע, בלי שום גבול ביניהן. במסך ארוך זה נקרא
+ * כרשימת מילים ולא כרשימת כפתורים: אין רמז ויזואלי לאן בדיוק אפשר להקיש
+ * ואיפה נגמרת שורה אחת ומתחילה הבאה. הרקע והפינות המעוגלות הם בדיוק הרמז
+ * הזה, וגם מגדירים את שטח ההקשה.
+ */
 @Composable
 private fun SettingsRow(icon: ImageVector, accent: Color, title: String, subtitle: String, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+        modifier = Modifier.fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 3.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(ThemeState.card)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(ThemeState.surface),

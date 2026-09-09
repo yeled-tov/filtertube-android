@@ -52,6 +52,9 @@ fun AdminScreen(onBack: () -> Unit) {
     var dashboardLoading by remember { mutableStateOf(false) }
 
     var newChannelInput by remember { mutableStateOf("") }
+    var adminResolved by remember { mutableStateOf<ChannelAdmin.Resolved?>(null) }
+    var adminResolving by remember { mutableStateOf(false) }
+    var adminNotFound by remember { mutableStateOf(false) }
     var newCategory by remember { mutableStateOf("music") }
     var newGender by remember { mutableStateOf("all") }
     var busy by remember { mutableStateOf(false) }
@@ -175,12 +178,37 @@ fun AdminScreen(onBack: () -> Unit) {
         }
     }
 
+    // איתור אוטומטי תוך כדי הקלדה, עם השהיה כדי לא לפתוח חילוץ לכל אות.
+    LaunchedEffect(newChannelInput) {
+        val query = newChannelInput.trim()
+        if (query.length < 3) {
+            adminResolved = null; adminNotFound = false; adminResolving = false
+            return@LaunchedEffect
+        }
+        if (adminResolved?.name?.trim() == query) return@LaunchedEffect
+        kotlinx.coroutines.delay(700)
+        adminResolving = true
+        adminNotFound = false
+        try {
+            val found = ChannelAdmin.resolveChannel(query)
+            // הקלדה חדשה בזמן החילוץ — התוצאה כבר לא רלוונטית.
+            if (newChannelInput.trim() != query) return@LaunchedEffect
+            adminResolved = found
+            adminNotFound = found == null
+        } catch (_: Throwable) {
+            adminNotFound = true
+        } finally {
+            adminResolving = false
+        }
+    }
+
     fun addChannel() {
         if (newChannelInput.isBlank() || busy) return
         busy = true; status = "מזהה ערוץ..."
         scope.launch {
             try {
-                val resolved = ChannelAdmin.resolveChannel(newChannelInput.trim())
+                // אם התצוגה המקדימה כבר זיהתה את הערוץ, אין טעם לחלץ שוב.
+                val resolved = adminResolved ?: ChannelAdmin.resolveChannel(newChannelInput.trim())
                 if (resolved == null) { status = "ערוץ לא נמצא"; busy = false; return@launch }
                 val channelId = resolved.channelId
                 val name = resolved.name
@@ -194,6 +222,8 @@ fun AdminScreen(onBack: () -> Unit) {
                     ChannelsRepository.invalidate()
                     ChannelsRepository.refresh(context)
                     newChannelInput = ""
+                    adminResolved = null
+                    adminNotFound = false
                     status = "נוסף: $name ✓"
                 } else status = "שגיאה בשמירת הערוץ"
             } catch (e: Exception) {
@@ -413,7 +443,7 @@ fun AdminScreen(onBack: () -> Unit) {
                     OutlinedTextField(
                         value = newChannelInput,
                         onValueChange = { newChannelInput = it },
-                        label = { Text("קישור / @handle / UC...", color = ThemeState.subtext) },
+                        label = { Text("שם הערוץ או הזמר — או קישור", color = ThemeState.subtext) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
@@ -421,6 +451,50 @@ fun AdminScreen(onBack: () -> Unit) {
                             focusedBorderColor = Color(0xFFFF0000), unfocusedBorderColor = Color(0xFF333333),
                         ),
                     )
+                    Spacer(Modifier.height(8.dp))
+
+                    // תצוגה מקדימה של הערוץ שזוהה — אותה חוויה שיש ללקוחות
+                    // בטופס בקשת הערוץ. הפאנל הזה דרש עד עכשיו קישור או
+                    // מזהה UC, כלומר ללכת ליוטיוב, למצוא את הערוץ ולהעתיק
+                    // — בשביל פעולה שהיא בעצם "תוסיף את הזמר הזה".
+                    when {
+                        adminResolving -> Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                color = Color(0xFFFF0000), strokeWidth = 2.dp,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text("מאתר את הערוץ ביוטיוב…", color = ThemeState.subtext, fontSize = 12.sp)
+                        }
+
+                        adminResolved != null -> Row(
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                                .background(ThemeState.card).padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            coil.compose.AsyncImage(
+                                model = adminResolved?.avatarUrl, contentDescription = null,
+                                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(50))
+                                    .background(ThemeState.divider),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "זוהה: ${adminResolved?.name}", color = ThemeState.text,
+                                    fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                                )
+                                Text(
+                                    adminResolved?.channelId.orEmpty(), color = ThemeState.subtext,
+                                    fontSize = 11.sp, maxLines = 1,
+                                )
+                            }
+                        }
+
+                        adminNotFound -> Text(
+                            "לא נמצא ערוץ בשם הזה — אפשר להדביק קישור ישירות",
+                            color = ThemeState.subtext, fontSize = 12.sp,
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                     Text("קטגוריה", color = ThemeState.subtext, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
