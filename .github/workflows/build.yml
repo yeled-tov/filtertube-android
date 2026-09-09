@@ -134,8 +134,13 @@ jobs:
         if: failure()
         run: |
           echo "════════════ מה נשבר ════════════"
-          grep -nE '^e: |Execution failed|What went wrong|^\s+> ' build-output.txt \
-            2>/dev/null | tail -n 25 || echo "(אין build-output.txt)"
+          grep -nE '^e: ' build-output.txt 2>/dev/null | tail -n 12 || true
+          # lintRelease נכשל רק על Error, אף פעם לא על Warning. אלה השורות
+          # היחידות שמעניינות, ורק הן מודפסות — כל השאר דוחף אותן מהחלון.
+          for f in $(find app/build -name 'lint-results-*.txt' 2>/dev/null); do
+            grep -F ': Error: ' "$f" | head -n 12
+          done
+          grep -F 'Lint found' build-output.txt 2>/dev/null | tail -n 3 || true
 
   # ── Release יציב — רק מ-main, מגיע לכל הלקוחות ────────────────────────────
   release:
