@@ -5,6 +5,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.Diagnostics
+import com.filtertube.app.data.PlaybackPriority
 import com.filtertube.app.data.FeedCache
 import com.filtertube.app.data.InnerTube
 import com.filtertube.app.data.SettingsStore
@@ -112,6 +113,17 @@ object RadioQueueManager {
 
         var added = 0
         for (video in videos.take(QUEUE_MAX)) {
+            // ממתינים לפני *כל* פריט, לא רק בתחילת הבנייה.
+            //
+            // היומן מהמכשיר תפס את זה במדויק:
+            //   23:42:46  RADIO אישי: 13 מתוך 23 סרטוני התחנה נוספו לתור
+            //   23:43:05  ⚠ עצירה 26610ms בשנייה 3
+            //
+            // עצירה של 26 שניות בשנייה השלישית של השיר. שלוש עשרה בקשות
+            // חילוץ בזו אחר זו, פלוס החימום מראש, הציפו את הרשת בדיוק כשהנגן
+            // ניסה למלא באפר. ההמתנה הייתה פעם אחת בלבד בתחילת הבנייה, ואחריה
+            // שום דבר לא עצר את המבול.
+            PlaybackPriority.awaitIdle()
             val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull() ?: continue
             activeQueueIds.add(video.id)
             val audio = Playback.forcedAudio(catById[data.channelId] ?: catById[video.channelId], level)

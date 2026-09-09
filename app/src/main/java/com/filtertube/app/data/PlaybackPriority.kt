@@ -26,8 +26,13 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 object PlaybackPriority {
 
-    /** מעבר לזה מניחים שמשהו השתבש וממשיכים בכל מקרה. */
-    private const val MAX_WAIT_MS = 8_000L
+    /**
+     * מעבר לזה מניחים שמשהו השתבש וממשיכים בכל מקרה.
+     *
+     * חייב להיות גדול מ-PLAYBACK_GRACE_MS, אחרת עבודת רקע מוותרת על ההמתנה
+     * עוד לפני שהנגן שחרר את השער — וכל המנגנון לא שווה כלום.
+     */
+    private const val MAX_WAIT_MS = 20_000L
 
     private val active = AtomicInteger(0)
 
