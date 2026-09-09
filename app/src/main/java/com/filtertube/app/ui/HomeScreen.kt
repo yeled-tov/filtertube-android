@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
@@ -58,6 +59,7 @@ import com.filtertube.app.data.YouTubeRepository
 import com.filtertube.app.playback.Playback
 import com.filtertube.app.data.categoryLabelHe
 import com.filtertube.app.data.forLevel
+import com.filtertube.app.data.PersonalRadio
 import com.filtertube.app.data.personalizeFeed
 import com.filtertube.app.data.sortedCategories
 import kotlinx.coroutines.Dispatchers
@@ -74,7 +76,6 @@ sealed class HomeState {
 fun HomeScreen(
     onVideoClick: (Video) -> Unit,
     onSearch: () -> Unit,
-    onSettings: () -> Unit = {},
     onAccount: () -> Unit = {},
     onInbox: () -> Unit = {},
     onChannels: () -> Unit = {},
@@ -90,6 +91,8 @@ fun HomeScreen(
     var showAbout by remember { mutableStateOf(false) }
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
+    /** true בזמן שנבחר סרטון הפתיחה לרדיו — מונע לחיצה כפולה. */
+    var radioStarting by remember { mutableStateOf(false) }
     val newCount = remember { store.newVideos().size }   // מספר הסרטונים החדשים לתג הפעמון
 
     if (showAbout) {
@@ -200,7 +203,12 @@ fun HomeScreen(
     Box(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         // התוכן הראשי — מטושטש כשהתפריט הצף פתוח (אפקט זכוכית)
         Column(modifier = Modifier.fillMaxSize().blur(if (showMenu) 18.dp else 0.dp)) {
-            // טופ-בר מרווח — כפתורי הפעולה אינם נחתכים גם במכשירים עם אזור מצלמה גדול.
+            // טופ-בר: אווטאר לתפריט, ושם האפליקציה. זהו.
+            //
+            // קודם ישבו כאן גם "סרטונים חדשים" ו"שידורים חיים" כשני עיגולים
+            // קטנים. שניהם *יעדי תוכן*, לא פעולות על המסך הנוכחי, והם נדחסו
+            // לפינה שהעין לא סורקת. הם ירדו לשורת הצ'יפים — בדיוק המקום שאליו
+            // המשתמש מסתכל כשהוא מחפש "מה יש כאן".
             Row(
                 modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 32.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -211,36 +219,29 @@ fun HomeScreen(
                         .clickable { showMenu = true },
                     contentAlignment = Alignment.Center,
                 ) { Icon(Icons.Default.Person, "תפריט", tint = Color.White, modifier = Modifier.size(23.dp)) }
-                Spacer(Modifier.width(10.dp))
-                // פעמון "סרטונים חדשים" עם נקודה אדומה אם יש חדשים
-                Box(
-                    modifier = Modifier.size(42.dp).clip(RoundedCornerShape(50))
-                        .background(ThemeState.surface).clickable { onInbox() },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Default.Notifications, "סרטונים חדשים", tint = ThemeState.text, modifier = Modifier.size(23.dp))
-                    if (newCount > 0) {
-                        Box(modifier = Modifier.align(Alignment.TopEnd).padding(2.dp).size(9.dp)
-                            .clip(RoundedCornerShape(50)).background(Color(0xFFFF3B30)))
-                    }
-                }
-                Spacer(Modifier.width(10.dp))
-                // שידורים חיים
-                Box(
-                    modifier = Modifier.size(42.dp).clip(RoundedCornerShape(50))
-                        .background(ThemeState.surface).clickable { onLive() },
-                    contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Default.LiveTv, "שידורים חיים", tint = Color(0xFFFF3B30), modifier = Modifier.size(22.dp)) }
                 Spacer(Modifier.weight(1f))
                 Text("Filter Tube", color = ThemeState.text, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
             }
-            // טאבים של קטגוריות (כמו ביוטיוב) — לחיצה מסננת את הפיד לפי תחום
-            if (channels.isNotEmpty()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                        .padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+            // שורה אחת לכל מה ש"יש כאן": קודם שני יעדי התוכן (חי, חדש) ואז
+            // סינון הפיד לפי קטגוריה. היעדים מסומנים באייקון וצבע כדי שיהיה
+            // ברור שהם מעבירים מסך ולא מסננים במקום.
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                    .padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                DestinationChip("שידורים חיים", Icons.Default.LiveTv, Color(0xFFFF3B30), onLive)
+                DestinationChip(
+                    label = if (newCount > 0) "חדשים ($newCount)" else "חדשים",
+                    icon = Icons.Default.Notifications,
+                    tint = if (newCount > 0) ThemeState.accent else ThemeState.subtext2,
+                    onClick = onInbox,
+                )
+                if (channels.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier.height(22.dp).width(1.dp).background(ThemeState.divider),
+                    )
                     CategoryChip("הכל", selectedCategory == null) { selectedCategory = null }
                     val categories = remember(channels) { sortedCategories(channels.map { it.category }) }
                     categories.forEach { cat ->
@@ -284,6 +285,53 @@ fun HomeScreen(
             }
         }
 
+        // ── רדיו אישי ──────────────────────────────────────────────────────
+        // כפתור צף אחד שמפעיל ניגון רציף לפי הטעם של המשתמש, בלי לחפש כלום.
+        // הזרע נבחר ב-PersonalRadio מההיסטוריה, מהלייקים ומהחיפושים, ומשם
+        // RadioQueueManager — שכבר קיים — ממשיך לבנות את התור לבד.
+        //
+        // מוסתר כשהתפריט פתוח, כדי שלא יצוף מעל ה-scrim.
+        if (!showMenu) {
+            ExtendedFloatingActionButton(
+                onClick = {
+                    if (radioStarting) return@ExtendedFloatingActionButton
+                    radioStarting = true
+                    scope.launch {
+                        val seed = runCatching { PersonalRadio.pickSeed(context) }.getOrNull()
+                        radioStarting = false
+                        if (seed == null) {
+                            android.widget.Toast.makeText(
+                                context,
+                                "צריך קצת תוכן לפני שאפשר להפעיל רדיו — נסה שוב אחרי שהפיד נטען",
+                                android.widget.Toast.LENGTH_LONG,
+                            ).show()
+                        } else {
+                            onVideoClick(seed)
+                        }
+                    }
+                },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 104.dp),
+                containerColor = ThemeState.accent,
+                contentColor = Color.White,
+                icon = {
+                    if (radioStarting) {
+                        CircularProgressIndicator(
+                            color = Color.White, strokeWidth = 2.dp,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    } else {
+                        Icon(Icons.Default.Radio, null, modifier = Modifier.size(20.dp))
+                    }
+                },
+                text = {
+                    Text(
+                        if (radioStarting) "מכין…" else "רדיו אישי",
+                        fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                    )
+                },
+            )
+        }
+
         // תפריט צף בסגנון זכוכית — scrim כהה מעל הרקע המטושטש + כרטיס שקוף-למחצה
         if (showMenu) {
             Box(
@@ -302,9 +350,11 @@ fun HomeScreen(
             ) {
                 Text("FilterTube", color = ThemeState.subtext, fontSize = 12.sp,
                     modifier = Modifier.padding(start = 22.dp, top = 8.dp, bottom = 6.dp))
+                // "הגדרות" ירד מכאן — הוא טאב קבוע בסרגל התחתון. תפריט שמסתתר
+                // מאחורי אייקון של דמות הוא המקום הכי גרוע להחזיק בו את
+                // ההגדרות, וזו הייתה הדרך היחידה להגיע אליהן.
                 val menuItems = listOf<Pair<String, () -> Unit>>(
                     "ערוצים — עקוב" to { showMenu = false; onChannels() },
-                    "הגדרות" to { showMenu = false; onSettings() },
                     "חיבור חשבון YouTube (אופציונלי)" to { showMenu = false; onAccount() },
                     "אודות" to { showMenu = false; showAbout = true },
                 )
@@ -325,6 +375,32 @@ private fun sanitizeFeed(videos: List<Video>): List<Video> =
         .filter { it.id.isNotBlank() }
         .distinctBy { it.id }
         .toList()
+
+/**
+ * צ'יפ שמעביר למסך אחר (שידורים חיים, סרטונים חדשים) — להבדיל מ-[CategoryChip]
+ * שמסנן את הפיד במקום. האייקון והמסגרת הם ההבדל הוויזואלי שמונע בלבול.
+ */
+@Composable
+private fun DestinationChip(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(ThemeState.surface)
+            .border(1.dp, tint.copy(alpha = 0.45f), RoundedCornerShape(50))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 13.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = tint, modifier = Modifier.size(15.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(label, color = ThemeState.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+    }
+}
 
 @Composable
 private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {

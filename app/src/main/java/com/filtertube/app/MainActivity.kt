@@ -435,11 +435,15 @@ fun AppRoot() {
         if (InboxNav.pending) { InboxNav.pending = false; navController.navigate("newvideos") }
     }
 
+    // "הגדרות" הוא טאב קבוע ולא פריט בתפריט צף שמסתתר מאחורי אייקון של דמות.
+    // קודם לכן הדרך היחידה להגיע להגדרות הייתה שלוש הקשות — אווטאר, תפריט,
+    // הגדרות — ורק ממסך הבית.
     val navItems = buildList {
         add(GlassNavItem("home", "בית", Icons.Default.Home))
         add(GlassNavItem("search", "חיפוש", Icons.Default.Search))
         if (shortsEnabled) add(GlassNavItem("shorts", "Shorts", Icons.Default.PlayArrow))
         add(GlassNavItem("library", "ספריה", Icons.Default.LibraryMusic))
+        add(GlassNavItem("settings", "הגדרות", Icons.Default.Settings))
     }
 
     fun navigateTab(route: String) {
@@ -462,7 +466,6 @@ fun AppRoot() {
                 HomeScreen(
                     onVideoClick = ::openVideo,
                     onSearch = { navController.navigate("search") },
-                    onSettings = { navController.navigate("settings") },
                     onAccount = { navController.navigate("ytlogin") },
                     onInbox = { navController.navigate("newvideos") },
                     onChannels = { navController.navigate("channels") },
