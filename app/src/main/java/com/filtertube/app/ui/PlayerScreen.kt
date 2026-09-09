@@ -92,6 +92,7 @@ import com.filtertube.app.data.GoogleAuth
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.StreamData
+import com.filtertube.app.data.downloadableTracks
 import com.filtertube.app.data.StreamTrack
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeAccountRepository
@@ -724,9 +725,11 @@ private fun DownloadDialog(context: Context, data: StreamData, videoId: String, 
     val video = Video(videoId, data.title, data.uploaderName, data.channelId,
         data.thumbnailUrl ?: "", System.currentTimeMillis())
     // הורדה דרך המנוע המהיר (רב-חיבורי) — מוסיף לתור ב״מנהל הורדות״
-    fun enqueueDl(url: String, isAudio: Boolean) {
+    fun enqueueDl(url: String, isAudio: Boolean, audioUrl: String? = null) {
         LibraryStore(context).addDownload(video)
-        com.filtertube.app.data.DownloadEngine.enqueue(context, video, url, isAudio, data.streamUserAgent)
+        com.filtertube.app.data.DownloadEngine.enqueue(
+            context, video, url, isAudio, data.streamUserAgent, audioUrl,
+        )
         Toast.makeText(context, "נוסף לתור ההורדות ⚡", Toast.LENGTH_SHORT).show()
         onDismiss()
     }
@@ -743,18 +746,28 @@ private fun DownloadDialog(context: Context, data: StreamData, videoId: String, 
                 }
                 HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
                 Text("וידאו (כולל קול)", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                // מציגים רק זרמים משולבים (muxed) שכוללים קול — בלי איכויות אילמות
-                // ובלי שידור חי (height==0, לא ניתן להורדה).
-                val withSound = data.tracks.filter { it.audioUrl == null && it.height > 0 }
-                if (withSound.isEmpty()) {
+                // כל האיכויות שניתן להוריד עם קול — לא רק הזרמים המשולבים.
+                //
+                // עד עכשיו הוצגו כאן רק זרמים שיוטיוב מגיש כבר עם קול, ומנוע
+                // ה-iOS — המהיר ביותר, זה שמנצח כמעט תמיד — מחזיר אך ורק
+                // DASH. כלומר הרשימה הייתה ריקה והופיע "לא זמין", ובפועל אפשר
+                // היה להוריד רק אודיו. עכשיו זרם DASH יורד יחד עם האודיו שלו
+                // ומתמזג ל-MP4 אחד.
+                val downloadable = data.downloadableTracks()
+                if (downloadable.isEmpty()) {
                     Text("לא זמין להורדה עם קול", color = ThemeState.subtext, fontSize = 12.sp)
                 } else {
-                    withSound.forEach { t ->
-                        DownloadRow(t.label) { enqueueDl(t.videoUrl, false) }
+                    downloadable.forEach { t ->
+                        DownloadRow(if (t.hasSound) t.label else "${t.label}  ·  ממוזג") {
+                            enqueueDl(t.videoUrl, false, t.audioUrl)
+                        }
                     }
-                    Text("כל ההורדות כוללות קול (וידאו עד 720p).",
+                    Text(
+                        "הכל נשמר בתיקייה ${com.filtertube.app.data.DownloadEngine.FOLDER} " +
+                            "בזיכרון הראשי, וניתן לניגון גם מתוך האפליקציה.",
                         color = ThemeState.subtext, fontSize = 11.sp,
-                        modifier = Modifier.padding(top = 6.dp))
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
                 }
             }
         },

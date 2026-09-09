@@ -266,8 +266,11 @@ class InnerTubeResolver(
         }
 
         val muxedTracks = mutableListOf<StreamTrack>()
-        val videoOnly = mutableListOf<Pair<Int, String>>()
+        // גובה, כתובת, mimeType — ה-mimeType נדרש כדי לדעת אם אפשר למזג
+        // את הזרם הזה לקובץ MP4 בהורדה.
+        val videoOnly = mutableListOf<Triple<Int, String, String>>()
         var bestAudioUrl: String? = null
+        var bestAudioMime = ""
         var bestAudioBitrate = -1
 
         fun processFormat(f: JSONObject, adaptive: Boolean) {
@@ -277,16 +280,20 @@ class InnerTubeResolver(
             when {
                 mime.startsWith("audio/") -> {
                     val br = f.optInt("bitrate")
-                    if (br > bestAudioBitrate) {
-                        bestAudioBitrate = br
+                    // מעדיפים m4a על webm בציון שווה: רק m4a ניתן למיזוג
+                    // ל-MP4, ולכן הוא שווה יותר גם אם הביטרייט דומה.
+                    val score = if (mime.startsWith("audio/mp4")) br + 1 else br
+                    if (score > bestAudioBitrate) {
+                        bestAudioBitrate = score
                         bestAudioUrl = url
+                        bestAudioMime = mime
                     }
                 }
                 mime.startsWith("video/") -> {
                     val h = f.optInt("height")
                     if (h > 0) {
-                        if (adaptive) videoOnly.add(h to url)
-                        else muxedTracks.add(StreamTrack(h, "${h}p", url, null))
+                        if (adaptive) videoOnly.add(Triple(h, url, mime))
+                        else muxedTracks.add(StreamTrack(h, "${h}p", url, null, mime))
                     }
                 }
             }
@@ -300,7 +307,9 @@ class InnerTubeResolver(
         }
 
         val au = bestAudioUrl
-        val dashTracks = if (au != null) videoOnly.map { StreamTrack(it.first, "${it.first}p", it.second, au) } else emptyList()
+        val dashTracks = if (au != null) {
+            videoOnly.map { (h, url, mime) -> StreamTrack(h, "${h}p", url, au, mime, bestAudioMime) }
+        } else emptyList()
         val vodTracks = (muxedTracks + dashTracks).distinctBy { it.height }.sortedByDescending { it.height }
 
         val vd = json.optJSONObject("videoDetails")

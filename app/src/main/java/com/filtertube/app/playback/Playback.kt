@@ -208,25 +208,48 @@ object Playback {
             }
         val expectedUid = firebaseUser.uid
         val generation = AccountDataGuard.generation()
-        val library = LibraryStore(context)
+        // נבנה בעצלתיים: הבנייה עצמה נוגעת ב-SharedPreferences וב-FirebaseAuth,
+        // והשימוש היחיד בו הוא כתיבת ההיסטוריה — אחרי ש-play() כבר נקרא.
+        val library by lazy { LibraryStore(context) }
         fun sessionCurrent(): Boolean {
             val current = FirebaseAuth.getInstance().currentUser
             return current?.uid == expectedUid &&
                 current.isEmailVerified &&
                 AccountDataGuard.generation() == generation
         }
-        val settings = SettingsStore(context)
-        val level = settings.filterLevel
+        // ── כל ההכנה יורדת מתהליכון ה-UI ────────────────────────────────
+        // startInternal נקרא מ-rememberCoroutineScope, כלומר מ-Main. כל מה
+        // שמתחת רץ *לפני* שהצליל יוצא: קריאת ההגדרות, מפת 168 הערוצים,
+        // פענוח JSON של רשימת ההורדות, ופתיחת מתאר קובץ מול ContentResolver.
+        // כל אלה נגיעות דיסק ו-IPC, והן הצטברו לעיכוב מורגש בכל לחיצה על
+        // סרטון — הרגרסיה שהחזירה את "עולה מהר אבל לא מתחיל מהר".
+        data class Prep(
+            val level: Int,
+            val preferred: Int,
+            val catById: Map<String, String>,
+            val offline: Video?,
+        )
 
-        val channels = ChannelsRepository.getCachedChannelsFast(context)
-        val catById = channels.associate { it.youtubeChannelId to it.category }
+        val prep = withContext(Dispatchers.IO) {
+            val settings = SettingsStore(context)
+            val channels = ChannelsRepository.getCachedChannelsFast(context)
+            val downloaded = LibraryStore(context).downloadedVideo(video.id)
+                ?.takeIf { localFileReadable(context, it.localUri) }
+            Prep(
+                level = settings.filterLevel,
+                preferred = settings.preferredQuality,
+                catById = channels.associate { it.youtubeChannelId to it.category },
+                offline = downloaded,
+            )
+        }
+        val level = prep.level
+        val catById = prep.catById
 
         // ── קובץ שהורד קודם לרשת ────────────────────────────────────────
         // אם הסרטון כבר על המכשיר, אין שום סיבה לפתור זרם: זה מיידי, זה לא
-        // צורך נתונים, וזה עובד גם בלי חיבור. עד עכשיו ההורדות נשמרו ולא
-        // נוגנו אף פעם מתוך האפליקציה.
-        val offlineCopy = LibraryStore(context).downloadedVideo(video.id)
-        if (offlineCopy != null && localFileReadable(context, offlineCopy.localUri)) {
+        // צורך נתונים, וזה עובד גם בלי חיבור.
+        val offlineCopy = prep.offline
+        if (offlineCopy != null) {
             Diagnostics.log("PLAYBACK ${video.id}: מנגן מקובץ שהורד")
             if (!sessionCurrent()) return
             c.setMediaItem(localItem(offlineCopy))
@@ -235,16 +258,7 @@ object Playback {
             runCatching { library.addToHistory(offlineCopy) }
             return
         }
-        if (offlineCopy != null) {
-            // הרשומה קיימת אבל הקובץ לא נגיש — נמחק ע"י המשתמש, נוקה ע"י
-            // המערכת, או שהבעלות על רשומת ה-MediaStore אבדה בהתקנה מחדש.
-            // נופלים לרשת במקום להיתקע, ושוכחים את המיקום כדי שהניסיון הבא
-            // לא יעבור שוב את אותו מסלול.
-            Diagnostics.log("PLAYBACK ${video.id}: הקובץ שהורד לא נגיש — עוברים לרשת")
-            LibraryStore(context).setDownloadLocalUri(video.id, "")
-        }
-
-        val preferred = settings.preferredQuality
+        val preferred = prep.preferred
         val data = StreamRepository.getStream(video.id)
         if (!sessionCurrent()) return
         cache(video.id, data)

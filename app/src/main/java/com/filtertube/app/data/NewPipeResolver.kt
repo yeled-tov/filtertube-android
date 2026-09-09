@@ -40,9 +40,17 @@ class NewPipeResolver : StreamResolver {
             val videoOnly = (allVideo.filter { it.isVideoOnly } + videoOnlyList).filter { it.height > 0 }
             val audioBest = audioStreams.maxByOrNull { it.bitrate }
 
-            val muxedTracks = muxed.map { StreamTrack(it.height, "${it.height}p", it.content, null) }
+            val muxedTracks = muxed.map {
+                StreamTrack(it.height, "${it.height}p", it.content, null, it.format?.mimeType.orEmpty())
+            }
             val dashTracks = if (audioBest != null) {
-                videoOnly.map { StreamTrack(it.height, "${it.height}p", it.content, audioBest.content) }
+                val audioMime = audioBest.format?.mimeType.orEmpty()
+                videoOnly.map {
+                    StreamTrack(
+                        it.height, "${it.height}p", it.content, audioBest.content,
+                        it.format?.mimeType.orEmpty(), audioMime,
+                    )
+                }
             } else emptyList()
 
             val vodTracks = (muxedTracks + dashTracks)

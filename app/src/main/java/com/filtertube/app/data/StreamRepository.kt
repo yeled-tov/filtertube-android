@@ -23,7 +23,24 @@ data class StreamTrack(
     val label: String,
     val videoUrl: String,
     val audioUrl: String?,
-)
+    /**
+     * ה-mimeType של זרם הווידאו, למשל "video/mp4; codecs=avc1.640028".
+     *
+     * נדרש להורדה: MediaMuxer של אנדרואיד יודע לארוז MP4 עם H.264 ו-AAC
+     * בלבד. זרמי webm (VP9 + Opus) של יוטיוב לא ניתנים למיזוג בדרך הזו,
+     * ולכן חייבים לדעת מה כל זרם *לפני* שמורידים אותו.
+     */
+    val mimeType: String = "",
+    /** ה-mimeType של זרם האודיו הנלווה, כשמדובר ב-DASH. */
+    val audioMimeType: String = "",
+) {
+    /** האם הזרם הזה כולל כבר קול (muxed) ולא צריך מיזוג. */
+    val hasSound: Boolean get() = audioUrl == null
+
+    /** האם הצמד וידאו+אודיו ניתן למיזוג ל-MP4 ע"י MediaMuxer. */
+    val muxableToMp4: Boolean
+        get() = mimeType.startsWith("video/mp4") && audioMimeType.startsWith("audio/mp4")
+}
 
 /**
  * האיכות שתנוגן כברירת מחדל — **מקור אמת יחיד** לבחירת האיכות.
@@ -36,6 +53,21 @@ data class StreamTrack(
  * ואחת ליומן האבחון — והן נפרדו זו מזו, כך שהיומן דיווח "360p [muxed]"
  * בזמן שהניגון בחר משהו אחר לגמרי.
  */
+/**
+ * האיכויות שאפשר באמת להוריד כקובץ אחד עם קול.
+ *
+ * זרם משולב כבר כולל קול. זרם DASH דורש מיזוג, ו-MediaMuxer יודע לארוז
+ * MP4 עם H.264+AAC בלבד — ולכן זרמי webm נשארים בחוץ. בלי הסינון הזה מסך
+ * ההורדה היה מציע איכויות שההורדה שלהן נכשלת או יוצאת אילמת.
+ */
+fun StreamData.downloadableTracks(): List<StreamTrack> =
+    tracks.filter { it.height > 0 && (it.hasSound || it.muxableToMp4) }
+        .distinctBy { it.height }
+        .sortedByDescending { it.height }
+
+/** האיכות הגבוהה ביותר שניתנת להורדה עם קול. */
+fun StreamData.bestDownloadableVideo(): StreamTrack? = downloadableTracks().firstOrNull()
+
 fun StreamData.defaultTrackIndex(preferred: Int = 0): Int {
     if (tracks.isEmpty()) return 0
     val idx = if (preferred > 0) {
