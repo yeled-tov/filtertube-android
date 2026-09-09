@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Recommend
@@ -37,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import com.filtertube.app.data.AccountStore
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.GoogleAuth
+import com.google.firebase.auth.FirebaseAuth
 import com.filtertube.app.data.InnerTube
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.YouTubeAccountRepository
@@ -52,6 +54,7 @@ fun LibraryScreen(
     onOpenChannels: () -> Unit,
     onOpenPlaylist: (String) -> Unit,
     onOpenLogin: () -> Unit,
+    onOpenDeviceMedia: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -135,12 +138,27 @@ fun LibraryScreen(
     ) { result ->
         try {
             val acct = GoogleSignIn.getSignedInAccountFromIntent(result.data).getResult(ApiException::class.java)
-            if (GoogleAuth.bindToCurrentFirebaseAccount(context, acct) == null) {
-                GoogleAuth.signOut(context)
-                status = "יש להתחבר קודם לחשבון FilterTube"
-            } else {
-                account = acct
-                syncAccount(acct)
+            scope.launch {
+                // ── לחיצה אחת, שתי מטרות ──────────────────────────────────
+                // אם עדיין אין חשבון FilterTube, אותה בחירת חשבון גוגל יוצרת
+                // אותו: גוגל כבר אימת את המייל, אז אין שלב אימות נפרד. ורק
+                // אחר כך נקשרת ההרשאה למשוך את הלייקים והמנויים.
+                if (FirebaseAuth.getInstance().currentUser?.isEmailVerified != true) {
+                    status = "מאמת דרך גוגל…"
+                    val signedIn = GoogleAuth.signInToFirebase(acct)
+                    if (signedIn.isFailure) {
+                        GoogleAuth.signOut(context)
+                        status = signedIn.exceptionOrNull()?.message ?: "ההתחברות נכשלה"
+                        return@launch
+                    }
+                }
+                if (GoogleAuth.bindToCurrentFirebaseAccount(context, acct) == null) {
+                    GoogleAuth.signOut(context)
+                    status = "לא הצלחנו לקשר את החשבון"
+                } else {
+                    account = acct
+                    syncAccount(acct)
+                }
             }
         } catch (e: ApiException) {
             status = "ההתחברות נכשלה (${e.statusCode})"
@@ -170,11 +188,15 @@ fun LibraryScreen(
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            if (account != null) account?.email ?: "מחובר" else "חיבור לחשבון יוטיוב",
+                            if (account != null) account?.email ?: "מחובר" else "התחברות עם גוגל",
                             color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
-                        Text("מושך את הלייקים והמנויים שלך", color = ThemeState.subtext, fontSize = 12.sp)
+                        Text(
+                            if (account != null) "חשבון FilterTube · לייקים ומנויים מיוטיוב"
+                            else "לחיצה אחת: חשבון FilterTube + הלייקים והמנויים שלך",
+                            color = ThemeState.subtext, fontSize = 12.sp,
+                        )
                     }
                     if (syncing) CircularProgressIndicator(color = Color(0xFFFF0000), strokeWidth = 2.dp,
                         modifier = Modifier.size(20.dp))
@@ -214,9 +236,17 @@ fun LibraryScreen(
                     Icon(Icons.Default.Sync, null, tint = ThemeState.accent, modifier = Modifier.size(26.dp))
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(if (loggedIn) "סנכרון מלא פעיל" else "סנכרון מלא עם יוטיוב",
+                        Text(if (loggedIn) "היסטוריה והמלצות — פעיל" else "היסטוריה והמלצות (לא חובה)",
                             color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        Text("היסטוריה והמלצות מותאמות אישית", color = ThemeState.subtext, fontSize = 12.sp)
+                        // מסביר למה קיימת התחברות *שנייה*, כי בלי זה זה נראה
+                        // כמו כפילות מיותרת: החיבור עם גוגל מביא לייקים ומנויים
+                        // דרך ה-API הרשמי, אבל היסטוריית צפייה והמלצות פשוט לא
+                        // קיימות שם — הן דורשות התחברות מלאה בדפדפן.
+                        Text(
+                            "רק אם רוצים גם היסטוריית צפייה והמלצות אישיות — " +
+                                "אלה לא זמינים דרך החיבור עם גוגל",
+                            color = ThemeState.subtext, fontSize = 11.5.sp, lineHeight = 15.sp,
+                        )
                     }
                 }
                 Spacer(Modifier.height(10.dp))
@@ -260,6 +290,8 @@ fun LibraryScreen(
             LibRow("ערוצים מאושרים", channelCount, Icons.Default.Tv, ThemeState.accent) { onOpenChannels() }
             LibRow("היסטוריית צפייה", localHist.size, Icons.Default.History, Color(0xFFFF6D00)) { onOpenCollection("history") }
             LibRow("מומלצים מיוטיוב", recs.size, Icons.Default.Recommend, Color(0xFF00BFA5)) { onOpenCollection("recs") }
+            // FilterTube יודעת לנגן גם מה שכבר על הטלפון, לא רק מה שהיא הורידה.
+            LibRow("במכשיר שלי", -1, Icons.Default.PhoneAndroid, Color(0xFF3B82F6)) { onOpenDeviceMedia() }
         }
 
         // אלבומים
@@ -317,7 +349,8 @@ private fun LibRow(title: String, count: Int, icon: ImageVector, accent: Color, 
         Spacer(Modifier.width(12.dp))
         Text(title, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f))
-        Text("$count", color = ThemeState.subtext, fontSize = 13.sp)
+        // count שלילי = לשורה אין מונה (כמו "במכשיר שלי", שנספר רק אחרי סריקה).
+        if (count >= 0) Text("$count", color = ThemeState.subtext, fontSize = 13.sp)
     }
 }
 

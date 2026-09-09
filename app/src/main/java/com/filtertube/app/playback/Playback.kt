@@ -161,6 +161,35 @@ object Playback {
             .build()
     }
 
+    /** מזהה של פריט מדיה שמקורו בטלפון עצמו ולא ביוטיוב. */
+    const val LOCAL_ID_PREFIX = "local:"
+
+    /**
+     * מנגן רשימת קבצים מקומיים כתור אמיתי, החל מ-[startIndex].
+     *
+     * זה המסלול של "נגן רגיל בטלפון": אין כאן פתרון זרם, אין בדיקת רשימה
+     * לבנה ואין רשת. הרשימה כולה נמסרת לנגן בבת אחת, כדי ש"הבא"/"הקודם",
+     * ההתקדמות האוטומטית לשיר הבא ופקדי המסך הנעול יעבדו כמו בכל נגן.
+     */
+    suspend fun startLocalQueue(
+        context: Context,
+        controller: MediaController?,
+        items: List<Video>,
+        startIndex: Int,
+    ) {
+        val c = controller ?: return
+        if (items.isEmpty()) return
+        val index = startIndex.coerceIn(0, items.lastIndex)
+        // openFileDescriptor לכל פריט הוא IPC — לא על תהליכון ה-UI.
+        val playable = withContext(Dispatchers.IO) {
+            items.map { localItem(it) }
+        }
+        Diagnostics.log("PLAYBACK מקומי: ${items.size} פריטים, מתחיל ב-${items[index].title}")
+        c.setMediaItems(playable, index, 0L)
+        c.prepare()
+        c.play()
+    }
+
     /**
      * מתחיל ניגון של [video] מיד, ומפעיל ברקע בניית תור רדיו אוטונומי.
      *
@@ -247,7 +276,10 @@ object Playback {
         val prep = withContext(Dispatchers.IO) {
             val settings = SettingsStore(context)
             val channels = ChannelsRepository.getCachedChannelsFast(context)
-            val downloaded = LibraryStore(context).downloadedVideo(video.id)
+            // קובץ מקומי שהגיע ישירות (נגן המכשיר) קודם לחיפוש בספריית ההורדות:
+            // ל-Video כזה אין בכלל מזהה יוטיוב, ולכן downloadedVideo לא היה מוצא אותו.
+            val direct = video.takeIf { it.localUri.isNotBlank() && localFileReadable(context, it.localUri) }
+            val downloaded = direct ?: LibraryStore(context).downloadedVideo(video.id)
                 ?.takeIf { localFileReadable(context, it.localUri) }
             Prep(
                 level = settings.filterLevel,
@@ -269,7 +301,10 @@ object Playback {
             c.setMediaItem(localItem(offlineCopy))
             c.prepare()
             c.play()
-            runCatching { library.addToHistory(offlineCopy) }
+            // קבצים מהטלפון לא נכנסים להיסטוריית הצפייה: ההיסטוריה הזו מזינה את
+            // הרדיו האישי ואת ההמלצות, ואין שום דרך להסיק טעם יוטיוב משיר שהועבר
+            // מהמחשב.
+            if (!offlineCopy.id.startsWith(LOCAL_ID_PREFIX)) runCatching { library.addToHistory(offlineCopy) }
             return
         }
         val preferred = prep.preferred

@@ -313,6 +313,24 @@ fun AppRoot() {
     }
 
     /**
+     * ניגון קבצים מהטלפון עצמו — כל הרשימה הנראית נמסרת לנגן כתור.
+     *
+     * לא עובר דרך openVideo: אין כאן מזהה יוטיוב לפתור, אין רשימה לבנה לבדוק,
+     * והמעבר האוטומטי לפריט הבא צריך לעבוד גם כשהמסך סגור.
+     */
+    fun openLocalList(items: List<Video>, index: Int) {
+        navController.navigate("player") { launchSingleTop = true }
+        scope.launch {
+            try {
+                com.filtertube.app.playback.Playback.startLocalQueue(context, controller, items, index)
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(context, "שגיאה בניגון הקובץ: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                navController.popBackStack("player", inclusive = true)
+            }
+        }
+    }
+
+    /**
      * רדיו אישי: בונה תחנה שלמה ומנגן אותה, במקום לנגן סרטון בודד ולתת
      * למנוע ה"קשורים" של יוטיוב להמשיך משם.
      */
@@ -561,9 +579,16 @@ fun AppRoot() {
                     onOpenChannels = { navController.navigate("channels") },
                     onOpenPlaylist = { name -> navController.navigate("playlist/${Uri.encode(name)}") },
                     onOpenLogin = { navController.navigate("ytlogin") },
+                    onOpenDeviceMedia = { navController.navigate("devicemedia") },
                 )
             }
             composable("ytlogin") { AccountLoginScreen(onDone = { navController.popBackStack() }) }
+            composable("devicemedia") {
+                DeviceMediaScreen(
+                    onBack = { navController.popBackStack() },
+                    onPlayList = ::openLocalList,
+                )
+            }
             composable("collection/{type}") { entry ->
                 CollectionScreen(
                     type = entry.arguments?.getString("type").orEmpty(),
