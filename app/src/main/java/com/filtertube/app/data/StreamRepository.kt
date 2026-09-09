@@ -2,6 +2,7 @@ package com.filtertube.app.data
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Dispatchers
@@ -118,30 +119,48 @@ object StreamRepository {
         cache.clear()
     }
 
-    suspend fun getStream(videoId: String): StreamData = coroutineScope {
+    /**
+     * ה-scope שבו רץ *כל* פתרון זרם — לא ה-scope של מי שביקש ראשון.
+     *
+     * שני דברים היו שבורים כאן:
+     *
+     * 1. **מרוץ ב-inFlight.** הבדיקה `inFlight[videoId]` וההכנסה שאחריה לא היו
+     *    אטומיות. שתי קריאות שהגיעו יחד לאותו סרטון ראו שתיהן null, שתיהן
+     *    התחילו פתרון מלא, והשנייה דרסה את הראשונה במפה — בדיוק הכפילות
+     *    שהמנגנון הזה אמור למנוע.
+     *
+     * 2. **ביטול מדבק.** ה-async היה ילד של הקורוטינה הקוראת. כלומר הפותר
+     *    הראשון קבע את גורל כל השאר: אם המסך שלו נסגר וה-scope בוטל, גם כל
+     *    מי שהמתין לאותו Deferred דרך inFlight קיבל ביטול — בלי שום קשר
+     *    למצב שלו. זה בדיוק המלכוד שמתועד אצל prefetchScope, רק במסלול הרגיל.
+     */
+    private val resolveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    suspend fun getStream(videoId: String): StreamData {
         // 1. בדיקת מטמון
         getCached(videoId)?.let { cached ->
             Diagnostics.log("StreamRepository $videoId: cache hit (0ms) · ${trackSummary(cached)}")
-            return@coroutineScope cached
+            return cached
         }
 
-        // 2. מניעת קריאות כפולות במקביל (Deduplication)
-        val activeDeferred = inFlight[videoId]
-        if (activeDeferred != null) {
-            Diagnostics.log("StreamRepository $videoId: בקשה מקבילית קיימת, ממתין לתשובה")
-            return@coroutineScope activeDeferred.await()
-        }
-
-        val deferred = async(Dispatchers.IO) {
+        // 2. מניעת קריאות כפולות במקביל — הכנסה אטומית, עם התחלה עצלה כדי
+        //    שהמפסיד במרוץ לא יריץ שום דבר ולא ימחק את המפתח של המנצח.
+        val fresh = resolveScope.async(start = CoroutineStart.LAZY) {
             try {
                 resolveInternal(videoId)
             } finally {
                 inFlight.remove(videoId)
             }
         }
-
-        inFlight[videoId] = deferred
-        deferred.await()
+        val existing = inFlight.putIfAbsent(videoId, fresh)
+        val deferred = if (existing != null) {
+            fresh.cancel()
+            Diagnostics.log("StreamRepository $videoId: בקשה מקבילית קיימת, ממתין לתשובה")
+            existing
+        } else {
+            fresh.also { it.start() }
+        }
+        return deferred.await()
     }
 
     /** מגביל את החימום ברקע כדי שלא יתחרה בסרטון שהמשתמש באמת מנגן עכשיו. */
