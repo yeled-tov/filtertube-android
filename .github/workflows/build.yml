@@ -138,9 +138,10 @@ jobs:
           # lintRelease נכשל רק על Error, אף פעם לא על Warning. אלה השורות
           # היחידות שמעניינות, ורק הן מודפסות — כל השאר דוחף אותן מהחלון.
           for f in $(find app/build -name 'lint-results-*.txt' 2>/dev/null); do
-            grep -F ': Error: ' "$f" | head -n 12
+            grep -nE 'Error:' "$f" | head -n 8
           done
-          grep -F 'Lint found' build-output.txt 2>/dev/null | tail -n 3 || true
+          # Gradle מדפיס את פירוט הכישלון הראשון אחרי השורה הזו.
+          grep -A 8 -F 'First failure' build-output.txt 2>/dev/null | tail -n 12 || true
 
   # ── Release יציב — רק מ-main, מגיע לכל הלקוחות ────────────────────────────
   release:

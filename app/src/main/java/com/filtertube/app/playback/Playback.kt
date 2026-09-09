@@ -189,6 +189,20 @@ object Playback {
     }
 
     /**
+     * כל מה שצריך לקרוא מהדיסק לפני שמתחילים לנגן.
+     *
+     * מוגדר כאן ולא כמחלקה מקומית בתוך startInternal: מחלקת data מקומית בתוך
+     * פונקציה הפילה את ניתוח ה-lint ("Lint found 1 error" בלי שם קובץ),
+     * והבנייה נעצרה בלי שום שורת שגיאה שמצביעה על המקום.
+     */
+    private data class Prep(
+        val level: Int,
+        val preferred: Int,
+        val catById: Map<String, String>,
+        val offline: Video?,
+    )
+
+    /**
      * זמן החסד שבו הרשת שמורה לנגן אחרי הלחיצה.
      *
      * שלוש שניות לא הספיקו. הן מכסות את תחילת הניגון, אבל הנגן ממשיך למלא
@@ -230,13 +244,6 @@ object Playback {
         // פענוח JSON של רשימת ההורדות, ופתיחת מתאר קובץ מול ContentResolver.
         // כל אלה נגיעות דיסק ו-IPC, והן הצטברו לעיכוב מורגש בכל לחיצה על
         // סרטון — הרגרסיה שהחזירה את "עולה מהר אבל לא מתחיל מהר".
-        data class Prep(
-            val level: Int,
-            val preferred: Int,
-            val catById: Map<String, String>,
-            val offline: Video?,
-        )
-
         val prep = withContext(Dispatchers.IO) {
             val settings = SettingsStore(context)
             val channels = ChannelsRepository.getCachedChannelsFast(context)
