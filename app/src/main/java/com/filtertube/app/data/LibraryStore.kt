@@ -76,7 +76,8 @@ class LibraryStore(context: Context) {
      * מ"רשומה ברשימה" למשהו שאפשר באמת לנגן, גם בלי רשת.
      */
     fun setDownloadLocalUri(videoId: String, uri: String) {
-        if (videoId.isBlank() || uri.isBlank()) return
+        // uri ריק = ניקוי מיקום שכבר לא תקף, וזו פעולה לגיטימית.
+        if (videoId.isBlank()) return
         val current = downloads()
         val updated = current.map { if (it.id == videoId) it.copy(localUri = uri) else it }
         if (updated != current && saveVideos(KEY_DOWNLOADS, updated)) queueCloudBackup()

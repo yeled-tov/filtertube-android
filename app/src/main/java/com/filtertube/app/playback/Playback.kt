@@ -106,6 +106,21 @@ object Playback {
      * אין כאן EXTRA_AUDIO_URL ואין User-Agent: הקובץ כבר ממוזג ושמור על
      * המכשיר, ולכן FilterTubeMediaSourceFactory מנגן אותו כמו שהוא.
      */
+    /**
+     * האם באמת אפשר לפתוח את הקובץ שהורד.
+     *
+     * קיום רשומה בספרייה לא מבטיח קיום קובץ: המשתמש יכול למחוק אותו
+     * מ"הורדות", המערכת יכולה לנקות, והתקנה מחדש של האפליקציה מאבדת את
+     * הבעלות על רשומת ה-MediaStore. בלי הבדיקה הזו הנגן היה מקבל URI מת
+     * ונתקע, במקום פשוט לנגן מהרשת.
+     */
+    private fun localFileReadable(context: Context, uri: String): Boolean {
+        if (uri.isBlank()) return false
+        return runCatching {
+            context.contentResolver.openFileDescriptor(Uri.parse(uri), "r")?.use { true } ?: false
+        }.getOrDefault(false)
+    }
+
     fun localItem(video: Video): MediaItem =
         MediaItem.Builder()
             .setUri(Uri.parse(video.localUri))
@@ -211,7 +226,7 @@ object Playback {
         // צורך נתונים, וזה עובד גם בלי חיבור. עד עכשיו ההורדות נשמרו ולא
         // נוגנו אף פעם מתוך האפליקציה.
         val offlineCopy = LibraryStore(context).downloadedVideo(video.id)
-        if (offlineCopy != null) {
+        if (offlineCopy != null && localFileReadable(context, offlineCopy.localUri)) {
             Diagnostics.log("PLAYBACK ${video.id}: מנגן מקובץ שהורד")
             if (!sessionCurrent()) return
             c.setMediaItem(localItem(offlineCopy))
@@ -219,6 +234,14 @@ object Playback {
             c.play()
             runCatching { library.addToHistory(offlineCopy) }
             return
+        }
+        if (offlineCopy != null) {
+            // הרשומה קיימת אבל הקובץ לא נגיש — נמחק ע"י המשתמש, נוקה ע"י
+            // המערכת, או שהבעלות על רשומת ה-MediaStore אבדה בהתקנה מחדש.
+            // נופלים לרשת במקום להיתקע, ושוכחים את המיקום כדי שהניסיון הבא
+            // לא יעבור שוב את אותו מסלול.
+            Diagnostics.log("PLAYBACK ${video.id}: הקובץ שהורד לא נגיש — עוברים לרשת")
+            LibraryStore(context).setDownloadLocalUri(video.id, "")
         }
 
         val preferred = settings.preferredQuality

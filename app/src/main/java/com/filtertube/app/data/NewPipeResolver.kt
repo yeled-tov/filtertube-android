@@ -1,6 +1,8 @@
 package com.filtertube.app.data
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.ServiceList
 
@@ -12,13 +14,13 @@ class NewPipeResolver : StreamResolver {
     override val name: String = "NewPipe"
     private val clientKey: String = "NewPipe"
 
-    override suspend fun resolve(videoId: String): StreamData? = withContext(Dispatchers.IO) {
+    override suspend fun resolve(videoId: String, force: Boolean): StreamData? = withContext(Dispatchers.IO) {
         if (!RemoteConfig.isResolverEnabled(clientKey, default = true)) {
             Diagnostics.log("$name $videoId: מנוע מבוטל ב-RemoteConfig")
             return@withContext null
         }
 
-        if (!ResolverHealthMonitor.isAvailable(clientKey)) {
+        if (!force && !ResolverHealthMonitor.isAvailable(clientKey)) {
             Diagnostics.log("$name $videoId: מנוע ב-cooldown (נכשל לאחרונה)")
             return@withContext null
         }
@@ -83,6 +85,22 @@ class NewPipeResolver : StreamResolver {
         }.getOrElse { e ->
             val elapsedMs = System.currentTimeMillis() - t0
             val reason = e.message ?: "Unknown error"
+
+            // ── ביטול אינו כישלון ──────────────────────────────────────────
+            // המנועים רצים במרוץ, וברגע שאחד מנצח כל השאר מבוטלים. כשהביטול
+            // תופס את NewPipe באמצע fetchPage, ההפרעה לשקע מגיעה לכאן כחריגת
+            // IO רגילה ("Socket closed", "interrupted") — ונרשמה ככישלון של
+            // המנוע.
+            //
+            // מרגע שמנוע ה-iOS התחיל לנצח ב-230ms מול 1,700ms, זה קרה כמעט
+            // בכל סרטון: שלושה ניצחונות של iOS הכניסו את NewPipe ל-cooldown.
+            // משם התגלגלה ספירלה — כל המנועים בצינון, כישלון תוך 0ms, ושום
+            // סרטון לא מתנגן.
+            if (!isActive || e is CancellationException) {
+                Diagnostics.log("$name $videoId: בוטל — מנוע אחר כבר ניצח (${elapsedMs}ms)")
+                return@getOrElse null
+            }
+
             Diagnostics.log("$name $videoId: $reason FAILED (${elapsedMs}ms)")
 
             // סרטונים מוגבלים גיל/ארגון אינם פגם במנוע החילוץ עצמו

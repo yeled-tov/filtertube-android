@@ -236,17 +236,24 @@ object StreamRepository {
         val priorityKeys = RemoteConfig.resolverPriority()
 
         // סינון זריז: בוחרים רק מנועים זמינים שאינם ב-cooldown
-        val activeResolvers = buildList {
-            for (key in priorityKeys) {
-                if (ResolverHealthMonitor.isAvailable(key) && RemoteConfig.isResolverEnabled(key, true)) {
-                    resolverMap[key]?.let { add(it) }
-                }
-            }
-            // אם כל המנועים המועדפים ב-cooldown, משתמשים ב-NewPipe כגיבוי ישיר
-            if (isEmpty()) {
-                resolverMap["NewPipe"]?.let { add(it) }
-            }
-        }.filter { it.name != excludeResolver }
+        val enabled = priorityKeys.filter { RemoteConfig.isResolverEnabled(it, true) }
+        val healthy = enabled.filter { ResolverHealthMonitor.isAvailable(it) }
+
+        // ── מוצא אחרון ────────────────────────────────────────────────────
+        // כשכל המנועים בצינון בו-זמנית, "לא לנסות כלום" היא התוצאה הגרועה
+        // ביותר: המשתמש מקבל "כל המנועים נכשלו" תוך אפס מילישניות, ושום
+        // סרטון לא מתנגן עד שהצינון פג. וכל ניסיון כזה גם מאריך את הצינון,
+        // אז המצב הזה מנציח את עצמו.
+        //
+        // במקרה כזה מריצים בכל זאת, עם force שמדלג על בדיקת הצינון. מנוע
+        // שנכשל לאחרונה עדיין עדיף על שום מנוע.
+        val forced = healthy.isEmpty()
+        if (forced) {
+            Diagnostics.log("StreamRepository $videoId: כל המנועים בצינון — מנסים בכל זאת")
+        }
+        val activeResolvers = (if (forced) enabled else healthy)
+            .mapNotNull { resolverMap[it] }
+            .filter { it.name != excludeResolver }
             // פסילה שמרוקנת את הרשימה גרועה מאי-פסילה: עדיף לנסות שוב את
             // אותו מנוע מאשר לא לנסות כלום.
             .ifEmpty { activeFallback() }
@@ -271,7 +278,7 @@ object StreamRepository {
                 // SUCCESS (1780ms)". שתי שורות סותרות על אותו חילוץ, וכל
                 // ניסיון לאבחן מהיומן התחיל מלנסות להבין מה מהן נכון.
                 val result = try {
-                    resolver.resolve(videoId)?.copy(resolvedBy = resolver.name)
+                    resolver.resolve(videoId, forced)?.copy(resolvedBy = resolver.name)
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     Diagnostics.log("StreamRepository $videoId: ${resolver.name} בוטל — מנוע אחר כבר ניצח")
                     throw e

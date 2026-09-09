@@ -1,6 +1,7 @@
 package com.filtertube.app.data
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -159,13 +160,13 @@ class InnerTubeResolver(
         return client to ua
     }
 
-    override suspend fun resolve(videoId: String): StreamData? = withContext(Dispatchers.IO) {
+    override suspend fun resolve(videoId: String, force: Boolean): StreamData? = withContext(Dispatchers.IO) {
         if (!RemoteConfig.isResolverEnabled(clientKey, default = true)) {
             Diagnostics.log("$name $videoId: מנוע מבוטל ב-RemoteConfig")
             return@withContext null
         }
 
-        if (!ResolverHealthMonitor.isAvailable(clientKey)) {
+        if (!force && !ResolverHealthMonitor.isAvailable(clientKey)) {
             Diagnostics.log("$name $videoId: מנוע ב-cooldown (נכשל לאחרונה)")
             return@withContext null
         }
@@ -225,6 +226,13 @@ class InnerTubeResolver(
         val elapsedMs = System.currentTimeMillis() - t0
 
         if (json == null) {
+            // ביטול אינו כישלון. המנועים במרוץ, ומי שמפסיד מבוטל באמצע הבקשה
+            // — מה שמגיע לכאן כשגיאת רשת רגילה. לספור את זה ככישלון פירושו
+            // להכניס לצינון דווקא מנוע תקין, רק בגלל שמנוע אחר היה מהיר יותר.
+            if (!isActive) {
+                Diagnostics.log("$name $videoId: בוטל — מנוע אחר כבר ניצח (${elapsedMs}ms)")
+                return@withContext null
+            }
             val reason = "HTTP $httpCode"
             Diagnostics.log("$name $videoId: $reason FAILED (${elapsedMs}ms)")
             ResolverHealthMonitor.recordFailure(clientKey, reason)
@@ -241,7 +249,12 @@ class InnerTubeResolver(
         if (status != "OK") {
             val failMsg = "status=$status reason=${reason ?: "none"}"
             Diagnostics.log("$name $videoId: $failMsg FAILED (${elapsedMs}ms)")
-            ResolverHealthMonitor.recordFailure(clientKey, status ?: "NOT_OK")
+            // סרטון חסום הוא תכונה של הסרטון, לא פגם במנוע. עד עכשיו כל
+            // סרטון מוגבל דחף את כל מנועי InnerTube צעד אחד לקראת צינון,
+            // וכמה סרטונים כאלה ברצף השביתו את כולם. NewPipe כבר נהג כך.
+            val blocked = status == "ERROR" || status == "UNPLAYABLE" ||
+                status == "LOGIN_REQUIRED" || status == "AGE_VERIFICATION_REQUIRED"
+            if (!blocked) ResolverHealthMonitor.recordFailure(clientKey, status ?: "NOT_OK")
             return@withContext null
         }
 
