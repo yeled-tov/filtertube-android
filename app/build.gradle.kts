@@ -118,15 +118,23 @@ dependencies {
     implementation("com.google.android.gms:play-services-auth:21.4.0")
     implementation("androidx.work:work-runtime-ktx:2.10.5")
 
-    implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
+    // Firebase נשאר על 33.1.2 בכוונה, ולא בגלל שלא נבדק.
+    //
+    // firebase-bom 34.18.0 נוסה ונכשל בבנייה: הוא מביא
+    // protolite-well-known-types:18.0.1, שמכיל את מחלקות com.google.protobuf
+    // בתוכו, לצד protobuf-javalite:4.35.1 שנמשך מ-Firestore. CheckDuplicateClasses
+    // עוצר על מאות מחלקות כפולות (DescriptorProtos ומשפחתו), וזו התנגשות
+    // באריזה של Firebase עצמו — לא משהו שנפתר מכאן בלי לוותר על אחד השניים.
+    //
+    // הפין strictly("3.22.3") הוא הצד השני של אותו מטבע: הוא מה שמצמיד את
+    // protobuf-javalite לגרסה שמסתדרת עם protolite-well-known-types של
+    // firebase-bom 33. השניים חייבים לזוז יחד, ולכן שניהם נשארים.
+    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-messaging")
-    // בלי מספר גרסה בכוונה: ההצהרה רק מוודאת ש-protobuf-javalite נמצא על
-    // ה-classpath של זמן הריצה, והגרסה נקבעת ממה ש-Firestore עצמו דורש. בעבר
-    // היה כאן strictly("3.22.3") — פין שהתאים ל-Firestore 25, ומול firebase-bom
-    // 34 הוא היה כופה שדרוג-לאחור אל מתחת למה שהספרייה מצפה לו.
     implementation("com.google.protobuf:protobuf-javalite") {
-        because("Firestore requires the protobuf lite runtime at runtime")
+        version { strictly("3.22.3") }
+        because("Firestore 25.0.0 requires the compatible protobuf lite runtime")
     }
     implementation("com.google.firebase:firebase-firestore")
 
