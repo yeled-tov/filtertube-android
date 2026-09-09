@@ -5,6 +5,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -35,19 +37,44 @@ object YouTubeRepository {
     // ───────────────────────────────────────────────────────────────────────
     // FEED — RSS feeds (מהיר, ציבורי, ללא API key)
     // ───────────────────────────────────────────────────────────────────────
+    /**
+     * כמה בקשות RSS במקביל.
+     *
+     * קודם לכן כל 166 הערוצים נשלחו בבת אחת. הקריאות סינכרוניות
+     * (`execute()`), ולכן מגבלות ה-Dispatcher של OkHttp לא חלות עליהן והן
+     * באמת רצות יחד — עשרות חיבורים בו-זמנית לאותו מארח. תחת עומס יוטיוב
+     * חונק חלק מהן, הן נכשלות בשקט ומוחזרת רשימה ריקה לכל ערוץ שנפל.
+     *
+     * כך קרה ש"HOME: 30 סרטונים מה-RSS" הופיע במקום ~2,300: רוב הערוצים
+     * נכשלו. וזו גם הסיבה שהחיפוש נהיה איטי — האינדקס המקומי התרוקן,
+     * ולכן כל חיפוש נאלץ ליפול ל-NewPipe במקום לענות מיד.
+     */
+    private const val FEED_CONCURRENCY = 8
+
     suspend fun fetchAllChannelsFeed(channels: List<Channel>): List<Video> = coroutineScope {
-        val allLists = channels
-            .filter { it.youtubeChannelId.startsWith("UC") }
-            .map { channel ->
-                async(Dispatchers.IO) {
+        val targets = channels.filter { it.youtubeChannelId.startsWith("UC") }
+        if (targets.isEmpty()) return@coroutineScope emptyList()
+
+        val gate = Semaphore(FEED_CONCURRENCY)
+        val allLists = targets.map { channel ->
+            async(Dispatchers.IO) {
+                gate.withPermit {
                     try { fetchChannelFeed(channel) } catch (e: Exception) {
                         android.util.Log.w("YouTubeRepository", "Feed failed for ${channel.name}: ${e.message}")
                         emptyList()
                     }
                 }
             }
-            .awaitAll()
-        allLists.flatten().filterNot { it.isShort }.sortedByDescending { it.publishedAt }
+        }.awaitAll()
+
+        val videos = allLists.flatten().filterNot { it.isShort }.sortedByDescending { it.publishedAt }
+        val answered = allLists.count { it.isNotEmpty() }
+        // נרשם ליומן האבחון ולא רק ל-Logcat: כשערוצים נופלים בשקט זה נראה
+        // כמו "הפיד קטן משום מה" בלי שום רמז למה.
+        if (answered < targets.size) {
+            Diagnostics.log("FEED: $answered מתוך ${targets.size} ערוצים החזירו סרטונים")
+        }
+        videos
     }
 
     /** סרטוני ערוץ בודד לפי מזהה — להצגת תוכן של מנוי שנבחר. */

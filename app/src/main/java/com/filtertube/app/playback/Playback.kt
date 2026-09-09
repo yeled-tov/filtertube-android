@@ -11,6 +11,7 @@ import com.filtertube.app.data.AccountDataGuard
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
+import com.filtertube.app.data.Diagnostics
 import com.filtertube.app.data.PlaybackPriority
 import com.filtertube.app.data.StreamData
 import com.filtertube.app.data.defaultTrackIndex
@@ -150,9 +151,14 @@ object Playback {
 
     private suspend fun startInternal(context: Context, c: MediaController, video: Video) {
         activeController = c
+        // יציאה שקטה כאן נראית למשתמש בדיוק כמו תקלה: המסך נשאר על "טוען..."
+        // בלי שום הסבר. רושמים ליומן כדי שהמקרה הזה יהיה ניתן לאבחון.
         val firebaseUser = FirebaseAuth.getInstance().currentUser
             ?.takeIf { it.isEmailVerified }
-            ?: return
+            ?: run {
+                Diagnostics.log("PLAYBACK: אין משתמש מאומת — הניגון לא התחיל")
+                return
+            }
         val expectedUid = firebaseUser.uid
         val generation = AccountDataGuard.generation()
         val library = LibraryStore(context)

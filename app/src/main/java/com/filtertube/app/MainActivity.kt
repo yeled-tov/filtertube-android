@@ -297,10 +297,21 @@ fun AppRoot() {
         }
     }
 
-    // קישור יוטיוב שנפתח דרך האפליקציה — מפעיל את הסרטון בנגן שלנו מיד
-    LaunchedEffect(DeepLink.pendingVideoId) {
+    // קישור יוטיוב שנפתח דרך האפליקציה — מפעיל את הסרטון בנגן שלנו.
+    //
+    // המפתח כולל את controller בכוונה: rememberMediaController מתחבר
+    // אסינכרונית, ובפתיחה קרה מקישור ה-Effect רץ כשהוא עדיין null. אז
+    // Playback.start היה יוצא בשקט (`controller ?: return`), המסך נשאר על
+    // "טוען..." לנצח, והמזהה כבר נמחק — כלומר גם לא היה ניסיון חוזר.
+    // עכשיו לא מוחקים את המזהה עד שיש בקר, וההתחברות שלו מפעילה את ה-Effect מחדש.
+    LaunchedEffect(DeepLink.pendingVideoId, controller) {
         val id = DeepLink.pendingVideoId ?: return@LaunchedEffect
+        if (controller == null) {
+            com.filtertube.app.data.Diagnostics.log("DEEPLINK: $id ממתין לחיבור הנגן")
+            return@LaunchedEffect
+        }
         DeepLink.pendingVideoId = null
+        com.filtertube.app.data.Diagnostics.log("DEEPLINK: פותח $id")
         openVideo(Video(id, "טוען...", "טוען...", "", "https://i.ytimg.com/vi/$id/hqdefault.jpg", System.currentTimeMillis()))
     }
 
