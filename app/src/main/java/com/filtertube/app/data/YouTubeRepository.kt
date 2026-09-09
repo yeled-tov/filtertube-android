@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -72,6 +73,9 @@ object YouTubeRepository {
      * ולכן כל חיפוש נאלץ ליפול ל-NewPipe במקום לענות מיד.
      */
     private const val FEED_CONCURRENCY = 8
+
+    /** מעל זה אין טעם להמשיך לשאוב עמודי חיפוש — המסך ממילא לא מציג יותר. */
+    private const val ENOUGH_RESULTS = 40
 
     suspend fun fetchAllChannelsFeed(channels: List<Channel>): List<Video> = coroutineScope {
         val targets = channels.filter { it.youtubeChannelId.startsWith("UC") }
@@ -190,13 +194,24 @@ object YouTubeRepository {
         ingest(info.relatedItems)
         onPartial(collected.values.toList())
 
+        // עמוד נוסף הוא בערך שנייה וחצי, ותמיד נשאבו חמישה — תשע שניות של
+        // חיפוש גם כשהעמוד השני כבר לא הוסיף כלום. החיפוש כאן גלובלי ומסונן
+        // לרשימה הלבנה, ולכן ההתפלגות ידועה: מה שרלוונטי מגיע בעמודים
+        // הראשונים, והשאר הוא ערוצים שנזרקים ממילא. עוצרים כשיש מספיק, או
+        // כששני עמודים ברצף לא הוסיפו שום תוצאה מותרת.
         var nextPage = info.nextPage
         var pagesFetched = 0
-        while (nextPage != null && pagesFetched < 5) {
+        var emptyPages = 0
+        while (nextPage != null && pagesFetched < 5 && collected.size < ENOUGH_RESULTS && emptyPages < 2) {
+            // יציאה מהמסך מבטלת את הקורוטינה, אבל getMoreItems חוסם — בלי
+            // הבדיקה הזו החיפוש היה ממשיך לשאוב עמודים למסך שכבר נסגר.
+            ensureActive()
             try {
+                val before = collected.size
                 val more = SearchInfo.getMoreItems(ServiceList.YouTube, qh, nextPage)
                 ingest(more.items)
                 onPartial(collected.values.toList())
+                emptyPages = if (collected.size > before) 0 else emptyPages + 1
                 nextPage = more.nextPage
                 pagesFetched++
             } catch (e: Exception) {
@@ -204,6 +219,7 @@ object YouTubeRepository {
                 break
             }
         }
+        Diagnostics.log("SEARCH: NewPipe — ${collected.size} תוצאות מותרות אחרי ${pagesFetched + 1} עמודים")
 
         collected.values.toList()
     }
@@ -214,11 +230,19 @@ object YouTubeRepository {
     suspend fun fetchShorts(channels: List<Channel>): List<Video> = coroutineScope {
         val sample = channels.filter { it.youtubeChannelId.startsWith("UC") }.shuffled().take(12)
 
+        // אותה מגבלה כמו בפיד, ומאותה סיבה: כל ערוץ כאן הוא שני חילוצי NewPipe
+        // (דף הערוץ ואז לשונית ה-Shorts), כלומר 12 ערוצים בלי שער היו 24 בקשות
+        // בו-זמנית לאותו מארח — בדיוק העומס שהחניק את הפיד וגרם לערוצים ליפול
+        // בשקט. awaitIdle משאיר את הרשת לנגן כשסרטון מתחיל בדיוק עכשיו.
+        val gate = Semaphore(FEED_CONCURRENCY)
         val lists = sample.map { channel ->
             async(Dispatchers.IO) {
-                try { fetchChannelShorts(channel) } catch (e: Exception) {
-                    android.util.Log.w("YouTubeRepository", "Shorts failed for ${channel.name}: ${e.message}")
-                    emptyList()
+                gate.withPermit {
+                    PlaybackPriority.awaitIdle()
+                    try { fetchChannelShorts(channel) } catch (e: Exception) {
+                        android.util.Log.w("YouTubeRepository", "Shorts failed for ${channel.name}: ${e.message}")
+                        emptyList()
+                    }
                 }
             }
         }.awaitAll()
