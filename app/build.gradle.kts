@@ -81,22 +81,27 @@ android {
     }
 }
 
+// תקרת השדרוג כאן היא compileSdk 36 / AGP 8.13, לא "הגרסה האחרונה שקיימת".
+// core-ktx 1.18+, lifecycle 2.10+, activity-compose 1.12+, navigation 2.10+
+// ו-work 2.11+ כולם מצהירים minCompileSdk 37 ודורשים AGP 9.1 ומעלה — הבנייה
+// נכשלת עליהם ב-CheckAarMetadata לפני שהמהדר בכלל רץ. המעבר ל-AGP 9 הוא שינוי
+// נפרד בפני עצמו (Gradle 9, שינויי DSL), ולכן הוא לא מעורבב עם השדרוג הזה.
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 
     val composeBom = platform("androidx.compose:compose-bom:2024.10.00")
     implementation(composeBom)
 
-    implementation("androidx.core:core-ktx:1.19.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
-    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.core:core-ktx:1.17.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
+    implementation("androidx.activity:activity-compose:1.11.0")
 
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    implementation("androidx.navigation:navigation-compose:2.10.0")
+    implementation("androidx.navigation:navigation-compose:2.9.5")
 
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-exoplayer-hls:1.11.0")
@@ -110,8 +115,8 @@ dependencies {
 
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
-    implementation("com.google.android.gms:play-services-auth:22.0.0")
-    implementation("androidx.work:work-runtime-ktx:2.11.2")
+    implementation("com.google.android.gms:play-services-auth:21.4.0")
+    implementation("androidx.work:work-runtime-ktx:2.10.5")
 
     implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
     implementation("com.google.firebase:firebase-auth")
