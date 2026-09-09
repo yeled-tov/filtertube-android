@@ -28,6 +28,7 @@ jobs:
           import io, re, urllib.request, zipfile
 
           COMPILE_SDK = 36
+          AGP = (8, 13, 2)
           GOOGLE = "https://dl.google.com/dl/android/maven2"
 
           def fetch(url, binary=False):
@@ -48,28 +49,40 @@ jobs:
               vs = [v.strip() for v in m.group(1).split(',') if stable(v.strip())]
               return sorted(vs, key=vkey, reverse=True)
 
-          def min_compile_sdk(group, artifact, version):
-              """None = ה-AAR לא מצהיר מגבלה (כלומר מתאים לכל compileSdk)."""
-              url = f"{GOOGLE}/{group.replace('.','/')}/{artifact}/{version}/{artifact}-{version}.aar"
-              try:
-                  z = zipfile.ZipFile(io.BytesIO(fetch(url, binary=True)))
-                  txt = z.read("META-INF/com/android/build/gradle/aar-metadata.properties").decode()
-              except Exception:
-                  return None
-              m = re.search(r'minCompileSdk=(\d+)', txt)
-              return int(m.group(1)) if m else None
+          def metadata(group, artifact, version):
+              """(minCompileSdk, minAgpVersion) או None אם לא נמצא AAR בכלל.
 
-          def newest_fitting(group, artifact, probe=14):
+              ספריות רבות ב-androidx הן היום KMP: <artifact> הוא POM בלבד,
+              וה-AAR האמיתי יושב תחת <artifact>-android. בלי הניסיון הכפול הזה
+              כל השורות האלה חוזרות ריקות ונראות בטעות כאילו אין להן מגבלה.
+              """
+              for name in (artifact, f"{artifact}-android"):
+                  url = f"{GOOGLE}/{group.replace('.','/')}/{name}/{version}/{name}-{version}.aar"
+                  try:
+                      z = zipfile.ZipFile(io.BytesIO(fetch(url, binary=True)))
+                      txt = z.read("META-INF/com/android/build/gradle/aar-metadata.properties").decode()
+                  except Exception:
+                      continue
+                  sdk = re.search(r'minCompileSdk=(\d+)', txt)
+                  agp = re.search(r'minAgpVersion=([\d.]+)', txt)
+                  return (int(sdk.group(1)) if sdk else 0,
+                          agp.group(1) if agp else "0")
+              return None
+
+          def fits(meta):
+              if meta is None:
+                  return None                      # לא ידוע — לא מניחים שזה בסדר
+              sdk, agp = meta
+              return sdk <= COMPILE_SDK and tuple(vkey(agp)[:3]) <= AGP
+
+          def newest_fitting(group, artifact, probe=16):
               for v in versions(group, artifact)[:probe]:
-                  need = min_compile_sdk(group, artifact, v)
-                  if need is None or need <= COMPILE_SDK:
-                      return v, need
+                  meta = metadata(group, artifact, v)
+                  if fits(meta):
+                      return v, meta
               return None, None
 
-          # (תווית, group, artifact, מה שבשימוש היום)
           ROWS = [
-            ("compose-ui",  "androidx.compose.ui", "ui",                     "מ-compose-bom 2024.10.00"),
-            ("material3",   "androidx.compose.material3", "material3",       "מ-compose-bom 2024.10.00"),
             ("core-ktx",    "androidx.core", "core-ktx",                     "1.17.0"),
             ("lifecycle",   "androidx.lifecycle", "lifecycle-runtime-ktx",   "2.9.4"),
             ("activity",    "androidx.activity", "activity-compose",         "1.11.0"),
@@ -79,28 +92,36 @@ jobs:
             ("gms-auth",    "com.google.android.gms", "play-services-auth",  "21.4.0"),
           ]
 
-          print(f"{'artifact':<26}{'בשימוש':<26}{'הכי חדש שמתאים ל-36':<24}{'minCompileSdk'}")
-          print("-" * 96)
+          print(f"compileSdk={COMPILE_SDK}  AGP={'.'.join(map(str,AGP))}")
+          print(f"{'artifact':<16}{'בשימוש':<12}{'הכי חדש שמתאים':<18}{'minCompileSdk':<16}{'minAgpVersion'}")
+          print("-" * 84)
           for label, g, a, cur in ROWS:
               try:
-                  v, need = newest_fitting(g, a)
-                  print(f"{label:<26}{cur:<26}{str(v):<24}{need if need is not None else '-'}")
+                  v, meta = newest_fitting(g, a)
+                  sdk, agp = meta if meta else ("?", "?")
+                  print(f"{label:<16}{cur:<12}{str(v):<18}{str(sdk):<16}{agp}")
               except Exception as e:
-                  print(f"{label:<26}{cur:<26}שגיאה: {e}")
+                  print(f"{label:<16}{cur:<12}שגיאה: {e}")
 
-          # compose-bom הוא POM ולא AAR, אז בוחרים אותו לפי גרסת androidx.compose.ui
-          # שהוא מצמיד: ה-BOM המתאים הוא זה שמצמיד גרסת ui שעוברת את הבדיקה למעלה.
           print()
-          print("compose-bom — איזו גרסת androidx.compose.ui כל BOM מצמיד:")
-          for bom in versions("androidx.compose", "compose-bom")[:12]:
+          print("compose-bom — לפי androidx.compose.ui שכל BOM מצמיד:")
+          for bom in versions("androidx.compose", "compose-bom")[:14]:
               try:
                   pom = fetch(f"{GOOGLE}/androidx/compose/compose-bom/{bom}/compose-bom-{bom}.pom")
-                  m = re.search(
-                      r'<artifactId>ui</artifactId>\s*<version>([^<]+)</version>', pom)
-                  ui = m.group(1) if m else "?"
-                  need = min_compile_sdk("androidx.compose.ui", "ui", ui) if ui != "?" else None
-                  ok = "✔ מתאים" if (need is None or need <= COMPILE_SDK) else f"✖ דורש {need}"
-                  print(f"  {bom:<16} ui {ui:<12} {ok}")
+                  m = re.search(r'<artifactId>ui</artifactId>\s*<version>([^<]+)</version>', pom)
+                  if not m:
+                      print(f"  {bom:<14} לא נמצאה גרסת ui ב-POM")
+                      continue
+                  ui = m.group(1)
+                  meta = metadata("androidx.compose.ui", "ui", ui)
+                  ok = fits(meta)
+                  if ok is None:
+                      note = "? לא נמצא AAR"
+                  elif ok:
+                      note = f"✔ מתאים (sdk {meta[0]}, agp {meta[1]})"
+                  else:
+                      note = f"✖ דורש sdk {meta[0]}, agp {meta[1]}"
+                  print(f"  {bom:<14} ui {ui:<10} {note}")
               except Exception as e:
-                  print(f"  {bom:<16} שגיאה: {e}")
+                  print(f"  {bom:<14} שגיאה: {e}")
           PY
