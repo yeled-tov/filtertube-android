@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.NorthWest
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -59,6 +60,8 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
     var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var searchJob by remember { mutableStateOf<Job?>(null) }
+    /** השאילתה שרצה כרגע — מוצגת במסך הטעינה כדי שיהיה ברור מה נקלט. */
+    var searching by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         channels = runCatching {
@@ -79,13 +82,19 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
     fun runSearch(q: String) {
         val trimmed = q.trim()
         if (trimmed.isEmpty()) return
-        keyboard?.hide()
-        settings.addSearchQuery(trimmed)
-        history = settings.getSearchHistory()
+        // המצב מתחלף *ראשון*, לפני כל עבודה אחרת. קודם לכן נכתבה קודם
+        // היסטוריית החיפוש ל-SharedPreferences ונקראה בחזרה — שתי פעולות דיסק
+        // סינכרוניות על תהליכון ה-UI — ורק אחר כך המסך התחלף. בלחיצה על הצעה
+        // זה נראה בדיוק כאילו הלחיצה לא נקלטה.
         state = SearchState.Loading
+        searching = trimmed
+        keyboard?.hide()
+        suggestions = emptyList()
 
         searchJob?.cancel()
         searchJob = scope.launch {
+            settings.addSearchQuery(trimmed)
+            history = settings.getSearchHistory()
             val approved = channels.ifEmpty {
                 val cached = ChannelsRepository.getCachedChannelsFast(context)
                     .forLevel(settings.filterLevel, settings.userGender)
@@ -158,8 +167,8 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
                     onPick = { query = it; runSearch(it) },
                     onRemove = { settings.removeSearchQuery(it); history = settings.getSearchHistory() },
                     onClear = { settings.clearSearchHistory(); history = emptyList() },
-                ) else SuggestionsList(suggestions) { picked -> query = picked; runSearch(picked) }
-            is SearchState.Loading -> CenteredLoading("מחפש...")
+                ) else SuggestionsList(suggestions, query) { picked -> query = picked; runSearch(picked) }
+            is SearchState.Loading -> CenteredLoading("מחפש \"$searching\"…")
             is SearchState.Empty -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -189,24 +198,41 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
     }
 }
 
+/**
+ * הצעות השלמה — לא תוצאות חיפוש.
+ *
+ * בלי הכותרת והחץ הרשימה הזו נראתה כמו רשימת התוצאות עצמה, והמשתמש חשב
+ * שהחיפוש כבר רץ ושהלחיצה שלו לא עושה כלום.
+ */
 @Composable
-private fun SuggestionsList(suggestions: List<String>, onPick: (String) -> Unit) {
+private fun SuggestionsList(suggestions: List<String>, query: String, onPick: (String) -> Unit) {
     if (suggestions.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("מקליד…", color = ThemeState.subtext, fontSize = 13.sp)
         }
         return
     }
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 4.dp, bottom = 96.dp)) {
-        items(suggestions) { s ->
-            Row(
-                modifier = Modifier.fillMaxWidth().clickable { onPick(s) }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Default.Search, null, tint = ThemeState.subtext, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(14.dp))
-                Text(s, color = ThemeState.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
+    Column(modifier = Modifier.fillMaxSize()) {
+        Text(
+            "הצעות — הקש כדי לחפש",
+            color = ThemeState.subtext2, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+        LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
+            items(suggestions) { s ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { onPick(s) }
+                        .padding(horizontal = 16.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Default.Search, null, tint = ThemeState.subtext, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(14.dp))
+                    Text(s, color = ThemeState.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Icon(
+                        Icons.Default.NorthWest, "חפש את זה",
+                        tint = ThemeState.subtext, modifier = Modifier.size(16.dp),
+                    )
+                }
             }
         }
     }

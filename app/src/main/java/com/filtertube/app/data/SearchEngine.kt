@@ -51,15 +51,25 @@ object SearchEngine {
         val collected = LinkedHashMap<String, Video>()
         var anySourceWorked = false
 
+        /**
+         * מוסיף גל תוצאות חדש **בסוף** הרשימה, ולא ממזג אותו לתוכה.
+         *
+         * הבאג: כל שלב פרסם את מה שנאסף, ובסוף רצה מיון גלובלי אחד על הכל.
+         * המשמעות היא שתוצאה שהגיעה מ-NewPipe אחרי חמש שניות יכולה לקפוץ
+         * לראש הרשימה — בדיוק בזמן שהמשתמש כבר גולל בתוצאות. מבחינתו זה
+         * נראה כאילו התוכן קפץ ופתאום יש עוד תוצאות *מעליו*.
+         *
+         * עכשיו כל גל ממוין בתוך עצמו לפי רלוונטיות, והגלים משורשרים לפי סדר
+         * ההגעה: אינדקס מקומי, ואז ערוץ תואם, ואז NewPipe. זה גם סדר איכות
+         * הגיוני, ובעיקר — מה שכבר על המסך לא זז יותר.
+         */
         suspend fun publish(videos: List<Video>) {
-            var added = false
-            videos.forEach { video ->
-                if (video.id.isNotBlank() && video.channelId in allowedIds && !collected.containsKey(video.id)) {
-                    collected[video.id] = video
-                    added = true
-                }
+            val fresh = videos.filter {
+                it.id.isNotBlank() && it.channelId in allowedIds && !collected.containsKey(it.id)
             }
-            if (added) onPartial(collected.values.toList())
+            if (fresh.isEmpty()) return
+            rank(fresh, query).forEach { collected[it.id] = it }
+            onPartial(collected.values.toList())
         }
 
         // ── 1. אינדקס מקומי — מיידי ────────────────────────────────────────
@@ -88,28 +98,28 @@ object SearchEngine {
         }
 
         // ── 3. NewPipe — חיפוש עמוק, מסונן ────────────────────────────────
+        val fromNewPipe = mutableListOf<Video>()
         runCatching {
             YouTubeRepository.search(query, channels) { partial ->
-                // ה-callback של NewPipe סינכרוני; אוספים כאן ומפרסמים אחרי כל עמוד.
-                partial.forEach { video ->
-                    if (video.id.isNotBlank() && video.channelId in allowedIds) {
-                        collected.putIfAbsent(video.id, video)
-                    }
-                }
+                // ה-callback של NewPipe סינכרוני, אז רק אוספים כאן; הפרסום
+                // עצמו הוא suspend ורץ אחרי שהחילוץ מסתיים.
+                fromNewPipe += partial
             }
         }.onSuccess {
             anySourceWorked = true
+            publish(fromNewPipe)
             Diagnostics.log("SEARCH: NewPipe הושלם — ${collected.size} תוצאות מצטברות")
-            onPartial(collected.values.toList())
         }.onFailure {
             if (it is CancellationException) throw it
             Diagnostics.log("SEARCH: NewPipe נכשל — ${it.message}")
         }
 
-        // ── העשרה במטא-דאטה אמיתי (יחידת מכסה אחת לכל 50) ─────────────────
-        val ranked = rank(collected.values.toList(), query)
-        val enriched = runCatching { VideoMetadata.enrich(context, ranked, limit = 60) }
-            .getOrDefault(ranked)
+        // ── העשרה במטא-דאטה אמיתי ─────────────────────────────────────────
+        // בלי מיון נוסף כאן: הסדר כבר נקבע גל אחרי גל, וכל מיון סופי היה
+        // מזיז מחדש בדיוק את מה שהמשתמש כבר רואה.
+        val ordered = collected.values.toList()
+        val enriched = runCatching { VideoMetadata.enrich(context, ordered, limit = 60) }
+            .getOrDefault(ordered)
 
         return Outcome(
             videos = enriched,
