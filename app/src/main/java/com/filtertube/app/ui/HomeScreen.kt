@@ -59,7 +59,6 @@ import com.filtertube.app.data.YouTubeRepository
 import com.filtertube.app.playback.Playback
 import com.filtertube.app.data.categoryLabelHe
 import com.filtertube.app.data.forLevel
-import com.filtertube.app.data.PersonalRadio
 import com.filtertube.app.data.personalizeFeed
 import com.filtertube.app.data.sortedCategories
 import kotlinx.coroutines.Dispatchers
@@ -76,10 +75,9 @@ sealed class HomeState {
 fun HomeScreen(
     onVideoClick: (Video) -> Unit,
     onSearch: () -> Unit,
-    onAccount: () -> Unit = {},
     onInbox: () -> Unit = {},
-    onChannels: () -> Unit = {},
     onLive: () -> Unit = {},
+    onStartRadio: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -87,30 +85,11 @@ fun HomeScreen(
     val store = remember { LibraryStore(context) }
     var state by remember { mutableStateOf<HomeState>(HomeState.Loading) }
     var refreshing by remember { mutableStateOf(false) }
-    var showMenu by remember { mutableStateOf(false) }
-    var showAbout by remember { mutableStateOf(false) }
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
     /** true בזמן שנבחר סרטון הפתיחה לרדיו — מונע לחיצה כפולה. */
     var radioStarting by remember { mutableStateOf(false) }
     val newCount = remember { store.newVideos().size }   // מספר הסרטונים החדשים לתג הפעמון
-
-    if (showAbout) {
-        AlertDialog(
-            onDismissRequest = { showAbout = false },
-            confirmButton = { TextButton(onClick = { showAbout = false }) { Text("סגור") } },
-            title = { Text("FilterTube") },
-            text = {
-                Text(
-                    "פלטפורמת וידאו מסוננת — מציגה אך ורק ערוצים מאושרים. " +
-                        "כל התוכן מסונן לפי רמת הסינון שנבחרה.\n\nגרסה ${com.filtertube.app.BuildConfig.VERSION_NAME}",
-                    color = ThemeState.subtext2, fontSize = 13.sp, lineHeight = 18.sp,
-                )
-            },
-            containerColor = ThemeState.surface,
-            titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
-        )
-    }
 
     fun refresh(showSpinner: Boolean) {
         if (showSpinner) state = HomeState.Loading
@@ -202,7 +181,7 @@ fun HomeScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         // התוכן הראשי — מטושטש כשהתפריט הצף פתוח (אפקט זכוכית)
-        Column(modifier = Modifier.fillMaxSize().blur(if (showMenu) 18.dp else 0.dp)) {
+        Column(modifier = Modifier.fillMaxSize()) {
             // טופ-בר: אווטאר לתפריט, ושם האפליקציה. זהו.
             //
             // קודם ישבו כאן גם "סרטונים חדשים" ו"שידורים חיים" כשני עיגולים
@@ -213,12 +192,6 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 32.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    modifier = Modifier.size(42.dp).clip(RoundedCornerShape(50))
-                        .background(Brush.linearGradient(ThemeState.accentColors))
-                        .clickable { showMenu = true },
-                    contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Default.Person, "תפריט", tint = Color.White, modifier = Modifier.size(23.dp)) }
                 Spacer(Modifier.weight(1f))
                 Text("Filter Tube", color = ThemeState.text, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
             }
@@ -258,8 +231,8 @@ fun HomeScreen(
                 is HomeState.Error -> CenteredError(s.message) { refresh(showSpinner = true) }
                 is HomeState.Success -> {
                     // remember ולא חישוב ישיר: הבנייה הזו רצה בכל רה-קומפוזיציה,
-                    // וכל פתיחת תפריט (שמפעילה אנימציית טשטוש) גררה בניית מפה
-                    // של 166 ערוצים וסינון של ~2,500 סרטונים, פריים אחרי פריים.
+                    // וכל אחת מהן בנתה מחדש מפה של 166 ערוצים וסיננה ~2,500
+                    // סרטונים — פריים אחרי פריים.
                     val catByChannel = remember(channels) {
                         channels.associate { it.youtubeChannelId to it.category }
                     }
@@ -286,85 +259,43 @@ fun HomeScreen(
         }
 
         // ── רדיו אישי ──────────────────────────────────────────────────────
-        // כפתור צף אחד שמפעיל ניגון רציף לפי הטעם של המשתמש, בלי לחפש כלום.
-        // הזרע נבחר ב-PersonalRadio מההיסטוריה, מהלייקים ומהחיפושים, ומשם
-        // RadioQueueManager — שכבר קיים — ממשיך לבנות את התור לבד.
+        // כפתור זכוכית קטן: חצי שקוף, עם מסגרת דקה ורקע מטושטש, כדי שיהיה
+        // נוכח בלי לכסות את הפיד. הוא לא צריך למשוך את העין יותר מהתוכן.
         //
-        // מוסתר כשהתפריט פתוח, כדי שלא יצוף מעל ה-scrim.
-        if (!showMenu) {
-            ExtendedFloatingActionButton(
-                onClick = {
-                    if (radioStarting) return@ExtendedFloatingActionButton
-                    radioStarting = true
-                    scope.launch {
-                        val seed = runCatching { PersonalRadio.pickSeed(context) }.getOrNull()
-                        radioStarting = false
-                        if (seed == null) {
-                            android.widget.Toast.makeText(
-                                context,
-                                "צריך קצת תוכן לפני שאפשר להפעיל רדיו — נסה שוב אחרי שהפיד נטען",
-                                android.widget.Toast.LENGTH_LONG,
-                            ).show()
-                        } else {
-                            onVideoClick(seed)
+        // התחנה עצמה נבנית ב-PersonalRadio מהלייקים, מההיסטוריה ומהסגנון,
+        // ומנוגנת כמו שהיא — ראה RadioQueueManager.startQueue(preset).
+        Row(
+            modifier = Modifier.align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 104.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(ThemeState.surface.copy(alpha = 0.55f))
+                    .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(50))
+                    .clickable(enabled = !radioStarting) {
+                        radioStarting = true
+                        scope.launch {
+                            onStartRadio()
+                            // הבנייה קצרה; ההשהיה רק מונעת לחיצה כפולה בזמן
+                            // שהמסך מתחלף לנגן.
+                            kotlinx.coroutines.delay(1200)
+                            radioStarting = false
                         }
                     }
-                },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 104.dp),
-                containerColor = ThemeState.accent,
-                contentColor = Color.White,
-                icon = {
-                    if (radioStarting) {
-                        CircularProgressIndicator(
-                            color = Color.White, strokeWidth = 2.dp,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    } else {
-                        Icon(Icons.Default.Radio, null, modifier = Modifier.size(20.dp))
-                    }
-                },
-                text = {
-                    Text(
-                        if (radioStarting) "מכין…" else "רדיו אישי",
-                        fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                    )
-                },
-            )
-        }
-
-        // תפריט צף בסגנון זכוכית — scrim כהה מעל הרקע המטושטש + כרטיס שקוף-למחצה
-        if (showMenu) {
-            Box(
-                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { showMenu = false },
-            )
-            Column(
-                modifier = Modifier.align(Alignment.Center).padding(horizontal = 28.dp).fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(ThemeState.surface.copy(alpha = 0.75f))
-                    .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(24.dp))
-                    .padding(vertical = 10.dp),
-            ) {
-                Text("FilterTube", color = ThemeState.subtext, fontSize = 12.sp,
-                    modifier = Modifier.padding(start = 22.dp, top = 8.dp, bottom = 6.dp))
-                // "הגדרות" ירד מכאן — הוא טאב קבוע בסרגל התחתון. תפריט שמסתתר
-                // מאחורי אייקון של דמות הוא המקום הכי גרוע להחזיק בו את
-                // ההגדרות, וזו הייתה הדרך היחידה להגיע אליהן.
-                val menuItems = listOf<Pair<String, () -> Unit>>(
-                    "ערוצים — עקוב" to { showMenu = false; onChannels() },
-                    "חיבור חשבון YouTube (אופציונלי)" to { showMenu = false; onAccount() },
-                    "אודות" to { showMenu = false; showAbout = true },
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (radioStarting) {
+                CircularProgressIndicator(
+                    color = ThemeState.accent, strokeWidth = 1.6.dp,
+                    modifier = Modifier.size(15.dp),
                 )
-                menuItems.forEach { (label, action) ->
-                    Text(label, color = ThemeState.text, fontSize = 16.sp,
-                        modifier = Modifier.fillMaxWidth()
-                            .clickable { action() }
-                            .padding(horizontal = 22.dp, vertical = 15.dp))
-                }
+            } else {
+                Icon(Icons.Default.Radio, null, tint = ThemeState.accent, modifier = Modifier.size(16.dp))
             }
+            Spacer(Modifier.width(6.dp))
+            Text(
+                if (radioStarting) "מכין…" else "רדיו",
+                color = ThemeState.text, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 }

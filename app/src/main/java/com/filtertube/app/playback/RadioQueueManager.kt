@@ -61,11 +61,22 @@ object RadioQueueManager {
     /**
      * מפעיל בניית תור רדיו ברקע באופן מידי.
      */
+    /**
+     * [preset] — רשימה שנקבעה מראש ומנוגנת כמו שהיא, לפני שמנוע ה"קשורים"
+     * נכנס לתמונה.
+     *
+     * זה מה שמפריד בין "רדיו אישי" לבין ניגון רגיל. בניגון רגיל התור נבנה
+     * מהסרטונים הקשורים של יוטיוב, וזה נכון — המשתמש בחר סרטון מסוים ורוצה
+     * עוד כמוהו. ברדיו אישי התחנה כבר נבנתה מהלייקים, מההיסטוריה ומהסגנון
+     * ([com.filtertube.app.data.PersonalRadio]), ואסור שמנוע ההמלצות של
+     * יוטיוב ידרוס אותה — בדיוק זה מה שקרה קודם, ולכן הרדיו לא נשמע אישי.
+     */
     fun startQueue(
         context: Context,
         controller: MediaController?,
         currentVideo: Video,
-        scope: CoroutineScope
+        scope: CoroutineScope,
+        preset: List<Video> = emptyList(),
     ) {
         val c = controller ?: return
         currentQueueJob?.cancel()
@@ -77,8 +88,38 @@ object RadioQueueManager {
             // התור נבנה מיד אחרי play(), כלומר בדיוק כשהנגן ממלא באפר.
             // ממתינים שהניגון יתייצב לפני שמתחילים לחלץ עוד סרטונים.
             com.filtertube.app.data.PlaybackPriority.awaitIdle()
-            refillInternal(context, c, currentVideo)
+            if (preset.isNotEmpty()) {
+                enqueueAll(context, c, preset.filter { it.id != currentVideo.id })
+            } else {
+                refillInternal(context, c, currentVideo)
+            }
         }
+    }
+
+    /**
+     * מוסיף רשימה נתונה לתור, בסדר שלה, בלי לדרג ובלי לסנן מחדש.
+     *
+     * הסדר נשמר בכוונה: התחנה כבר סודרה ב-PersonalRadio, ופתרון מקבילי היה
+     * מוסיף אותם לפי מי שסיים ראשון. לכן החילוץ מקבילי אבל ההוספה טורית.
+     */
+    private suspend fun enqueueAll(context: Context, c: MediaController, videos: List<Video>) {
+        if (videos.isEmpty()) return
+        val settings = SettingsStore(context)
+        val level = settings.filterLevel
+        val preferredQuality = settings.preferredQuality
+        val catById = ChannelsRepository.getCachedChannelsFast(context)
+            .associate { it.youtubeChannelId to it.category }
+
+        var added = 0
+        for (video in videos.take(QUEUE_MAX)) {
+            val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull() ?: continue
+            activeQueueIds.add(video.id)
+            val audio = Playback.forcedAudio(catById[data.channelId] ?: catById[video.channelId], level)
+            val item = Playback.buildItem(data, video.id, audio, Playback.defaultQuality(data, preferredQuality))
+            withContext(Dispatchers.Main) { c.addMediaItem(c.mediaItemCount, item) }
+            added++
+        }
+        Diagnostics.log("RADIO אישי: $added מתוך ${videos.size} סרטוני התחנה נוספו לתור")
     }
 
     /**

@@ -312,6 +312,35 @@ fun AppRoot() {
         }
     }
 
+    /**
+     * רדיו אישי: בונה תחנה שלמה ומנגן אותה, במקום לנגן סרטון בודד ולתת
+     * למנוע ה"קשורים" של יוטיוב להמשיך משם.
+     */
+    fun openRadio() {
+        scope.launch {
+            val station = runCatching { com.filtertube.app.data.PersonalRadio.buildStation(context) }
+                .getOrNull().orEmpty()
+            val first = station.firstOrNull()
+            if (first == null) {
+                android.widget.Toast.makeText(
+                    context,
+                    "עוד אין ממה לבנות תחנה — תשמע כמה שירים ותסמן לב, ואז זה יתחיל להכיר אותך",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+                return@launch
+            }
+            navController.navigate("player") { launchSingleTop = true }
+            try {
+                com.filtertube.app.playback.Playback.start(context, controller, first, station)
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(
+                    context, "שגיאה בניגון: ${e.message}", android.widget.Toast.LENGTH_LONG,
+                ).show()
+                navController.popBackStack("player", inclusive = true)
+            }
+        }
+    }
+
     // קישור יוטיוב שנפתח דרך האפליקציה — מפעיל את הסרטון בנגן שלנו.
     //
     // המפתח כולל את controller בכוונה: rememberMediaController מתחבר
@@ -466,9 +495,8 @@ fun AppRoot() {
                 HomeScreen(
                     onVideoClick = ::openVideo,
                     onSearch = { navController.navigate("search") },
-                    onAccount = { navController.navigate("ytlogin") },
                     onInbox = { navController.navigate("newvideos") },
-                    onChannels = { navController.navigate("channels") },
+                    onStartRadio = ::openRadio,
                     onLive = { navController.navigate("live") },
                 )
             }
@@ -529,6 +557,7 @@ fun AppRoot() {
                 LibraryScreen(
                     onOpenCollection = { type -> navController.navigate("collection/$type") },
                     onOpenSubscriptions = { navController.navigate("subscriptions") },
+                    onOpenChannels = { navController.navigate("channels") },
                     onOpenPlaylist = { name -> navController.navigate("playlist/${Uri.encode(name)}") },
                     onOpenLogin = { navController.navigate("ytlogin") },
                 )

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Recommend
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -48,6 +49,7 @@ import kotlinx.coroutines.launch
 fun LibraryScreen(
     onOpenCollection: (String) -> Unit,
     onOpenSubscriptions: () -> Unit,
+    onOpenChannels: () -> Unit,
     onOpenPlaylist: (String) -> Unit,
     onOpenLogin: () -> Unit,
 ) {
@@ -65,6 +67,12 @@ fun LibraryScreen(
     var history by remember { mutableStateOf(store.history()) }
     var recs by remember { mutableStateOf(store.recommendations()) }
     val localHist = remember(version) { store.localHistory() }   // היסטוריית צפייה מקומית
+    var channelCount by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        channelCount = runCatching {
+            com.filtertube.app.data.ChannelsRepository.getCachedChannelsFast(context).size
+        }.getOrDefault(0)
+    }
     val loggedIn = accountStore.isLoggedIn   // מחושב מחדש בכל composition (מתעדכן בחזרה מהתחברות)
 
     var account by remember { mutableStateOf<GoogleSignInAccount?>(GoogleAuth.lastAccount(context)) }
@@ -246,6 +254,10 @@ fun LibraryScreen(
                 LibTile("מנויים", subs.size, Icons.Default.Subscriptions, Color(0xFFA855F7)) { onOpenSubscriptions() }
             }
             Spacer(Modifier.height(14.dp))
+            // "ערוצים מאושרים" חי כאן ולא בתפריט צף שמסתתר מאחורי אווטאר במסך
+            // הבית. הספרייה היא "התוכן שלי", ומעקב אחרי ערוץ הוא בדיוק זה —
+            // ממש ליד "מנויים", שהוא אותו רעיון בצד של יוטיוב.
+            LibRow("ערוצים מאושרים", channelCount, Icons.Default.Tv, ThemeState.accent) { onOpenChannels() }
             LibRow("היסטוריית צפייה", localHist.size, Icons.Default.History, Color(0xFFFF6D00)) { onOpenCollection("history") }
             LibRow("מומלצים מיוטיוב", recs.size, Icons.Default.Recommend, Color(0xFF00BFA5)) { onOpenCollection("recs") }
         }

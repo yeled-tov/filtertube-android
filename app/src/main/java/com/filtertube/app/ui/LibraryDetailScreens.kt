@@ -29,9 +29,15 @@ import com.filtertube.app.data.SubChannel
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeRepository
 
-/** סרגל עליון אחיד עם כפתור חזרה לכל מסכי הפירוט. */
+/**
+ * סרגל עליון אחיד עם כפתור חזרה לכל מסכי הפירוט.
+ *
+ * [action] — פעולה קבועה בקצה הימני. היא נשארת על המסך גם כשגוללים, וזה
+ * בדיוק ההבדל: "בקשת ערוץ" ישבה קודם כבאנר בתוך רשימה נגללת של 167 ערוצים,
+ * ולכן אף אחד לא ידע שהיא קיימת.
+ */
 @Composable
-fun DetailTopBar(title: String, onBack: () -> Unit) {
+fun DetailTopBar(title: String, onBack: () -> Unit, action: (@Composable () -> Unit)? = null) {
     Column {
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 24.dp, start = 4.dp, end = 16.dp, bottom = 4.dp),
@@ -41,7 +47,8 @@ fun DetailTopBar(title: String, onBack: () -> Unit) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = ThemeState.text)
             }
             Text(title, color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            action?.invoke()
         }
         HorizontalDivider(color = ThemeState.divider)
     }

@@ -62,6 +62,7 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
     var searchJob by remember { mutableStateOf<Job?>(null) }
     /** השאילתה שרצה כרגע — מוצגת במסך הטעינה כדי שיהיה ברור מה נקלט. */
     var searching by remember { mutableStateOf("") }
+    var showRequest by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         channels = runCatching {
@@ -125,6 +126,8 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
         }
     }
 
+    if (showRequest) ChannelRequestDialog(onDismiss = { showRequest = false }, prefillName = query.trim())
+
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         // Search bar
         Row(
@@ -180,9 +183,17 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
                         fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "החיפוש מוגבל לערוצים המאושרים בלבד. אם חסר לך ערוץ — אפשר לבקש להוסיף אותו במסך \"ערוצים\".",
+                        "החיפוש מוגבל לערוצים המאושרים בלבד.",
                         color = ThemeState.subtext, fontSize = 12.5f.sp, lineHeight = 17.sp,
                     )
+                    Spacer(Modifier.height(16.dp))
+                    // הרגע שבו המשתמש הכי רוצה לבקש ערוץ הוא בדיוק כאן — הוא
+                    // חיפש משהו ולא מצא. עד עכשיו הוא היה צריך לקרוא משפט,
+                    // להבין שקיים מסך "ערוצים", למצוא אותו, ולגלול בו לבאנר.
+                    Button(
+                        onClick = { showRequest = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = ThemeState.accent),
+                    ) { Text("בקש להוסיף ערוץ", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                 }
             }
             is SearchState.Error -> CenteredError(s.message) { runSearch(query) }

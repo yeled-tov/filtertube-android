@@ -129,14 +129,22 @@ object Playback {
 
     /**
      * מתחיל ניגון של [video] מיד, ומפעיל ברקע בניית תור רדיו אוטונומי.
+     *
+     * [station] — תחנה שנבנתה מראש (רדיו אישי). כשהיא לא ריקה היא זו שמנוגנת,
+     * ומנוע ה"סרטונים הקשורים" של יוטיוב לא נכנס לתמונה עד שהיא נגמרת.
      */
-    suspend fun start(context: Context, controller: MediaController?, video: Video) {
+    suspend fun start(
+        context: Context,
+        controller: MediaController?,
+        video: Video,
+        station: List<Video> = emptyList(),
+    ) {
         val c = controller ?: return
         // מכריזים על חזית: עבודות הרקע (רדיו, חימום, העשרה) ימתינו כדי לא
         // לחנוק את ההורדה של הזרם שהמשתמש מחכה לו ממש עכשיו.
         PlaybackPriority.begin()
         try {
-            startInternal(context, c, video)
+            startInternal(context, c, video, station)
         } finally {
             // משחררים רק אחרי שהנגן הספיק למלא באפר, לא ברגע ש-play() חזר.
             playbackScope.launch {
@@ -149,7 +157,12 @@ object Playback {
     /** זמן החסד שבו הרשת שמורה לנגן אחרי הלחיצה. */
     private const val PLAYBACK_GRACE_MS = 3_000L
 
-    private suspend fun startInternal(context: Context, c: MediaController, video: Video) {
+    private suspend fun startInternal(
+        context: Context,
+        c: MediaController,
+        video: Video,
+        station: List<Video>,
+    ) {
         activeController = c
         // יציאה שקטה כאן נראית למשתמש בדיוק כמו תקלה: המסך נשאר על "טוען..."
         // בלי שום הסבר. רושמים ליומן כדי שהמקרה הזה יהיה ניתן לאבחון.
@@ -208,6 +221,6 @@ object Playback {
         addPendingNext(context, c)
 
         // הפעלה מבוזרת ומהירה ברקע של תור הרדיו (ללא שום delay חוסם!)
-        RadioQueueManager.startQueue(context, c, video, playbackScope)
+        RadioQueueManager.startQueue(context, c, video, playbackScope, station)
     }
 }
