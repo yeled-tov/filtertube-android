@@ -100,7 +100,9 @@ android {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 
-    val composeBom = platform("androidx.compose:compose-bom:2024.10.00")
+    // 2026.06.01 ולא 2026.08.00: זה ה-BOM האחרון שמצמיד androidx.compose.ui
+    // עם minCompileSdk 35. ב-2026.08 ui עולה ל-1.12.0 שדורש sdk 37.
+    val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
     implementation(composeBom)
 
     implementation("androidx.core:core-ktx:1.18.0")
