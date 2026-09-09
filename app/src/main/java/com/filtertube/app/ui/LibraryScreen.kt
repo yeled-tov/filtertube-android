@@ -232,22 +232,22 @@ fun LibraryScreen(
             }
         }
 
-        // קוביות אוספים — לחיצה פותחת את התוכן
+        // ── שלושה אוספים, לא שישה ─────────────────────────────────────────
+        // שש קוביות שוות במשקל הן שש החלטות, ושתיים מהן היו כפילויות מבלבלות:
+        // "אהבתי" מול "אהבתי ביוטיוב" נראו כמו אותו דבר פעמיים. עכשיו זו קובייה
+        // אחת שנפתחת עם מתג בין שני המקורות.
+        //
+        // "היסטוריה" ו"מומלצים" ירדו לשורות טקסט מתחת: הן שימושיות, אבל הן לא
+        // אוסף שהמשתמש *בונה* — הן נוצרות מאליהן, ולכן לא צריכות את אותו משקל.
         item {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                LibTile("אהבתי", likes.size, Icons.Default.Favorite, Color(0xFFFF0000)) { onOpenCollection("likes") }
-                LibTile("אהבתי ביוטיוב", ytLikes.size, Icons.Default.ThumbUp, Color(0xFF3B82F6)) { onOpenCollection("ytlikes") }
-            }
-            Spacer(Modifier.height(12.dp))
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                LibTile("המנויים שלי", subs.size, Icons.Default.Subscriptions, Color(0xFFA855F7)) { onOpenSubscriptions() }
+                LibTile("אהבתי", likes.size + ytLikes.size, Icons.Default.Favorite, Color(0xFFFF0000)) { onOpenCollection("likes") }
                 LibTile("הורדות", downloads.size, Icons.Default.Download, Color(0xFF10B981)) { onOpenCollection("downloads") }
+                LibTile("מנויים", subs.size, Icons.Default.Subscriptions, Color(0xFFA855F7)) { onOpenSubscriptions() }
             }
-            Spacer(Modifier.height(12.dp))
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                LibTile("היסטוריה", localHist.size, Icons.Default.History, Color(0xFFFF6D00)) { onOpenCollection("history") }
-                LibTile("מומלצים", recs.size, Icons.Default.Recommend, Color(0xFF00BFA5)) { onOpenCollection("recs") }
-            }
+            Spacer(Modifier.height(14.dp))
+            LibRow("היסטוריית צפייה", localHist.size, Icons.Default.History, Color(0xFFFF6D00)) { onOpenCollection("history") }
+            LibRow("מומלצים מיוטיוב", recs.size, Icons.Default.Recommend, Color(0xFF00BFA5)) { onOpenCollection("recs") }
         }
 
         // אלבומים
@@ -279,12 +279,33 @@ fun LibraryScreen(
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(pl.name, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        Text("${pl.videos.size} שירים", color = ThemeState.subtext, fontSize = 12.sp)
+                        Text("${pl.videos.size} סרטונים", color = ThemeState.subtext, fontSize = 12.sp)
                     }
                 }
             }
         }
         item { Spacer(Modifier.height(96.dp)) }
+    }
+}
+
+/**
+ * שורה, לא קובייה — לאוספים שנוצרים מאליהם ולא נבנים ע"י המשתמש.
+ * ההבדל בגודל הוא ההבדל בחשיבות, וזה בדיוק מה שהיה חסר כששש קוביות
+ * זהות התחרו על אותה תשומת לב.
+ */
+@Composable
+private fun LibRow(title: String, count: Int, icon: ImageVector, accent: Color, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(12.dp)).background(ThemeState.card)
+            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = accent, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(title, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f))
+        Text("$count", color = ThemeState.subtext, fontSize = 13.sp)
     }
 }
 

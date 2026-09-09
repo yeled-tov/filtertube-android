@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Person
@@ -63,9 +64,12 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
     val context = LocalContext.current
     val store = remember { LibraryStore(context) }
     var refreshKey by remember { mutableStateOf(0) }
-    val (title, videos) = remember(type, refreshKey) {
+    // מקור הלייקים: FilterTube או YouTube. קודם אלה היו שתי קוביות נפרדות
+    // בספרייה שנראו כמו אותו דבר פעמיים; עכשיו זו רשימה אחת עם מתג.
+    var ytSource by remember { mutableStateOf(false) }
+    val (title, videos) = remember(type, refreshKey, ytSource) {
         when (type) {
-            "likes" -> "אהבתי" to store.likes()
+            "likes" -> "אהבתי" to (if (ytSource) store.youtubeLikes() else store.likes())
             "ytlikes" -> "אהבתי ביוטיוב" to store.youtubeLikes()
             "downloads" -> "הורדות" to store.downloads()
             "history" -> "היסטוריה" to store.localHistory()   // היסטוריה מקומית — תמיד עובדת
@@ -75,6 +79,17 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
     }
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar("$title (${videos.size})", onBack)
+        if (type == "likes") {
+            val ftCount = remember(refreshKey) { store.likes().size }
+            val ytCount = remember(refreshKey) { store.youtubeLikes().size }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SourceTab("ב-FilterTube ($ftCount)", !ytSource) { ytSource = false }
+                SourceTab("ביוטיוב ($ytCount)", ytSource) { ytSource = true }
+            }
+        }
         if (type == "history" && videos.isNotEmpty()) {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { store.clearLocalHistory(); refreshKey++ }) {
@@ -86,6 +101,26 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
         else LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)) {
             items(videos, key = { it.id }) { v -> VideoRow(v, onClick = { onVideoClick(v) }) }
         }
+    }
+}
+
+/** מתג מקור בתוך מסך אוסף — למשל לייקים של FilterTube מול לייקים של יוטיוב. */
+@Composable
+private fun RowScope.SourceTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier.weight(1f)
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) ThemeState.accent else ThemeState.card)
+            .clickable(onClick = onClick)
+            .padding(vertical = 9.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            color = if (selected) Color.White else ThemeState.subtext2,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+        )
     }
 }
 

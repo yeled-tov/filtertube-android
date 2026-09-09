@@ -158,6 +158,14 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_TEST_CHANNEL, false)
         set(value) = prefs.edit().putBoolean(KEY_TEST_CHANNEL, value).apply()
 
+    /**
+     * מספר הבנייה שהמשתמש בחר לדלג עליה. חלון העדכון לא יוצג שוב עבורה,
+     * אבל כן יוצג ברגע שתצא בנייה חדשה יותר.
+     */
+    var skippedUpdateBuild: Int
+        get() = prefs.getInt(KEY_SKIPPED_UPDATE, 0)
+        set(value) = prefs.edit().putInt(KEY_SKIPPED_UPDATE, value).apply()
+
     /** כמה הורדות לרוץ במקביל (1–4). */
     var concurrentDownloads: Int
         get() = prefs.getInt(KEY_DL_CONCURRENT, 3).coerceIn(1, 4)
@@ -523,6 +531,7 @@ class SettingsStore(context: Context) {
         private const val KEY_ADMIN_UNLOCKED_LEGACY = "admin_unlocked"
         private const val KEY_NOTIFY = "new_video_notifications"
         private const val KEY_TEST_CHANNEL = "test_channel_updates"
+        private const val KEY_SKIPPED_UPDATE = "skipped_update_build"
         private const val KEY_DL_CONCURRENT = "dl_concurrent"
         private const val KEY_DL_CONNECTIONS = "dl_connections"
         private const val KEY_DL_AUTO_LIKES = "dl_auto_likes"

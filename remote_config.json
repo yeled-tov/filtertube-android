@@ -1,11 +1,12 @@
 {
-  "_comment": "קונפיג ענן ל-FilterTube. כשיוטיוב משתנה והנגן מפסיק לעבוד — עדכן כאן את גרסאות הלקוח / ה-User-Agent ושמור. כל הטלפונים יתעדכנו בהפעלה הבאה, בלי בנייה חדשה ובלי עדכון אפליקציה.",
+  "_comment": "קונפיג ענן ל-FilterTube. כשיוטיוב משתנה והנגן מפסיק לעבוד — עדכן כאן את גרסאות הלקוח / ה-User-Agent ושמור. כל הטלפונים יתעדכנו בהפעלה הבאה, בלי בנייה חדשה ובלי עדכון אפליקציה. חשוב: הקובץ נקרא מענף main, אז שינוי כאן משפיע רק אחרי מיזוג.",
+  "_ios_note": "גרסה 19.29.1 הוחזרה מיוטיוב עם HTTP 400 — יוטיוב חוסם גרסאות לקוח ישנות. נבדק מול youtubei.googleapis.com: 19.29.1 => 400, 20.50.3 => 200. אם המנוע חוזר להיכשל ב-400, זה הסימן שצריך להעלות כאן את clientVersion.",
   "innertube": {
     "ios": {
-      "clientVersion": "19.29.1",
-      "userAgent": "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X)",
+      "clientVersion": "20.50.3",
+      "userAgent": "com.google.ios.youtube/20.50.3 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X)",
       "deviceModel": "iPhone16,2",
-      "osVersion": "17.5.1.21F90"
+      "osVersion": "18.1"
     },
     "vr": {
       "clientVersion": "1.60.19",

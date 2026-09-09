@@ -102,14 +102,26 @@ fun ChannelsBrowseScreen(onBack: () -> Unit, onOpenChannel: (String, String) -> 
     }
 }
 
-/** טופס בקשת הוספת ערוץ — שם, קישור, קטגוריה ופירוט תוכן. נשלח לאישור המנהל. */
+/**
+ * טופס בקשת הוספת ערוץ — שם, קישור, קטגוריה ופירוט תוכן. נשלח לאישור המנהל.
+ *
+ * [prefillName] ו-[prefillUrl] ממלאים מראש את זהות הערוץ. זה מה שקורה כשמגיעים
+ * לכאן מקישור יוטיוב שנחסם: הערוץ כבר ידוע מהסרטון עצמו, ואין שום סיבה לבקש
+ * מהמשתמש להקליד את שמו מחדש או לחפש את הקישור. נשאר לו רק להסביר מה הערוץ
+ * מכיל ולבחור קטגוריה.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ChannelRequestDialog(onDismiss: () -> Unit) {
+fun ChannelRequestDialog(
+    onDismiss: () -> Unit,
+    prefillName: String = "",
+    prefillUrl: String = "",
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var name by remember { mutableStateOf("") }
-    var url by remember { mutableStateOf("") }
+    val prefilled = prefillName.isNotBlank() && prefillUrl.isNotBlank()
+    var name by remember { mutableStateOf(prefillName) }
+    var url by remember { mutableStateOf(prefillUrl) }
     var category by remember { mutableStateOf("music") }
     var gender by remember { mutableStateOf("all") }
     var desc by remember { mutableStateOf("") }
@@ -117,7 +129,8 @@ private fun ChannelRequestDialog(onDismiss: () -> Unit) {
     var sent by remember { mutableStateOf(false) }
     var resolving by remember { mutableStateOf(false) }
     var resolved by remember { mutableStateOf<ChannelAdmin.Resolved?>(null) }
-    var manualUrl by remember { mutableStateOf(false) }
+    // כשהערוץ הגיע מקישור, הקישור כבר נכון — אין מה לאתר ואין מה לדרוס.
+    var manualUrl by remember { mutableStateOf(prefilled) }
     var notFound by remember { mutableStateOf(false) }
 
     /**
@@ -131,7 +144,7 @@ private fun ChannelRequestDialog(onDismiss: () -> Unit) {
      * 3. **"מאתר ערוץ…" שנתקע לנצח.** finally מאפס תמיד את מצב הטעינה.
      */
     LaunchedEffect(name, manualUrl) {
-        if (manualUrl) return@LaunchedEffect
+        if (prefilled || manualUrl) return@LaunchedEffect
         val query = name.trim()
         if (query.length < 3) {
             resolved = null; notFound = false; resolving = false; url = ""
@@ -231,6 +244,24 @@ private fun ChannelRequestDialog(onDismiss: () -> Unit) {
                                 label = { Text("קישור לערוץ ביוטיוב") }, singleLine = true,
                                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
                                 colors = colors,
+                            )
+                        }
+
+                        // הגענו מקישור יוטיוב: הערוץ כבר מזוהה ודאית מהסרטון
+                        // עצמו, אז מציגים אותו כעובדה במקום שדה קישור ריק.
+                        prefilled -> Row(
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                                .background(ThemeState.card).padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Default.AddCircleOutline, null,
+                                tint = ThemeState.accent, modifier = Modifier.size(22.dp),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                "מהקישור שפתחת", color = ThemeState.subtext, fontSize = 12.sp,
+                                modifier = Modifier.weight(1f),
                             )
                         }
 

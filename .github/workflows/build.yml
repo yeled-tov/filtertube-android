@@ -1,9 +1,21 @@
 name: Build APK
 
+# workflow אחד לכל הבניות — יציבות וגם טסט.
+#
+# למה אחד ולא שניים: `github.run_number` הוא מונה נפרד לכל workflow. כשהיו שני
+# קבצים נפרדים, בניית טסט קיבלה versionCode 6 בזמן שהגרסה היציבה הייתה 140 —
+# ולכן האפליקציה בערוץ הבדיקות הציעה "עדכון" לגרסה יציבה שהקוד שלה ישן יותר,
+# שוב ושוב. עכשיו יש מונה אחד משותף: מי שנבנה מאוחר יותר תמיד מקבל מספר גבוה
+# יותר, וזה תמיד גם הקוד החדש יותר.
+#
+#   דחיפה ל-main      → Release יציב  build-N   (כל הלקוחות)
+#   דחיפה ל-test/**   → Pre-release   test-N    (רק ערוץ בדיקות)
+
 on:
   push:
     branches:
       - main
+      - 'test/**'
       - 'codex/**'
       - 'jules/**'
       - 'feature/**'
@@ -14,7 +26,6 @@ on:
       - '**/*.md'
   workflow_dispatch:
 
-# Build and dependency steps never receive repository write access.
 permissions:
   contents: read
 
@@ -50,10 +61,10 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
         with:
-          gradle-version: '8.10.2'
+          gradle-version: '8.13'
 
       - name: Generate Gradle Wrapper
-        run: gradle wrapper --gradle-version 8.10.2 --distribution-type bin
+        run: gradle wrapper --gradle-version 8.13 --distribution-type bin
 
       - name: Accept Android SDK licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
@@ -64,6 +75,21 @@ jobs:
           ./gradlew testReleaseUnitTest lintRelease assembleRelease \
             --no-daemon --stacktrace \
             -PbuildNumber=${{ github.run_number }} 2>&1 | tee build-output.txt
+
+      # מדפיס את השגיאות עצמן בסוף ה-log של ה-job.
+      #
+      # בלי זה, סוף ה-log הוא stack trace של Gradle ואחריו שלבי ההעלאה, וכדי
+      # להגיע לשורה שבאמת מסבירה מה נשבר צריך לגלול מאות שורות אחורה או להוריד
+      # את ה-artifact. השורות הרלוונטיות תמיד נראות אותו דבר: "e:" של קוטלין,
+      # "error:", או בלוק ה-FAILURE/What went wrong של Gradle.
+      - name: Show build errors
+        if: failure()
+        run: |
+          echo "──────── שגיאות מתוך build-output.txt ────────"
+          grep -nE '^e: |error: |^\s+> |What went wrong|FAILURE:|Execution failed|requires|Caused by:' \
+            build-output.txt | tail -n 120 || true
+          echo "──────── 80 השורות האחרונות ────────"
+          tail -n 80 build-output.txt || true
 
       - name: Upload build log on failure
         if: failure()
@@ -86,41 +112,88 @@ jobs:
       - name: Rename APK
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/release/app-release.apk artifacts/FilterTube.apk
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            cp app/build/outputs/apk/release/app-release.apk artifacts/FilterTube.apk
+          else
+            cp app/build/outputs/apk/release/app-release.apk artifacts/FilterTube-test.apk
+          fi
 
       - name: Upload Android APK artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: FilterTube-APK
-          path: artifacts/FilterTube.apk
+          path: artifacts/*.apk
           retention-days: 30
 
-  # Only the main-only release job receives contents:write.
+  # ── Release יציב — רק מ-main, מגיע לכל הלקוחות ────────────────────────────
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # נדרש כדי להוריד את ה-APK מה-job הקודם: כשמצהירים permissions ברמת
+      # job, ההצהרה *מחליפה* את כל הסט — ובלי actions:read הקריאה
+      # ListArtifacts מוחזרת 403 ו-download-artifact נכשל.
+      actions: read
     steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0   # דרוש להיסטוריה ולתגים, כדי לבנות רשימת שינויים
+
       - name: Download APK artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: FilterTube-APK
           path: artifacts
 
+      - name: Build Hebrew release notes
+        run: bash .github/release-notes.sh stable "${{ github.run_number }}" "${{ github.ref_name }}"
+
       - name: Create Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           tag_name: build-${{ github.run_number }}
           target_commitish: ${{ github.sha }}
-          name: Build ${{ github.run_number }}
-          body: |
-            APK build אוטומטי מקומיט ${{ github.sha }}.
-
-            **הורד את `FilterTube.apk` למטה והעבר לטלפון.**
-
-            לפרטים על ההתקנה ראה README.md.
+          name: ${{ env.RELEASE_TITLE }}
+          body_path: release-notes.md
           files: artifacts/FilterTube.apk
           fail_on_unmatched_files: true
-          generate_release_notes: true
+
+  # ── Pre-release לבדיקות — רק מענפי test/**, לא מגיע ללקוחות ───────────────
+  prerelease:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/test/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # נדרש כדי להוריד את ה-APK מה-job הקודם: כשמצהירים permissions ברמת
+      # job, ההצהרה *מחליפה* את כל הסט — ובלי actions:read הקריאה
+      # ListArtifacts מוחזרת 403 ו-download-artifact נכשל.
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: FilterTube-APK
+          path: artifacts
+
+      - name: Build Hebrew release notes
+        run: bash .github/release-notes.sh test "${{ github.run_number }}" "${{ github.ref_name }}"
+
+      - name: Create pre-release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        with:
+          tag_name: test-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ env.RELEASE_TITLE }}
+          prerelease: true
+          body_path: release-notes.md
+          files: artifacts/FilterTube-test.apk
+          fail_on_unmatched_files: true

@@ -42,8 +42,16 @@ class InnerTubeResolver(
         private const val DEF_VR_VER = "1.60.19"
         private const val DEF_VR_UA = "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip"
 
-        @Volatile
-        var visitorData: String? = null
+        /**
+         * visitorData לכל סוג לקוח בנפרד.
+         *
+         * קודם לכן זה היה שדה סטטי אחד משותף ל-IOS ול-ANDROID_VR. מכיוון
+         * שהמנועים רצים במקביל, אסימון שנוצר עבור לקוח אחד נשלח בבקשה של
+         * הלקוח השני — ויוטיוב דוחה visitorData שלא תואם לזהות הלקוח
+         * ב-HTTP 400. זו הסיבה שמנוע IOS נכשל ב-400 באופן עקבי על המכשיר,
+         * בעוד שאותה בקשה בדיוק בלי האסימון מוחזרת תקינה.
+         */
+        private val visitorDataByClient = java.util.concurrent.ConcurrentHashMap<String, String>()
 
         @Volatile
         var poToken: String? = null
@@ -109,7 +117,7 @@ class InnerTubeResolver(
                 }
             }
         }
-        visitorData?.takeIf { it.isNotBlank() }?.let { client.put("visitorData", it) }
+        visitorDataByClient[clientKey]?.takeIf { it.isNotBlank() }?.let { client.put("visitorData", it) }
         return client to ua
     }
 
@@ -132,11 +140,13 @@ class InnerTubeResolver(
             put("videoId", videoId)
             put("contentCheckOk", true)
             put("racyCheckOk", true)
-            val contextObj = JSONObject().put("client", clientObj)
+            put("context", JSONObject().put("client", clientObj))
+            // המיקום הנכון הוא serviceIntegrityDimensions ברמה העליונה.
+            // כשדה לא מוכר בתוך context.user, הוא גורם ל-HTTP 400 בגלל
+            // הכותרת X-Goog-Api-Format-Version: 2.
             poToken?.takeIf { it.isNotBlank() }?.let { token ->
-                contextObj.put("user", JSONObject().put("poToken", token))
+                put("serviceIntegrityDimensions", JSONObject().put("poToken", token))
             }
-            put("context", contextObj)
         }
 
         val endpointUrl = if (cname == "IOS")
@@ -171,7 +181,7 @@ class InnerTubeResolver(
         }
 
         json.optJSONObject("responseContext")?.optString("visitorData")?.takeIf { it.isNotBlank() }?.let {
-            visitorData = it
+            visitorDataByClient[clientKey] = it
         }
 
         val playability = json.optJSONObject("playabilityStatus")

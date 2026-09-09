@@ -37,11 +37,20 @@ class PlaybackService : MediaSessionService() {
             .setMediaSourceFactory(FilterTubeMediaSourceFactory(this))
             .setLoadControl(
                 DefaultLoadControl.Builder()
+                    // bufferForPlaybackMs הוא כמה מדיה חייבת להיות בבאפר לפני
+                    // שהצליל יוצא בכלל. 1,500ms פירושו שנייה וחצי של שקט אחרי
+                    // שהזרם כבר נפתר והורד — זמן שנוסף ישירות למה שהמשתמש חווה
+                    // כ"לחצתי והוא חושב". 500ms מספיק כדי להתחיל בבטחה, וה-30
+                    // שניות של minBufferMs ממילא ממשיכות להתמלא תוך כדי ניגון.
+                    //
+                    // maxBufferMs ירד מ-120 שניות ל-60: שתי דקות של קריאה מראש
+                    // מתחרות על אותה רשת עם החימום מראש ועם העשרת המטא-דאטה,
+                    // ודקה אחת כבר מכסה כל הפרעת רשת סבירה.
                     .setBufferDurationsMs(
                         /* minBufferMs = */ 30_000,
-                        /* maxBufferMs = */ 120_000,
-                        /* bufferForPlaybackMs = */ 1_500,
-                        /* bufferForPlaybackAfterRebufferMs = */ 5_000,
+                        /* maxBufferMs = */ 60_000,
+                        /* bufferForPlaybackMs = */ 500,
+                        /* bufferForPlaybackAfterRebufferMs = */ 2_000,
                     )
                     .build(),
             )

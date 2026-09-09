@@ -5,6 +5,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -16,9 +19,9 @@ import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.xmlpull.v1.XmlPullParser
 import java.io.StringReader
-import java.text.SimpleDateFormat
-import java.util.Locale
-import java.util.TimeZone
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import java.util.concurrent.TimeUnit
 
 object YouTubeRepository {
@@ -28,26 +31,76 @@ object YouTubeRepository {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    private val iso8601Date = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply {
-        timeZone = TimeZone.getTimeZone("UTC")
+    /**
+     * תאריך ההעלאה מתוך ה-RSS, למשל "2026-09-08T14:23:11+00:00".
+     *
+     * כאן היה SimpleDateFormat יחיד ומשותף. SimpleDateFormat אינו
+     * thread-safe, ו-parseChannelXml רץ משמונה קורוטינות IO במקביל — כלומר
+     * שמונה קריאות parse בו-זמנית על אותו אובייקט. התוצאה היא תאריך שגוי או
+     * חריגה, והחריגה נבלעה ב-catch והפכה ל-publishedAt = 0. משם זה זולג
+     * לכל מקום: הפיד ממוין לפי publishedAt, אז סרטונים קפצו למטה, ובממשק
+     * הופיע "תאריך לא זמין" באקראי על שורות שיש להן תאריך מצוין.
+     *
+     * java.time אימיוטבילי ובטוח לשימוש מקבילי (java.time זמין ב-minSdk 24
+     * דרך coreLibraryDesugaring, וכבר בשימוש ב-VideoMetadata).
+     */
+    private fun parsePublished(raw: String): Long {
+        val text = raw.trim()
+        if (text.isEmpty()) return 0L
+        val withOffset = runCatching { OffsetDateTime.parse(text).toInstant().toEpochMilli() }
+        if (withOffset.isSuccess) return withOffset.getOrThrow()
+        // גיבוי לפורמט בלי אזור זמן — מפורש כ-UTC, כמו קודם.
+        return runCatching {
+            LocalDateTime.parse(text.substringBefore('+').substringBefore('Z'))
+                .toInstant(ZoneOffset.UTC)
+                .toEpochMilli()
+        }.getOrDefault(0L)
     }
 
     // ───────────────────────────────────────────────────────────────────────
     // FEED — RSS feeds (מהיר, ציבורי, ללא API key)
     // ───────────────────────────────────────────────────────────────────────
+    /**
+     * כמה בקשות RSS במקביל.
+     *
+     * קודם לכן כל 166 הערוצים נשלחו בבת אחת. הקריאות סינכרוניות
+     * (`execute()`), ולכן מגבלות ה-Dispatcher של OkHttp לא חלות עליהן והן
+     * באמת רצות יחד — עשרות חיבורים בו-זמנית לאותו מארח. תחת עומס יוטיוב
+     * חונק חלק מהן, הן נכשלות בשקט ומוחזרת רשימה ריקה לכל ערוץ שנפל.
+     *
+     * כך קרה ש"HOME: 30 סרטונים מה-RSS" הופיע במקום ~2,300: רוב הערוצים
+     * נכשלו. וזו גם הסיבה שהחיפוש נהיה איטי — האינדקס המקומי התרוקן,
+     * ולכן כל חיפוש נאלץ ליפול ל-NewPipe במקום לענות מיד.
+     */
+    private const val FEED_CONCURRENCY = 8
+
+    /** מעל זה אין טעם להמשיך לשאוב עמודי חיפוש — המסך ממילא לא מציג יותר. */
+    private const val ENOUGH_RESULTS = 40
+
     suspend fun fetchAllChannelsFeed(channels: List<Channel>): List<Video> = coroutineScope {
-        val allLists = channels
-            .filter { it.youtubeChannelId.startsWith("UC") }
-            .map { channel ->
-                async(Dispatchers.IO) {
+        val targets = channels.filter { it.youtubeChannelId.startsWith("UC") }
+        if (targets.isEmpty()) return@coroutineScope emptyList()
+
+        val gate = Semaphore(FEED_CONCURRENCY)
+        val allLists = targets.map { channel ->
+            async(Dispatchers.IO) {
+                gate.withPermit {
                     try { fetchChannelFeed(channel) } catch (e: Exception) {
                         android.util.Log.w("YouTubeRepository", "Feed failed for ${channel.name}: ${e.message}")
                         emptyList()
                     }
                 }
             }
-            .awaitAll()
-        allLists.flatten().filterNot { it.isShort }.sortedByDescending { it.publishedAt }
+        }.awaitAll()
+
+        val videos = allLists.flatten().filterNot { it.isShort }.sortedByDescending { it.publishedAt }
+        val answered = allLists.count { it.isNotEmpty() }
+        // נרשם ליומן האבחון ולא רק ל-Logcat: כשערוצים נופלים בשקט זה נראה
+        // כמו "הפיד קטן משום מה" בלי שום רמז למה.
+        if (answered < targets.size) {
+            Diagnostics.log("FEED: $answered מתוך ${targets.size} ערוצים החזירו סרטונים")
+        }
+        videos
     }
 
     /** סרטוני ערוץ בודד לפי מזהה — להצגת תוכן של מנוי שנבחר. */
@@ -86,8 +139,7 @@ object YouTubeRepository {
                     "yt:videoId" -> if (inEntry) vId = parser.nextText()
                     "title" -> if (inEntry && vTitle == null) vTitle = parser.nextText()
                     "published" -> if (inEntry) try {
-                        val cleaned = parser.nextText().substringBefore("+").substringBefore("Z").trim()
-                        vPublished = iso8601Date.parse(cleaned)?.time ?: 0L
+                        vPublished = parsePublished(parser.nextText())
                     } catch (_: Exception) {}
                     "media:thumbnail" -> if (inEntry) vThumb = parser.getAttributeValue(null, "url")
                 }
@@ -142,13 +194,24 @@ object YouTubeRepository {
         ingest(info.relatedItems)
         onPartial(collected.values.toList())
 
+        // עמוד נוסף הוא בערך שנייה וחצי, ותמיד נשאבו חמישה — תשע שניות של
+        // חיפוש גם כשהעמוד השני כבר לא הוסיף כלום. החיפוש כאן גלובלי ומסונן
+        // לרשימה הלבנה, ולכן ההתפלגות ידועה: מה שרלוונטי מגיע בעמודים
+        // הראשונים, והשאר הוא ערוצים שנזרקים ממילא. עוצרים כשיש מספיק, או
+        // כששני עמודים ברצף לא הוסיפו שום תוצאה מותרת.
         var nextPage = info.nextPage
         var pagesFetched = 0
-        while (nextPage != null && pagesFetched < 5) {
+        var emptyPages = 0
+        while (nextPage != null && pagesFetched < 5 && collected.size < ENOUGH_RESULTS && emptyPages < 2) {
+            // יציאה מהמסך מבטלת את הקורוטינה, אבל getMoreItems חוסם — בלי
+            // הבדיקה הזו החיפוש היה ממשיך לשאוב עמודים למסך שכבר נסגר.
+            ensureActive()
             try {
+                val before = collected.size
                 val more = SearchInfo.getMoreItems(ServiceList.YouTube, qh, nextPage)
                 ingest(more.items)
                 onPartial(collected.values.toList())
+                emptyPages = if (collected.size > before) 0 else emptyPages + 1
                 nextPage = more.nextPage
                 pagesFetched++
             } catch (e: Exception) {
@@ -156,6 +219,7 @@ object YouTubeRepository {
                 break
             }
         }
+        Diagnostics.log("SEARCH: NewPipe — ${collected.size} תוצאות מותרות אחרי ${pagesFetched + 1} עמודים")
 
         collected.values.toList()
     }
@@ -166,11 +230,19 @@ object YouTubeRepository {
     suspend fun fetchShorts(channels: List<Channel>): List<Video> = coroutineScope {
         val sample = channels.filter { it.youtubeChannelId.startsWith("UC") }.shuffled().take(12)
 
+        // אותה מגבלה כמו בפיד, ומאותה סיבה: כל ערוץ כאן הוא שני חילוצי NewPipe
+        // (דף הערוץ ואז לשונית ה-Shorts), כלומר 12 ערוצים בלי שער היו 24 בקשות
+        // בו-זמנית לאותו מארח — בדיוק העומס שהחניק את הפיד וגרם לערוצים ליפול
+        // בשקט. awaitIdle משאיר את הרשת לנגן כשסרטון מתחיל בדיוק עכשיו.
+        val gate = Semaphore(FEED_CONCURRENCY)
         val lists = sample.map { channel ->
             async(Dispatchers.IO) {
-                try { fetchChannelShorts(channel) } catch (e: Exception) {
-                    android.util.Log.w("YouTubeRepository", "Shorts failed for ${channel.name}: ${e.message}")
-                    emptyList()
+                gate.withPermit {
+                    PlaybackPriority.awaitIdle()
+                    try { fetchChannelShorts(channel) } catch (e: Exception) {
+                        android.util.Log.w("YouTubeRepository", "Shorts failed for ${channel.name}: ${e.message}")
+                        emptyList()
+                    }
                 }
             }
         }.awaitAll()

@@ -31,6 +31,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.navigation.compose.NavHost
@@ -40,6 +41,7 @@ import androidx.navigation.compose.rememberNavController
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeUrlParser
+import com.filtertube.app.data.forLevel
 import com.filtertube.app.ui.*
 import kotlinx.coroutines.launch
 
@@ -135,6 +137,19 @@ class MainActivity : ComponentActivity() {
 /** מזהה סרטון שהגיע מקישור יוטיוב חיצוני — נצרך פעם אחת ב-AppRoot. */
 object DeepLink {
     var pendingVideoId by mutableStateOf<String?>(null)
+
+    /** ערוץ שסרטון שלו נפתח מקישור אבל אינו ברשימה המאושרת. */
+    data class Blocked(val channelId: String, val channelName: String, val videoTitle: String) {
+        /** ריק כשאין מזהה ערוץ — אז טופס הבקשה נפתח למילוי ידני במקום מולא מראש. */
+        val channelUrl: String
+            get() = if (channelId.isBlank()) "" else "https://www.youtube.com/channel/$channelId"
+    }
+
+    /** null = אין חסימה פתוחה. אחרת — מוצג חלון שמסביר ומציע לבקש את הערוץ. */
+    var blocked by mutableStateOf<Blocked?>(null)
+
+    /** true בזמן שבודקים אם הערוץ של הקישור מאושר. */
+    var checking by mutableStateOf(false)
 }
 
 /** מצב חלון צף (Picture-in-Picture). canPip נקבע ע"י מסך הנגן כשמוצג וידאו. */
@@ -237,10 +252,15 @@ fun AppRoot() {
         }
     }
     LaunchedEffect(Unit) {
+        // רושמים את הגרסה ביומן כדי שכל דוח אבחון יגיד באיזו בנייה הוא נוצר.
+        com.filtertube.app.data.Diagnostics.log(
+            "גרסה ${BuildConfig.VERSION_NAME} (בנייה ${BuildConfig.VERSION_CODE})"
+        )
         try {
             // לקוחות מקבלים רק גרסאות יציבות; גרסאות טסט רק אם הופעל ערוץ בדיקות.
             val u = com.filtertube.app.data.UpdateChecker.check(includeTestBuilds = settings.testChannel)
-            if (u != null && u.isNewer) pendingUpdate = u
+            // מציגים רק אם באמת חדשה יותר *וגם* המשתמש לא ביקש לדלג עליה.
+            if (u != null && u.isNewer && u.build > settings.skippedUpdateBuild) pendingUpdate = u
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -292,11 +312,122 @@ fun AppRoot() {
         }
     }
 
-    // קישור יוטיוב שנפתח דרך האפליקציה — מפעיל את הסרטון בנגן שלנו מיד
-    LaunchedEffect(DeepLink.pendingVideoId) {
+    // קישור יוטיוב שנפתח דרך האפליקציה — מפעיל את הסרטון בנגן שלנו.
+    //
+    // המפתח כולל את controller בכוונה: rememberMediaController מתחבר
+    // אסינכרונית, ובפתיחה קרה מקישור ה-Effect רץ כשהוא עדיין null. אז
+    // Playback.start היה יוצא בשקט (`controller ?: return`), המסך נשאר על
+    // "טוען..." לנצח, והמזהה כבר נמחק — כלומר גם לא היה ניסיון חוזר.
+    // עכשיו לא מוחקים את המזהה עד שיש בקר, וההתחברות שלו מפעילה את ה-Effect מחדש.
+    LaunchedEffect(DeepLink.pendingVideoId, controller) {
         val id = DeepLink.pendingVideoId ?: return@LaunchedEffect
+        if (controller == null) {
+            com.filtertube.app.data.Diagnostics.log("DEEPLINK: $id ממתין לחיבור הנגן")
+            return@LaunchedEffect
+        }
         DeepLink.pendingVideoId = null
-        openVideo(Video(id, "טוען...", "טוען...", "", "https://i.ytimg.com/vi/$id/hqdefault.jpg", System.currentTimeMillis()))
+
+        // הסינון חייב לחול גם כאן. קודם לכן קישור חיצוני ניגן כל סרטון
+        // ביוטיוב — כולל ערוצים שלא אושרו — כלומר חור שעוקף את כל מטרת
+        // האפליקציה. הזרם נפתר קודם דווקא כי הוא מה שמגלה את זהות הערוץ,
+        // והוא ממילא דרוש לניגון: אם הערוץ מאושר, הוא כבר במטמון והניגון מיידי.
+        DeepLink.checking = true
+        val data = try {
+            com.filtertube.app.data.StreamRepository.getStream(id)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            DeepLink.checking = false
+            throw e
+        } catch (e: Exception) {
+            DeepLink.checking = false
+            com.filtertube.app.data.Diagnostics.log("DEEPLINK: $id לא נפתר — ${e.message}")
+            android.widget.Toast.makeText(
+                context, "לא הצלחנו לפתוח את הסרטון הזה", android.widget.Toast.LENGTH_LONG,
+            ).show()
+            return@LaunchedEffect
+        }
+        DeepLink.checking = false
+
+        val approved = com.filtertube.app.data.ChannelsRepository.getChannels(context)
+            .forLevel(settings.filterLevel, settings.userGender)
+        if (approved.none { it.youtubeChannelId == data.channelId }) {
+            com.filtertube.app.data.Diagnostics.log(
+                "DEEPLINK: $id נחסם — הערוץ ${data.channelId} (${data.uploaderName}) לא מאושר",
+            )
+            DeepLink.blocked = DeepLink.Blocked(
+                channelId = data.channelId,
+                // חלק מהמנועים לא תמיד מחזירים שם ערוץ. עדיף להציג את המזהה
+                // מאשר מרכאות ריקות, וגם הטופס צריך משהו למלא בו.
+                channelName = data.uploaderName.ifBlank { data.channelId },
+                videoTitle = data.title,
+            )
+            return@LaunchedEffect
+        }
+
+        com.filtertube.app.data.Diagnostics.log("DEEPLINK: פותח $id")
+        openVideo(
+            Video(
+                id = id,
+                title = data.title,
+                channelName = data.uploaderName,
+                channelId = data.channelId,
+                thumbnailUrl = data.thumbnailUrl ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+                publishedAt = System.currentTimeMillis(),
+                durationSec = data.durationSec,
+                viewCount = data.viewCount,
+            ),
+        )
+    }
+
+    // ── קישור לערוץ שאינו מאושר ────────────────────────────────────────────
+    if (DeepLink.checking) {
+        AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            containerColor = ThemeState.surface,
+            title = { Text("בודק את הקישור…", color = ThemeState.text) },
+            text = {
+                Text(
+                    "מוודאים שהערוץ נמצא ברשימת הערוצים המאושרים.",
+                    color = ThemeState.subtext2, fontSize = 13.sp,
+                )
+            },
+        )
+    }
+
+    DeepLink.blocked?.let { blocked ->
+        var requesting by remember(blocked) { mutableStateOf(false) }
+        if (requesting) {
+            com.filtertube.app.ui.ChannelRequestDialog(
+                onDismiss = { requesting = false; DeepLink.blocked = null },
+                prefillName = blocked.channelName,
+                prefillUrl = blocked.channelUrl,
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { DeepLink.blocked = null },
+                containerColor = ThemeState.surface,
+                title = { Text("הערוץ אינו מאושר", color = ThemeState.text) },
+                text = {
+                    Text(
+                        "הערוץ \"${blocked.channelName}\" לא נמצא ברשימת הערוצים המאושרים, " +
+                            "ולכן הסרטון לא מנוגן.\n\n" +
+                            "אם לדעתך הערוץ מתאים — אפשר לבקש להוסיף אותו. הפרטים כבר ימולאו " +
+                            "מהקישור שפתחת; נשאר רק להסביר מה הערוץ מכיל.",
+                        color = ThemeState.subtext2, fontSize = 13.5.sp, lineHeight = 19.sp,
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { requesting = true }) {
+                        Text("בקש להוסיף ערוץ", color = ThemeState.accent, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { DeepLink.blocked = null }) {
+                        Text("סגור", color = ThemeState.subtext2)
+                    }
+                },
+            )
+        }
     }
 
     // לחיצה על התראת "סרטונים חדשים" — פותחת את מסך התיבה
@@ -304,11 +435,15 @@ fun AppRoot() {
         if (InboxNav.pending) { InboxNav.pending = false; navController.navigate("newvideos") }
     }
 
+    // "הגדרות" הוא טאב קבוע ולא פריט בתפריט צף שמסתתר מאחורי אייקון של דמות.
+    // קודם לכן הדרך היחידה להגיע להגדרות הייתה שלוש הקשות — אווטאר, תפריט,
+    // הגדרות — ורק ממסך הבית.
     val navItems = buildList {
         add(GlassNavItem("home", "בית", Icons.Default.Home))
         add(GlassNavItem("search", "חיפוש", Icons.Default.Search))
         if (shortsEnabled) add(GlassNavItem("shorts", "Shorts", Icons.Default.PlayArrow))
         add(GlassNavItem("library", "ספריה", Icons.Default.LibraryMusic))
+        add(GlassNavItem("settings", "הגדרות", Icons.Default.Settings))
     }
 
     fun navigateTab(route: String) {
@@ -331,7 +466,6 @@ fun AppRoot() {
                 HomeScreen(
                     onVideoClick = ::openVideo,
                     onSearch = { navController.navigate("search") },
-                    onSettings = { navController.navigate("settings") },
                     onAccount = { navController.navigate("ytlogin") },
                     onInbox = { navController.navigate("newvideos") },
                     onChannels = { navController.navigate("channels") },
@@ -452,12 +586,33 @@ fun AppRoot() {
     pendingUpdate?.let { u ->
         AlertDialog(
             onDismissRequest = { pendingUpdate = null },
-            title = { Text("עדכון זמין: ${u.name}") },
+            title = { Text("עדכון זמין — ${u.displayName}") },
             text = {
-                Column(modifier = Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
-                    Text("מה השתנה:", color = ThemeState.accent, fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                    Spacer(Modifier.height(4.dp))
-                    Text(u.changelog.ifEmpty { "—" }, color = Color(0xFFAAAAAA), fontSize = 12.sp)
+                Column(modifier = Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                    Text(
+                        "מה השתנה",
+                        color = ThemeState.accent,
+                        fontSize = 13.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    if (u.changes.isEmpty()) {
+                        Text("שיפורים ותיקונים כלליים", color = Color(0xFFAAAAAA), fontSize = 13.sp)
+                    } else {
+                        u.changes.forEach { change ->
+                            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                                Text("•", color = ThemeState.accent, fontSize = 13.sp)
+                                Spacer(Modifier.height(0.dp))
+                                Text(
+                                    change,
+                                    color = Color(0xFFDDDDDD),
+                                    fontSize = 13.sp,
+                                    lineHeight = 18.sp,
+                                    modifier = Modifier.padding(start = 8.dp),
+                                )
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -470,7 +625,15 @@ fun AppRoot() {
                     TextButton(onClick = { pendingUpdate = null }) { Text("סגור") }
                 }
             },
-            dismissButton = { TextButton(onClick = { pendingUpdate = null }) { Text("אחר כך") } },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        settings.skippedUpdateBuild = u.build
+                        pendingUpdate = null
+                    }) { Text("דלג על גרסה זו") }
+                    TextButton(onClick = { pendingUpdate = null }) { Text("אחר כך") }
+                }
+            },
             containerColor = Color(0xFF1F1F1F),
             titleContentColor = Color.White,
             textContentColor = Color.White,

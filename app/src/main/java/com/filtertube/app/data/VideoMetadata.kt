@@ -46,8 +46,12 @@ object VideoMetadata {
     private const val CACHE_CAP = 4000
     private const val VIEWS_TTL_MS = 12 * 60 * 60 * 1000L // מספר הצפיות מתיישן אחרי 12 שעות
 
-    /** כמה ערוצים לחלץ בקריאה אחת. כל ערוץ מעשיר עשרות סרטונים, אז זה מתכנס מהר. */
-    private const val MAX_CHANNELS_PER_CALL = 12
+    /**
+     * כמה ערוצים לחלץ בקריאה אחת. כל ערוץ מעשיר עשרות סרטונים, אז זה מתכנס
+     * מהר — אבל 12 היה נמוך מדי: ראש הפיד לבדו מגיע מכ-40 ערוצים שונים, ולכן
+     * משך וצפיות הופיעו רק בחלק מהשורות ורק אחרי כמה רענונים.
+     */
+    private const val MAX_CHANNELS_PER_CALL = 24
 
     /**
      * מסך "שידורים חיים" בודק יותר ערוצים: שידור חי הוא אירוע נדיר, וכיסוי של
@@ -57,7 +61,7 @@ object VideoMetadata {
     private const val LIVE_MAX_CHANNELS = 40
 
     /** חילוצים מקבילים. גבוה מדי חונק את מאגר ה-IO (ראה הקריסה ב-ChannelAdmin). */
-    private const val CONCURRENCY = 4
+    private const val CONCURRENCY = 6
 
     @Serializable
     data class Meta(
@@ -190,6 +194,7 @@ object VideoMetadata {
         val results = channelIds.map { channelId ->
             async(Dispatchers.IO) {
                 gate.withPermit {
+                    PlaybackPriority.awaitIdle()   // הנגן קודם
                     runCatching { extractChannel(channelId) }
                         .onFailure { Diagnostics.log("META: חילוץ ערוץ $channelId נכשל — ${it.message}") }
                         .getOrDefault(emptyMap())

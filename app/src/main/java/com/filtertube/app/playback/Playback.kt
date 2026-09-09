@@ -11,7 +11,10 @@ import com.filtertube.app.data.AccountDataGuard
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
+import com.filtertube.app.data.Diagnostics
+import com.filtertube.app.data.PlaybackPriority
 import com.filtertube.app.data.StreamData
+import com.filtertube.app.data.defaultTrackIndex
 import com.filtertube.app.data.StreamRepository
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.audioOnlyCategories
@@ -19,6 +22,8 @@ import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -88,20 +93,9 @@ object Playback {
         }
     }
 
-    /**
-     * אינדקס איכות ברירת מחדל.
-     */
-    fun defaultQuality(data: StreamData, preferred: Int = 0): Int {
-        if (data.tracks.isEmpty()) return 0
-        val idx = if (preferred > 0) {
-            data.tracks.indexOfFirst { it.height in 1..preferred }.takeIf { it >= 0 } ?: data.tracks.lastIndex
-        } else {
-            data.tracks.indexOfFirst { it.audioUrl == null }.takeIf { it >= 0 }
-                ?: data.tracks.indexOfFirst { it.height in 1..720 }.takeIf { it >= 0 }
-                ?: 0
-        }
-        return idx.coerceIn(0, data.tracks.lastIndex)
-    }
+    /** אינדקס איכות ברירת מחדל. ראה [com.filtertube.app.data.defaultTrackIndex]. */
+    fun defaultQuality(data: StreamData, preferred: Int = 0): Int =
+        data.defaultTrackIndex(preferred)
 
     fun forcedAudio(category: String?, level: Int): Boolean =
         category in audioOnlyCategories || (level == 1 && category == "music")
@@ -138,10 +132,33 @@ object Playback {
      */
     suspend fun start(context: Context, controller: MediaController?, video: Video) {
         val c = controller ?: return
+        // מכריזים על חזית: עבודות הרקע (רדיו, חימום, העשרה) ימתינו כדי לא
+        // לחנוק את ההורדה של הזרם שהמשתמש מחכה לו ממש עכשיו.
+        PlaybackPriority.begin()
+        try {
+            startInternal(context, c, video)
+        } finally {
+            // משחררים רק אחרי שהנגן הספיק למלא באפר, לא ברגע ש-play() חזר.
+            playbackScope.launch {
+                delay(PLAYBACK_GRACE_MS)
+                PlaybackPriority.end()
+            }
+        }
+    }
+
+    /** זמן החסד שבו הרשת שמורה לנגן אחרי הלחיצה. */
+    private const val PLAYBACK_GRACE_MS = 3_000L
+
+    private suspend fun startInternal(context: Context, c: MediaController, video: Video) {
         activeController = c
+        // יציאה שקטה כאן נראית למשתמש בדיוק כמו תקלה: המסך נשאר על "טוען..."
+        // בלי שום הסבר. רושמים ליומן כדי שהמקרה הזה יהיה ניתן לאבחון.
         val firebaseUser = FirebaseAuth.getInstance().currentUser
             ?.takeIf { it.isEmailVerified }
-            ?: return
+            ?: run {
+                Diagnostics.log("PLAYBACK: אין משתמש מאומת — הניגון לא התחיל")
+                return
+            }
         val expectedUid = firebaseUser.uid
         val generation = AccountDataGuard.generation()
         val library = LibraryStore(context)
@@ -162,6 +179,17 @@ object Playback {
         if (!sessionCurrent()) return
         cache(video.id, data)
 
+        com.filtertube.app.data.LibraryBadges.markWatched(video.id)
+        val audio = forcedAudio(catById[data.channelId], level)
+        val firstItem = buildItem(data, video.id, audio, defaultQuality(data, preferred))
+
+        if (!sessionCurrent()) return
+        c.setMediaItem(firstItem)
+        c.prepare()
+        c.play()
+
+        // כתיבת ההיסטוריה מפענחת ומקודדת JSON שלם ומתזמנת גיבוי לענן. אין שום
+        // סיבה שהמשתמש יחכה לזה לפני שהצליל יוצא, אז זה עבר לכאן.
         runCatching {
             library.addToHistory(
                 Video(
@@ -177,14 +205,6 @@ object Playback {
                 ),
             )
         }
-        com.filtertube.app.data.LibraryBadges.markWatched(video.id)
-        val audio = forcedAudio(catById[data.channelId], level)
-        val firstItem = buildItem(data, video.id, audio, defaultQuality(data, preferred))
-
-        if (!sessionCurrent()) return
-        c.setMediaItem(firstItem)
-        c.prepare()
-        c.play()
         addPendingNext(context, c)
 
         // הפעלה מבוזרת ומהירה ברקע של תור הרדיו (ללא שום delay חוסם!)

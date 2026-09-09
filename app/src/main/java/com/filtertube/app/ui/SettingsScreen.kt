@@ -39,6 +39,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.filtertube.app.BuildConfig
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.CloudSync
@@ -149,7 +151,7 @@ fun SettingsScreen(
         )
     }
 
-    if (showFilter) FilterSettingsDialog(
+    if (showFilter) FilterSettingsSheet(
         filterLevel = filterLevel,
         onFilterLevelChange = onFilterLevelChange,
         shortsEnabled = shortsEnabled,
@@ -166,11 +168,11 @@ fun SettingsScreen(
         onDismiss = { showChangePw = false },
     )
 
-    if (showDisplay) DisplayDialog(settings = settings, onDismiss = { showDisplay = false })
+    if (showDisplay) DisplaySheet(settings = settings, onDismiss = { showDisplay = false })
 
-    if (showPlayerAudio) PlayerAudioDialog(settings = settings, onDismiss = { showPlayerAudio = false })
+    if (showPlayerAudio) PlayerAudioSheet(settings = settings, onDismiss = { showPlayerAudio = false })
 
-    if (showUpdate) UpdateDialog(onDismiss = { showUpdate = false })
+    if (showUpdate) UpdateSheet(onDismiss = { showUpdate = false })
 
     if (showNotify) NotificationsDialog(settings = settings, onDismiss = { showNotify = false })
 
@@ -250,6 +252,37 @@ private fun CloudSyncDialog(settings: SettingsStore, onDismiss: () -> Unit) {
         titleContentColor = ThemeState.text,
         textContentColor = ThemeState.text,
     )
+}
+
+/**
+ * מסך הגדרות מלא — לא חלון.
+ *
+ * ארבעת הפאנלים הארוכים (סינון, נגן, תצוגה, עדכונים) היו AlertDialog: קופסה
+ * צרה באמצע המסך שצריך לגלול בתוכה, עם כפתור "סגור" במקום שבו הרגל מצפה
+ * לחץ חזרה. עכשיו הם תופסים את כל המסך, עם סרגל עליון וחץ חזרה — וכפתור
+ * החזרה של המערכת סוגר אותם, בדיוק כמו כל מסך אחר.
+ *
+ * הפאנלים הקצרים (התראות, אודות) והשאלות המודאליות (קוד הורים, שינוי קוד)
+ * נשארו חלונות בכוונה: מתג בודד או שאלת קוד לא צריכים מסך שלם, ומודאל הוא
+ * דווקא הדפוס הנכון לשער שחוסם מעבר.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsSheet(title: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    Dialog(
+        onDismissRequest = onBack,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
+            DetailTopBar(title, onBack)
+            // הגלילה נשארת באחריות התוכן ולא נוספת כאן: כמה מהפאנלים כבר
+            // מגלגלים בעצמם, ושתי גלילות אנכיות מקוננות זורקות ב-Compose.
+            Column(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
+                content = content,
+            )
+        }
+    }
 }
 
 @Composable
@@ -408,7 +441,7 @@ private fun PwField(value: String, onValueChange: (String) -> Unit, label: Strin
 
 // ── הגדרות סינון (אחרי סיסמה) ────────────────────────────────────────────
 @Composable
-private fun FilterSettingsDialog(
+private fun FilterSettingsSheet(
     filterLevel: Int,
     onFilterLevelChange: (Int) -> Unit,
     shortsEnabled: Boolean,
@@ -421,11 +454,8 @@ private fun FilterSettingsDialog(
     var level by remember { mutableStateOf(filterLevel) }
     var shorts by remember { mutableStateOf(shortsEnabled) }
     var gender by remember { mutableStateOf(userGender) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("הגדרות סינון") },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+    SettingsSheet("הגדרות סינון", onDismiss) {
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 LevelRow(1, "מחמיר", "מוזיקה כאודיו בלבד · ״דתי לייט״ מוסתר", level) { level = 1; onFilterLevelChange(1) }
                 LevelRow(2, "רגיל", "הכל כווידאו · ״דתי לייט״ מוסתר", level) { level = 2; onFilterLevelChange(2) }
                 LevelRow(3, "דתי לייט", "כולל ״דתי לייט״ (אודיו בלבד)", level) { level = 3; onFilterLevelChange(3) }
@@ -466,12 +496,8 @@ private fun FilterSettingsDialog(
 
                 HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
                 TextButton(onClick = onChangePassword) { Text("שנה קוד", color = ThemeState.subtext) }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("סגור") } },
-        containerColor = ThemeState.surface,
-        titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
-    )
+        }
+    }
 }
 
 @Composable
@@ -506,15 +532,12 @@ private val qualityOptions = listOf(
 )
 
 @Composable
-private fun DisplayDialog(settings: SettingsStore, onDismiss: () -> Unit) {
+private fun DisplaySheet(settings: SettingsStore, onDismiss: () -> Unit) {
     var high by remember { mutableStateOf(settings.highRefreshRate) }
     val sysDark = androidx.compose.foundation.isSystemInDarkTheme()
     var mode by remember { mutableStateOf(settings.themeMode) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("הגדרות תצוגה") },
-        text = {
-            Column {
+    SettingsSheet("הגדרות תצוגה", onDismiss) {
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 Text("ערכת נושא", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -574,12 +597,8 @@ private fun DisplayDialog(settings: SettingsStore, onDismiss: () -> Unit) {
                         }
                     }
                 }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("סגור") } },
-        containerColor = ThemeState.surface,
-        titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
-    )
+        }
+    }
 }
 
 // ── אודות ────────────────────────────────────────────────────────────────
@@ -595,7 +614,7 @@ private fun AboutDialog(onDismiss: () -> Unit) {
                 Text("פלטפורמת וידאו מסוננת — מציגה אך ורק ערוצים מאושרים. כל התוכן מסונן לפי רמת הסינון שנבחרה.",
                     color = ThemeState.subtext2, fontSize = 13.sp, lineHeight = 18.sp)
                 Spacer(Modifier.height(10.dp))
-                Text("גרסה ${BuildConfig.VERSION_NAME}",
+                Text("גרסה ${BuildConfig.VERSION_NAME} (בנייה ${BuildConfig.VERSION_CODE})",
                     color = ThemeState.subtext, fontSize = 13.sp)
                 Spacer(Modifier.height(8.dp))
                 Text("נוצרה על־ידי FilterPhone", color = ThemeState.text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -626,13 +645,10 @@ private fun ThemeChip(label: String, selected: Boolean, onClick: () -> Unit) {
 
 // ── נגן ושמע ─────────────────────────────────────────────────────────────
 @Composable
-private fun PlayerAudioDialog(settings: SettingsStore, onDismiss: () -> Unit) {
+private fun PlayerAudioSheet(settings: SettingsStore, onDismiss: () -> Unit) {
     var style by remember { mutableStateOf(settings.playerStyle) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("נגן ושמע") },
-        text = {
-            Column {
+    SettingsSheet("נגן ושמע", onDismiss) {
+        Column {
                 Text("עיצוב הנגן", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 StyleRow(1, "מתנגן עכשיו", "וידאו למעלה ובקרים גדולים מתחת", style) { style = 1; settings.playerStyle = 1 }
                 StyleRow(2, "בקרים על הוידאו", "בקרים על הסרטון, ״הבא בתור״ מתחת", style) { style = 2; settings.playerStyle = 2 }
@@ -673,12 +689,8 @@ private fun PlayerAudioDialog(settings: SettingsStore, onDismiss: () -> Unit) {
                         ) { Text(if (seconds == 0) "כבוי" else "$seconds שנ׳", color = Color.White, fontSize = 12.sp) }
                     }
                 }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("סגור") } },
-        containerColor = ThemeState.surface,
-        titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
-    )
+        }
+    }
 }
 
 @Composable
@@ -728,7 +740,7 @@ private fun NotificationsDialog(settings: SettingsStore, onDismiss: () -> Unit) 
 
 // ── עדכונים ──────────────────────────────────────────────────────────────
 @Composable
-private fun UpdateDialog(onDismiss: () -> Unit) {
+private fun UpdateSheet(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val settings = remember { SettingsStore(context) }
     var status by remember { mutableStateOf("בודק עדכונים...") }
@@ -744,22 +756,33 @@ private fun UpdateDialog(onDismiss: () -> Unit) {
             else -> status = "אתה מעודכן (גרסה ${BuildConfig.VERSION_NAME})"
         }
     }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("עדכונים") },
-        text = {
-            Column(modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+    SettingsSheet("עדכונים", onDismiss) {
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 val u = update
                 if (u != null) {
                     if (u.isTestBuild) {
                         Text("גרסת בדיקה", color = ThemeState.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(4.dp))
                     }
-                    Text("יש גרסה חדשה: ${u.name}", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    Text("מה השתנה:", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("יש גרסה חדשה — ${u.displayName}", color = ThemeState.text,
+                        fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
-                    Text(u.changelog.ifEmpty { "—" }, color = ThemeState.subtext2, fontSize = 12.sp, lineHeight = 16.sp)
+                    Text("הגרסה שלך: ${BuildConfig.VERSION_NAME} (בנייה ${BuildConfig.VERSION_CODE})",
+                        color = ThemeState.subtext, fontSize = 11.5.sp)
+                    Spacer(Modifier.height(10.dp))
+                    Text("מה השתנה", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    if (u.changes.isEmpty()) {
+                        Text("שיפורים ותיקונים כלליים", color = ThemeState.subtext2, fontSize = 12.5.sp)
+                    } else {
+                        u.changes.forEach { change ->
+                            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp)) {
+                                Text("•", color = ThemeState.accent, fontSize = 12.5.sp)
+                                Text(change, color = ThemeState.subtext2, fontSize = 12.5.sp,
+                                    lineHeight = 17.sp, modifier = Modifier.padding(start = 8.dp))
+                            }
+                        }
+                    }
                 } else {
                     Text(status, color = ThemeState.text, fontSize = 14.sp)
                 }
@@ -783,19 +806,18 @@ private fun UpdateDialog(onDismiss: () -> Unit) {
                         ),
                     )
                 }
-            }
-        },
-        confirmButton = {
-            val u = update
-            val apk = u?.apkUrl
-            if (apk != null) {
-                TextButton(onClick = { UpdateChecker.downloadApk(context, apk); onDismiss() }) { Text("הורד והתקן") }
-            } else {
-                TextButton(onClick = onDismiss) { Text("סגור") }
-            }
-        },
-        dismissButton = { if (update != null) TextButton(onClick = onDismiss) { Text("אחר כך") } },
-        containerColor = ThemeState.surface,
-        titleContentColor = ThemeState.text, textContentColor = ThemeState.text,
-    )
+
+                // כפתור ההורדה יורד לתוך התוכן: במסך מלא אין שורת כפתורים
+                // תחתונה כמו בחלון, וחץ החזרה הוא כבר ה"סגור".
+                val apk = update?.apkUrl
+                if (apk != null) {
+                    Spacer(Modifier.height(20.dp))
+                    Button(
+                        onClick = { UpdateChecker.downloadApk(context, apk); onDismiss() },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = ThemeState.accent),
+                    ) { Text("הורד והתקן", fontWeight = FontWeight.Bold) }
+                }
+        }
+    }
 }
