@@ -119,14 +119,23 @@ object SearchEngine {
     }
 
     // ── התאמה טקסטואלית ───────────────────────────────────────────────────
-    private fun matchLocally(videos: List<Video>, query: String): List<Video> {
-        val tokens = normalize(query).split(' ').filter { it.length >= 2 }
-        if (tokens.isEmpty()) return emptyList()
-        return videos.filter { video ->
-            val haystack = normalize("${video.title} ${video.channelName}")
-            tokens.all { haystack.contains(it) }
+    /**
+     * רץ על Dispatchers.Default ולא על הקורוטינה של הקורא.
+     *
+     * [search] נקרא מ-rememberCoroutineScope, כלומר מ-Dispatchers.Main. האינדקס
+     * המקומי הוא כ-2,500 סרטונים, וכל אחד מהם עובר נרמול מלא — זה עבודת מעבד
+     * ממשית, ועד עכשיו היא רצה על תהליכון ה-UI וקיפאה את המסך בדיוק ברגע
+     * שהמשתמש לוחץ "חפש".
+     */
+    private suspend fun matchLocally(videos: List<Video>, query: String): List<Video> =
+        withContext(Dispatchers.Default) {
+            val tokens = normalize(query).split(' ').filter { it.length >= 2 }
+            if (tokens.isEmpty()) return@withContext emptyList()
+            videos.filter { video ->
+                val haystack = normalize("${video.title} ${video.channelName}")
+                tokens.all { haystack.contains(it) }
+            }
         }
-    }
 
     private fun nameMatches(channelName: String, query: String): Boolean {
         val name = normalize(channelName)
@@ -135,27 +144,43 @@ object SearchEngine {
         return name == q || name.contains(q) || q.contains(name)
     }
 
+    // ה-Regex-ים מהודרים פעם אחת ולא בכל קריאה. normalize נקרא פעמיים לכל
+    // סרטון באינדקס המקומי — עם ארבעה Regex שנבנים מחדש בכל פעם זה היה
+    // עשרות אלפי הידורי ביטוי רגולרי בכל חיפוש.
+    private val NIQQUD = Regex("[\\u0591-\\u05C7]")
+    private val QUOTES = Regex("[׳'’`\"״“”]")
+    private val NON_ALNUM = Regex("[^\\p{L}\\p{N}]+")
+    private val SPACES = Regex("\\s+")
+
     /**
      * מנרמל טקסט עברי לצורך השוואה: מסיר ניקוד, מאחד גרשיים/אפוסטרופים
      * ומצמצם רווחים. בלי זה "משה'ס" ו"משהס" לא היו נחשבים להתאמה.
      */
     private fun normalize(text: String): String = text
         .lowercase()
-        .replace(Regex("[\\u0591-\\u05C7]"), "")      // ניקוד וטעמים
-        .replace(Regex("[׳'’`\"״“”]"), "")            // גרש/גרשיים בכל הווריאציות
-        .replace(Regex("[^\\p{L}\\p{N}]+"), " ")      // כל השאר → רווח
+        .replace(NIQQUD, "")        // ניקוד וטעמים
+        .replace(QUOTES, "")        // גרש/גרשיים בכל הווריאציות
+        .replace(NON_ALNUM, " ")    // כל השאר → רווח
         .trim()
-        .replace(Regex("\\s+"), " ")
+        .replace(SPACES, " ")
 
-    /** תוצאות מהערוץ שהשם שלו תואם עולות למעלה, ואחריהן הטריות ביותר. */
-    private fun rank(videos: List<Video>, query: String): List<Video> {
-        val q = normalize(query)
-        return videos.sortedWith(
-            compareByDescending<Video> { nameMatches(it.channelName, q) }
-                .thenByDescending { normalize(it.title).contains(q) }
-                .thenByDescending { it.publishedAt },
-        )
-    }
+    /**
+     * תוצאות מהערוץ שהשם שלו תואם עולות למעלה, ואחריהן הטריות ביותר.
+     *
+     * הנרמול נעשה פעם אחת לכל סרטון ולא בתוך ה-Comparator: sortedWith קורא
+     * להשוואה O(n log n) פעמים, כך שאותו כותרת הייתה מנורמלת שוב ושוב.
+     */
+    private suspend fun rank(videos: List<Video>, query: String): List<Video> =
+        withContext(Dispatchers.Default) {
+            val q = normalize(query)
+            videos.map { video ->
+                Triple(video, nameMatches(video.channelName, q), normalize(video.title).contains(q))
+            }.sortedWith(
+                compareByDescending<Triple<Video, Boolean, Boolean>> { it.second }
+                    .thenByDescending { it.third }
+                    .thenByDescending { it.first.publishedAt },
+            ).map { it.first }
+        }
 
     /** רשימת הצעות מקומית להשלמה אוטומטית — שמות ערוצים מאושרים שמתאימים לקלט. */
     suspend fun channelSuggestions(channels: List<Channel>, query: String): List<String> =

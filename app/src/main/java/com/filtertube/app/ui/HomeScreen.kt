@@ -60,7 +60,9 @@ import com.filtertube.app.data.categoryLabelHe
 import com.filtertube.app.data.forLevel
 import com.filtertube.app.data.personalizeFeed
 import com.filtertube.app.data.sortedCategories
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed class HomeState {
     data object Loading : HomeState()
@@ -131,7 +133,12 @@ fun HomeScreen(
                     return@launch
                 }
 
-                val ordered = sanitizeFeed(personalizeFeed(videos, store.localHistory()))
+                // מיון ~2,500 סרטונים + קריאת ההיסטוריה מהדיסק. scope כאן הוא
+                // rememberCoroutineScope, כלומר Dispatchers.Main — בלי המעבר
+                // הזה כל רענון של מסך הבית עושה את העבודה על תהליכון ה-UI.
+                val ordered = withContext(Dispatchers.Default) {
+                    sanitizeFeed(personalizeFeed(videos, store.localHistory()))
+                }
 
                 // הפיד מוצג *מיד*. העשרת המטא-דאטה היא שיפור, לא תנאי:
                 // כשהיא הייתה חוסמת את ההצגה, מסך הבית חיכה לעד 6 קריאות רשת
@@ -181,7 +188,11 @@ fun HomeScreen(
         runCatching { channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel, settings.userGender) }
         val cached = FeedCache.loadFeed(context)
         if (!cached.isNullOrEmpty()) {
-            state = HomeState.Success(sanitizeFeed(personalizeFeed(cached, store.localHistory())))
+            state = HomeState.Success(
+                withContext(Dispatchers.Default) {
+                    sanitizeFeed(personalizeFeed(cached, store.localHistory()))
+                },
+            )
         }
         refresh(showSpinner = cached.isNullOrEmpty())
     }
@@ -231,7 +242,8 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     CategoryChip("הכל", selectedCategory == null) { selectedCategory = null }
-                    sortedCategories(channels.map { it.category }).forEach { cat ->
+                    val categories = remember(channels) { sortedCategories(channels.map { it.category }) }
+                    categories.forEach { cat ->
                         CategoryChip(categoryLabelHe(cat), selectedCategory == cat) { selectedCategory = cat }
                     }
                 }
@@ -244,9 +256,16 @@ fun HomeScreen(
                 is HomeState.Loading -> CenteredLoading("טוען סרטונים...")
                 is HomeState.Error -> CenteredError(s.message) { refresh(showSpinner = true) }
                 is HomeState.Success -> {
-                    val catByChannel = channels.associate { it.youtubeChannelId to it.category }
-                    val displayed = if (selectedCategory == null) s.videos
+                    // remember ולא חישוב ישיר: הבנייה הזו רצה בכל רה-קומפוזיציה,
+                    // וכל פתיחת תפריט (שמפעילה אנימציית טשטוש) גררה בניית מפה
+                    // של 166 ערוצים וסינון של ~2,500 סרטונים, פריים אחרי פריים.
+                    val catByChannel = remember(channels) {
+                        channels.associate { it.youtubeChannelId to it.category }
+                    }
+                    val displayed = remember(s.videos, selectedCategory, catByChannel) {
+                        if (selectedCategory == null) s.videos
                         else s.videos.filter { catByChannel[it.channelId] == selectedCategory }
+                    }
                     if (displayed.isEmpty()) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text("אין סרטונים בקטגוריה זו", color = ThemeState.subtext, fontSize = 14.sp)

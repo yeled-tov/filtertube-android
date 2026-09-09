@@ -55,22 +55,21 @@ class NewPipeDownloader private constructor() : Downloader() {
             }
         }
 
-        val response = client.newCall(requestBuilder.build()).execute()
-
-        if (response.code == 429) {
-            response.close()
-            throw ReCaptchaException("reCaptcha Challenge requested", url)
+        // `use` ולא סגירה ידנית: אם קריאת הגוף נכשלת באמצע (timeout, ניתוק),
+        // ה-Response לא נסגר — והחיבור נשאר תפוס במאגר של OkHttp. כל בקשה של
+        // NewPipe עוברת דרך כאן, אז דליפה כזו מצטברת: אחרי כמה כשלונות רשת
+        // המאגר מלא בחיבורים מתים והבקשות הבאות נתקעות בהמתנה.
+        return client.newCall(requestBuilder.build()).execute().use { response ->
+            if (response.code == 429) {
+                throw ReCaptchaException("reCaptcha Challenge requested", url)
+            }
+            Response(
+                response.code,
+                response.message,
+                response.headers.toMultimap(),
+                response.body?.string(),
+                response.request.url.toString(),
+            )
         }
-
-        val responseBodyToReturn = response.body?.string()
-        val latestUrl = response.request.url.toString()
-
-        return Response(
-            response.code,
-            response.message,
-            response.headers.toMultimap(),
-            responseBodyToReturn,
-            latestUrl,
-        )
     }
 }

@@ -54,6 +54,7 @@ object ChannelsRepository {
         .build()
 
     private val refreshMutex = Mutex()
+    private val refreshInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
     private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _approvedChannelsFlow = MutableStateFlow<List<Channel>>(emptyList())
@@ -150,11 +151,22 @@ object ChannelsRepository {
         }
     }
 
+    /**
+     * רענון ברקע — לכל היותר אחד בכל רגע נתון.
+     *
+     * [getChannels] נקרא ממסך הבית, מהחיפוש, מהספרייה ומהשידורים החיים, ולעיתים
+     * קרובות כמה מהם עולים יחד. בלי הדגל הזה כל אחד מהם היה מתייצב בתור על
+     * refreshMutex, ואחרי שהראשון כבר רענן — השאר היו יוצאים לרשת שוב, אחד אחרי
+     * השני, לאותה תוצאה בדיוק.
+     */
     private fun backgroundRefresh(context: Context) {
+        if (!refreshInFlight.compareAndSet(false, true)) return
         repoScope.launch {
             try {
                 refresh(context)
             } catch (_: Exception) {
+            } finally {
+                refreshInFlight.set(false)
             }
         }
     }
