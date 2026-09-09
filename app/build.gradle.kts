@@ -128,7 +128,12 @@ dependencies {
 
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
-    implementation("com.google.android.gms:play-services-auth:22.0.0")
+    // 21.4.0 ולא 22.0.0, למרות שהיא עוברת את בדיקת ה-compileSdk: ב-22.0.0
+    // ה-API הישן של GoogleSignIn הוסר לגמרי (GoogleSignIn, GoogleSignInClient,
+    // signInIntent, signOut), והבנייה נופלת על עשר שגיאות ב-GoogleAuth,
+    // LibraryScreen ו-SettingsScreen. המחליף הוא Credential Manager — כתיבה
+    // מחדש של זרימת ההתחברות, לא שדרוג ספרייה, ולכן זה שינוי בפני עצמו.
+    implementation("com.google.android.gms:play-services-auth:21.4.0")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
 
     // Firebase נשאר על 33.1.2 בכוונה, ולא בגלל שלא נבדק.
