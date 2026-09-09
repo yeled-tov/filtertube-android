@@ -23,3 +23,6 @@ gradlew.bat
 build/
 .gradle/
 app/build/
+
+# נוצר ע"י .github/release-notes.sh בזמן הבנייה — לא אמור להיות במאגר
+release-notes.md
