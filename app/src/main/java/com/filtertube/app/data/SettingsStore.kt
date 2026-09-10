@@ -129,10 +129,30 @@ class SettingsStore(context: Context) {
         get() = prefs.getInt(KEY_QUALITY, 0)
         set(value) = prefs.edit().putInt(KEY_QUALITY, value).apply()
 
-    /** עיצוב הנגן: 1 = "מתנגן עכשיו" (נוכחי), 2 = בקרים על הוידאו + הבא בתור מתחת. */
+    /**
+     * עיצוב הנגן: 1 = "מתנגן עכשיו", 2 = בקרים על הוידאו + הבא בתור מתחת.
+     *
+     * ברירת המחדל היא 2: בקרים *על* הסרטון הם מה שכל נגן וידאו עושה, והם
+     * משאירים את הסרטון גדול במקום לדחוף אותו למעלה.
+     */
     var playerStyle: Int
-        get() = prefs.getInt(KEY_PLAYER_STYLE, 1)
+        get() = prefs.getInt(KEY_PLAYER_STYLE, 2)
         set(value) = prefs.edit().putInt(KEY_PLAYER_STYLE, value).apply()
+
+    /**
+     * מצב אודיו בלבד — גלובלי, בכל רמות הסינון.
+     *
+     * כשהוא דלוק שום וידאו לא מוצג ושום וידאו לא ניתן להורדה. שני החצאים
+     * חייבים ללכת יחד: מצב האזנה שמאפשר להוריד את הווידאו לצפייה מאוחר יותר
+     * לא שווה כלום. זו הסיבה ש-[DownloadEngine] ומסך ההורדה בודקים אותו גם
+     * הם, ולא רק הנגן.
+     *
+     * שונה מ-audioOnlyCategories: אלה קטגוריות שתמיד אודיו לפי מדיניות
+     * התוכן. זה בחירה של המשתמש שחלה על הכל.
+     */
+    var audioOnlyMode: Boolean
+        get() = prefs.getBoolean(KEY_AUDIO_ONLY, false)
+        set(value) = prefs.edit().putBoolean(KEY_AUDIO_ONLY, value).apply()
 
     /** Smooth volume transition between playlist items (0 = disabled). */
     var crossfadeSeconds: Int
@@ -526,6 +546,7 @@ class SettingsStore(context: Context) {
         private const val KEY_ACCENT2 = "accent2_color"
         private const val KEY_QUALITY = "preferred_quality"
         private const val KEY_PLAYER_STYLE = "player_style"
+        private const val KEY_AUDIO_ONLY = "audio_only_mode"
         private const val KEY_CROSSFADE = "crossfade_seconds"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_ADMIN_UNLOCKED_LEGACY = "admin_unlocked"

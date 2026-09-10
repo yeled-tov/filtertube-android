@@ -463,14 +463,41 @@ private fun FilterSettingsSheet(
     onChangePassword: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val settings = remember { com.filtertube.app.data.SettingsStore(context) }
     var level by remember { mutableStateOf(filterLevel) }
     var shorts by remember { mutableStateOf(shortsEnabled) }
     var gender by remember { mutableStateOf(userGender) }
+    var audioOnly by remember { mutableStateOf(settings.audioOnlyMode) }
     SettingsSheet("הגדרות סינון", onDismiss) {
         Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 LevelRow(1, "מחמיר", "מוזיקה כאודיו בלבד · ״דתי לייט״ מוסתר", level) { level = 1; onFilterLevelChange(1) }
                 LevelRow(2, "רגיל", "הכל כווידאו · ״דתי לייט״ מוסתר", level) { level = 2; onFilterLevelChange(2) }
                 LevelRow(3, "דתי לייט", "כולל ״דתי לייט״ (אודיו בלבד)", level) { level = 3; onFilterLevelChange(3) }
+
+                HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
+
+                // ── אודיו בלבד ────────────────────────────────────────────
+                // מעל רמות הסינון ולא בתוכן: זו בחירה שחלה על כל רמה, ומי
+                // שמחפש אותה מחפש אותה כאן — ליד ההחלטה מה מותר לראות.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("אודיו בלבד", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            "בכל רמות הסינון. גם ההורדות יהיו אודיו בלבד — " +
+                                "אחרת אפשר היה לצפות בסרטון מהגלריה.",
+                            color = ThemeState.subtext, fontSize = 11.sp, lineHeight = 15.sp,
+                        )
+                    }
+                    Switch(
+                        checked = audioOnly,
+                        onCheckedChange = { audioOnly = it; settings.audioOnlyMode = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White, checkedTrackColor = Color(0xFFFF0000),
+                            uncheckedThumbColor = ThemeState.subtext, uncheckedTrackColor = Color(0xFF333333),
+                        ),
+                    )
+                }
 
                 HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
 

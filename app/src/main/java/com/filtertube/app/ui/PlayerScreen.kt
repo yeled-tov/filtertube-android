@@ -725,6 +725,7 @@ private fun PlayerOverflowMenu(
 private fun DownloadDialog(context: Context, data: StreamData, videoId: String, onDismiss: () -> Unit) {
     val video = Video(videoId, data.title, data.uploaderName, data.channelId,
         data.thumbnailUrl ?: "", System.currentTimeMillis())
+    val audioOnlyMode = remember { com.filtertube.app.data.SettingsStore(context).audioOnlyMode }
     // הורדה דרך המנוע המהיר (רב-חיבורי) — מוסיף לתור ב״מנהל הורדות״
     fun enqueueDl(url: String, isAudio: Boolean, audioUrl: String? = null) {
         LibraryStore(context).addDownload(video)
@@ -746,6 +747,19 @@ private fun DownloadDialog(context: Context, data: StreamData, videoId: String, 
                     Text("לא זמין", color = ThemeState.subtext, fontSize = 12.sp)
                 }
                 HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
+                // ── מצב אודיו בלבד ────────────────────────────────────────
+                // כשהמשתמש בחר אודיו בלבד, הורדת וידאו סותרת את הבחירה: הוא
+                // יוכל לצפות בסרטון מגלריית המכשיר. לכן האפשרות לא מוסתרת
+                // בשקט אלא מוסברת — אחרת זה נראה כמו תקלה.
+                if (audioOnlyMode) {
+                    Text("וידאו", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        "מצב אודיו בלבד פעיל, ולכן הורדת וידאו חסומה. " +
+                            "אפשר לכבות אותו בהגדרות ← רמת סינון.",
+                        color = ThemeState.subtext, fontSize = 12.sp, lineHeight = 17.sp,
+                    )
+                    return@Column
+                }
                 Text("וידאו (כולל קול)", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 // כל האיכויות שניתן להוריד עם קול — לא רק הזרמים המשולבים.
                 //
@@ -914,12 +928,14 @@ private fun OnVideoPlayerScreen(
     var forcedAudio by remember(ui.mediaId, currentData?.channelId) { mutableStateOf(false) }
     LaunchedEffect(ui.mediaId, currentData?.channelId) {
         val cid = currentData?.channelId
-        forcedAudio = if (cid.isNullOrBlank()) false else {
+        // מצב אודיו גלובלי גובר על הכל ולא תלוי בערוץ — אין טעם לחכות
+        // לרשימת הערוצים כדי לדעת שהמשתמש ביקש אודיו בלבד.
+        forcedAudio = if (sb.audioOnlyMode) true else if (cid.isNullOrBlank()) false else {
             val cat = runCatching {
                 com.filtertube.app.data.ChannelsRepository.getChannels(context)
                     .firstOrNull { it.youtubeChannelId == cid }?.category
             }.getOrNull()
-            Playback.forcedAudio(cat, sb.filterLevel)
+            Playback.forcedAudio(cat, sb.filterLevel, sb.audioOnlyMode)
         }
     }
     fun setAudio(audio: Boolean) = replaceCurrent(if (forcedAudio) true else audio, qualityIndex)
@@ -1045,8 +1061,16 @@ private fun OnVideoPlayerScreen(
                     // bestVideoUrl לבדו הוא זרם וידאו-בלבד כשאין זרם משולב,
                     // וההורדה האוטומטית ייצרה קובץ אילם. bestDownloadableVideo
                     // מחזיר גם את זרם האודיו הנלווה, והמנוע ממזג אותם ל-MP4.
-                    val track = currentData.bestDownloadableVideo()
-                    if (track == null) {
+                    val track = if (sb.audioOnlyMode) null else currentData.bestDownloadableVideo()
+                    if (sb.audioOnlyMode) {
+                        // מצב אודיו בלבד — מורידים את פס הקול, לא את הסרטון.
+                        com.filtertube.app.data.DownloadEngine.enqueue(
+                            context, currentVideo(),
+                            currentData.bestAudioUrl ?: currentData.bestVideoUrl, true,
+                            currentData.streamUserAgent,
+                        )
+                        Toast.makeText(context, "מוריד אודיו אוטומטית ⚡", Toast.LENGTH_SHORT).show()
+                    } else if (track == null) {
                         Toast.makeText(context, "אין איכות וידאו שניתן להוריד", Toast.LENGTH_SHORT).show()
                     } else {
                         com.filtertube.app.data.DownloadEngine.enqueue(

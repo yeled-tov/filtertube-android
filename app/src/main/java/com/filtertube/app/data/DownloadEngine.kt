@@ -96,8 +96,16 @@ object DownloadEngine {
         pump()
     }
 
-    /** מחלץ את הזרם של [video] (זרם משולב עם קול) ומוסיף אותו לתור. */
+    /**
+     * מחלץ את הזרם של [video] (זרם משולב עם קול) ומוסיף אותו לתור.
+     *
+     * במצב אודיו בלבד הבקשה מומרת לאודיו גם אם המבקש ביקש וידאו. אחרת המצב
+     * לא היה שווה כלום: אפשר היה להאזין בלבד, אבל להוריד את הווידאו המלא
+     * ולצפות בו מגלריית המכשיר.
+     */
     suspend fun enqueueByVideo(context: Context, video: Video, isAudio: Boolean): Boolean {
+        @Suppress("NAME_SHADOWING")
+        val isAudio = isAudio || SettingsStore(context).audioOnlyMode
         val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull() ?: return false
         val v = video.copy(
             title = data.title.ifBlank { video.title },

@@ -65,7 +65,7 @@ object Playback {
         }
         return runCatching {
             val settings = SettingsStore(context)
-            val item = buildItem(data, video.id, forcedAudio(null, settings.filterLevel), defaultQuality(data, settings.preferredQuality))
+            val item = buildItem(data, video.id, forcedAudio(null, settings.filterLevel, settings.audioOnlyMode), defaultQuality(data, settings.preferredQuality))
             withContext(Dispatchers.Main) {
                 val index = (controller.currentMediaItemIndex + 1).coerceAtMost(controller.mediaItemCount)
                 controller.addMediaItem(index, item)
@@ -86,7 +86,7 @@ object Playback {
         for (video in requested) {
             val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull() ?: continue
             cache(video.id, data)
-            val item = buildItem(data, video.id, forcedAudio(null, settings.filterLevel), defaultQuality(data, settings.preferredQuality))
+            val item = buildItem(data, video.id, forcedAudio(null, settings.filterLevel, settings.audioOnlyMode), defaultQuality(data, settings.preferredQuality))
             withContext(Dispatchers.Main) {
                 controller.addMediaItem((controller.currentMediaItemIndex + 1).coerceAtMost(controller.mediaItemCount), item)
             }
@@ -97,8 +97,22 @@ object Playback {
     fun defaultQuality(data: StreamData, preferred: Int = 0): Int =
         data.defaultTrackIndex(preferred)
 
-    fun forcedAudio(category: String?, level: Int): Boolean =
-        category in audioOnlyCategories || (level == 1 && category == "music")
+    /**
+     * האם הפריט הזה חייב להתנגן כאודיו בלבד.
+     *
+     * שלושה מקורות, וכל אחד מהם מספיק:
+     *  • [audioOnlyMode] — בחירה גלובלית של המשתמש, חלה בכל רמות הסינון
+     *  • קטגוריה שהיא אודיו-בלבד לפי מדיניות התוכן
+     *  • מוזיקה ברמת הסינון המחמירה
+     */
+    fun forcedAudio(category: String?, level: Int, audioOnlyMode: Boolean = false): Boolean =
+        audioOnlyMode || category in audioOnlyCategories || (level == 1 && category == "music")
+
+    /** גרסה שקוראת את ההעדפה בעצמה — לנתיבים שאין להם SettingsStore ביד. */
+    fun forcedAudio(context: Context, category: String?): Boolean {
+        val settings = SettingsStore(context)
+        return forcedAudio(category, settings.filterLevel, settings.audioOnlyMode)
+    }
 
     /**
      * פריט מדיה מקובץ מקומי — בלי פתרון זרם ובלי רשת.
@@ -229,6 +243,7 @@ object Playback {
         val preferred: Int,
         val catById: Map<String, String>,
         val offline: Video?,
+        val audioOnly: Boolean,
     )
 
     /**
@@ -286,6 +301,7 @@ object Playback {
                 preferred = settings.preferredQuality,
                 catById = channels.associate { it.youtubeChannelId to it.category },
                 offline = downloaded,
+                audioOnly = settings.audioOnlyMode,
             )
         }
         val level = prep.level
@@ -313,7 +329,7 @@ object Playback {
         cache(video.id, data)
 
         com.filtertube.app.data.LibraryBadges.markWatched(video.id)
-        val audio = forcedAudio(catById[data.channelId], level)
+        val audio = forcedAudio(catById[data.channelId], level, prep.audioOnly)
         val firstItem = buildItem(data, video.id, audio, defaultQuality(data, preferred))
 
         if (!sessionCurrent()) return

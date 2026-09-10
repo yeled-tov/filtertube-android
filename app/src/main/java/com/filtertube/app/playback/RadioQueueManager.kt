@@ -107,6 +107,7 @@ object RadioQueueManager {
         if (videos.isEmpty()) return
         val settings = SettingsStore(context)
         val level = settings.filterLevel
+        val audioOnly = settings.audioOnlyMode
         val preferredQuality = settings.preferredQuality
         val catById = ChannelsRepository.getCachedChannelsFast(context)
             .associate { it.youtubeChannelId to it.category }
@@ -126,7 +127,7 @@ object RadioQueueManager {
             PlaybackPriority.awaitIdle()
             val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull() ?: continue
             activeQueueIds.add(video.id)
-            val audio = Playback.forcedAudio(catById[data.channelId] ?: catById[video.channelId], level)
+            val audio = Playback.forcedAudio(catById[data.channelId] ?: catById[video.channelId], level, audioOnly)
             val item = Playback.buildItem(data, video.id, audio, Playback.defaultQuality(data, preferredQuality))
             withContext(Dispatchers.Main) { c.addMediaItem(c.mediaItemCount, item) }
             added++
@@ -163,6 +164,7 @@ object RadioQueueManager {
         refillMutex.withLock {
             val settings = SettingsStore(context)
             val level = settings.filterLevel
+            val audioOnly = settings.audioOnlyMode
             val preferredQuality = settings.preferredQuality
 
             val channels = ChannelsRepository.getCachedChannelsFast(context)
@@ -220,7 +222,7 @@ object RadioQueueManager {
                             val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull() ?: return@withPermit
 
                             activeQueueIds.add(video.id)
-                            val audio = Playback.forcedAudio(catById[data.channelId] ?: catById[video.channelId], level)
+                            val audio = Playback.forcedAudio(catById[data.channelId] ?: catById[video.channelId], level, audioOnly)
                             val item = Playback.buildItem(data, video.id, audio, Playback.defaultQuality(data, preferredQuality))
 
                             withContext(Dispatchers.Main) {

@@ -114,7 +114,7 @@ object PlayerRecoveryHandler {
             withContext(Dispatchers.Main) {
                 if (player.mediaItemCount == 0) return@withContext
                 val settings = SettingsStore(context)
-                val audio = Playback.forcedAudio(null, settings.filterLevel)
+                val audio = Playback.forcedAudio(null, settings.filterLevel, settings.audioOnlyMode)
                 val newItem = Playback.buildItem(newData, videoId, audio, Playback.defaultQuality(newData, settings.preferredQuality))
 
                 val currentIndex = player.currentMediaItemIndex
