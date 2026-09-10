@@ -227,6 +227,8 @@ fun AppRoot() {
     var shortsEnabled by remember { mutableStateOf(settings.shortsEnabled) }
     var filterLevel by remember { mutableStateOf(settings.filterLevel) }
     var userGender by remember { mutableStateOf(settings.userGender) }
+    // בחירת זמרים — נפתחת מהרדיו כשאין עדיין שום אות טעם.
+    var showArtistPicker by remember { mutableStateOf(false) }
     var pendingUpdate by remember { mutableStateOf<com.filtertube.app.data.UpdateChecker.Update?>(null) }
     LaunchedEffect(accountReady) {
         if (!accountReady) return@LaunchedEffect
@@ -334,8 +336,49 @@ fun AppRoot() {
      * רדיו אישי: בונה תחנה שלמה ומנגן אותה, במקום לנגן סרטון בודד ולתת
      * למנוע ה"קשורים" של יוטיוב להמשיך משם.
      */
+    /** מנגן תחנה מוכנה. משותף לרדיו האישי ולרדיו-משיר. */
+    fun playStation(station: List<Video>, emptyMessage: String) {
+        val first = station.firstOrNull()
+        if (first == null) {
+            android.widget.Toast.makeText(context, emptyMessage, android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+        navController.navigate("player") { launchSingleTop = true }
+        scope.launch {
+            try {
+                com.filtertube.app.playback.Playback.start(context, controller, first, station)
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(
+                    context, "שגיאה בניגון: ${e.message}", android.widget.Toast.LENGTH_LONG,
+                ).show()
+                navController.popBackStack("player", inclusive = true)
+            }
+        }
+    }
+
+    /**
+     * רדיו מהשיר שמתנגן — תור באותו סגנון, לא בהכרח אותו זמר.
+     */
+    fun openRadioFromSong(seed: Video) {
+        scope.launch {
+            android.widget.Toast.makeText(context, "בונה תחנה מ״${seed.title.take(28)}״…", android.widget.Toast.LENGTH_SHORT).show()
+            val station = runCatching { com.filtertube.app.data.PersonalRadio.stationForSeed(context, seed) }
+                .getOrNull().orEmpty()
+            playStation(
+                station,
+                "לא מצאנו מספיק שירים באותו סגנון בערוצים המאושרים",
+            )
+        }
+    }
+
     fun openRadio() {
         scope.launch {
+            // התקנה טרייה: אין לייקים, אין היסטוריה, ואין ממה להסיק טעם.
+            // שאלה אחת עדיפה על "רדיו אישי" שהוא בעצם הפיד הכללי.
+            if (com.filtertube.app.data.PersonalRadio.needsArtistPicker(context)) {
+                showArtistPicker = true
+                return@launch
+            }
             val station = runCatching { com.filtertube.app.data.PersonalRadio.buildStation(context) }
                 .getOrNull().orEmpty()
             val first = station.firstOrNull()
@@ -422,6 +465,24 @@ fun AppRoot() {
                 durationSec = data.durationSec,
                 viewCount = data.viewCount,
             ),
+        )
+    }
+
+    if (showArtistPicker) {
+        ArtistPickerDialog(
+            onDismiss = { showArtistPicker = false },
+            onSaved = { chosen ->
+                showArtistPicker = false
+                scope.launch {
+                    val station = runCatching {
+                        com.filtertube.app.data.PersonalRadio.buildStation(context)
+                    }.getOrNull().orEmpty()
+                    playStation(
+                        station,
+                        "בחרנו ${chosen.size} זמרים, אבל עוד אין מהם סרטונים בפיד — נסה שוב בעוד רגע",
+                    )
+                }
+            },
         )
     }
 
@@ -622,6 +683,7 @@ fun AppRoot() {
                     controller = controller,
                     ui = playerUi,
                     onCollapse = { navController.popBackStack() },
+                    onRadioFromSong = ::openRadioFromSong,
                 )
             }
         }

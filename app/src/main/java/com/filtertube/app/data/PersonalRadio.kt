@@ -61,6 +61,22 @@ object PersonalRadio {
     private const val COOLDOWN_RECENT = 12
 
     /**
+     * משקל זמר שהמשתמש בחר במפורש.
+     *
+     * גבוה מלייק: לייק הוא תגובה לשיר בודד, בחירת זמר היא הצהרה על טעם.
+     */
+    private const val ARTIST_WEIGHT = 14.0
+
+    /** כמה שירים מאותו ערוץ מותר בתחנה אחת — כדי שרדיו לא יהפוך לאלבום. */
+    private const val MAX_PER_CHANNEL = 3
+
+    /** נוכחות בגרף ה-related של יוטיוב — האות החזק ביותר לדמיון סגנוני. */
+    private const val RELATED_WEIGHT = 18.0
+
+    /** אותו זמר: רלוונטי, אבל מכוון לא דומיננטי — רדיו הוא לא אלבום. */
+    private const val SAME_ARTIST_WEIGHT = 7.0
+
+    /**
      * תחנה מוכנה לניגון, או רשימה ריקה אם אין ממה לבנות.
      *
      * לא זורק לעולם: כישלון בקריאת ההעדפות פירושו תחנה פחות מותאמת, לא תחנה
@@ -85,7 +101,8 @@ object PersonalRadio {
                 .associate { it.youtubeChannelId to it.category }
         }.getOrNull().orEmpty()
 
-        val profile = buildProfile(likes, history, searches, catById)
+        val favorites = runCatching { settings.favoriteArtists }.getOrNull().orEmpty()
+        val profile = buildProfile(likes, history, searches, catById, favorites)
 
         // מה שהתנגן ממש עכשיו לא חוזר מיד — אבל שאר ההיסטוריה כן, כי בדיוק
         // שם נמצאים השירים שהמשתמש חוזר אליהם.
@@ -134,9 +151,14 @@ object PersonalRadio {
         history: List<Video>,
         searches: List<String>,
         catById: Map<String, String>,
+        favoriteArtists: Set<String> = emptySet(),
     ): Profile {
         val now = System.currentTimeMillis()
         val channels = HashMap<String, Double>()
+
+        // הבחירה המפורשת נכנסת ראשונה ובמשקל הגבוה ביותר. זה גם מה שגורם
+        // לרדיו לעבוד בהתקנה טרייה, בלי היסטוריה ובלי לייקים.
+        favoriteArtists.forEach { channels.merge(it, ARTIST_WEIGHT, Double::plus) }
 
         likes.forEach { channels.merge(it.channelId, LIKE_WEIGHT, Double::plus) }
 
@@ -206,4 +228,106 @@ object PersonalRadio {
 
     /** נשמר לתאימות עם קוראים ישנים: הסרטון הראשון בתחנה. */
     suspend fun pickSeed(context: Context): Video? = buildStation(context).firstOrNull()
+
+    /**
+     * האם צריך לשאול את המשתמש איזה זמרים הוא אוהב.
+     *
+     * נכון רק כשאין *שום* אות טעם: לא בחירה מפורשת, לא לייקים, ולא היסטוריה.
+     * במצב הזה כל "רדיו אישי" הוא בדיה — הוא היה מחזיר את הפיד הכללי. עדיף
+     * לשאול שאלה אחת מאשר להעמיד פנים.
+     */
+    suspend fun needsArtistPicker(context: Context): Boolean = withContext(Dispatchers.Default) {
+        val settings = SettingsStore(context)
+        if (settings.favoriteArtists.isNotEmpty()) return@withContext false
+        if (settings.artistPickerSeen) return@withContext false
+        val store = LibraryStore(context)
+        val likes = runCatching { store.likes() }.getOrNull().orEmpty()
+        val history = runCatching { store.localHistory() }.getOrNull().orEmpty()
+        likes.isEmpty() && history.isEmpty()
+    }
+
+    /**
+     * "רדיו מהשיר הזה" — תור באותו קו של [seed].
+     *
+     * ## מאיפה מגיע "הסגנון"
+     * לא מניחוש. המקור החזק ביותר הוא גרף ה-related של יוטיוב עצמו: אלה
+     * הסרטונים שיוטיוב, על סמך התנהגות של מיליוני אנשים, קושר לשיר הזה. זה
+     * בדיוק מה שנותן "אותו ז'אנר, לא בהכרח אותו זמר". עליו נוספות שלוש
+     * שכבות: אותה קטגוריה מהרשימה המאושרת, מילים משותפות בכותרת, והטעם
+     * האישי — כדי שתחנה של אותו שיר תישמע אחרת אצל שני אנשים שונים.
+     *
+     * ## למה יש תקרה לכל ערוץ
+     * בלעדיה הדירוג היה מתכנס לאותו זמר: אותו ערוץ מנצח בכל אחד מהאותות.
+     * זה כבר לא רדיו אלא אלבום.
+     *
+     * הרשימה המוחזרת מסוננת לערוצים מאושרים בלבד — כולל פסילה של פריט
+     * שהערוץ שלו לא זוהה כלל.
+     */
+    suspend fun stationForSeed(context: Context, seed: Video): List<Video> = withContext(Dispatchers.IO) {
+        val channels = runCatching { ChannelsRepository.getCachedChannelsFast(context) }.getOrNull().orEmpty()
+        val allowed = channels.mapTo(HashSet()) { it.youtubeChannelId }
+        val catById = channels.associate { it.youtubeChannelId to it.category }
+        val seedCat = catById[seed.channelId]
+        val seedTokens = tokens(seed.title).toSet()
+
+        val store = LibraryStore(context)
+        val settings = SettingsStore(context)
+        val likes = runCatching { store.likes() }.getOrNull().orEmpty()
+        val history = runCatching { store.localHistory() }.getOrNull().orEmpty()
+        val profile = buildProfile(
+            likes, history,
+            runCatching { settings.getSearchHistory() }.getOrNull().orEmpty(),
+            catById,
+            runCatching { settings.favoriteArtists }.getOrNull().orEmpty(),
+        )
+
+        // גרף ה-related של יוטיוב. כישלון כאן לא שובר את התחנה — הוא רק
+        // מוריד אות אחד מתוך ארבעה.
+        val related = runCatching { InnerTube.related(seed.id) }.getOrNull().orEmpty()
+        val relatedIds = related.mapTo(HashSet()) { it.id }
+
+        val feed = runCatching { FeedCache.loadFeed(context) }.getOrNull().orEmpty()
+
+        val pool = (related + feed + likes + history)
+            .distinctBy { it.id }
+            .filter { candidate ->
+                candidate.id.isNotBlank() &&
+                    candidate.id != seed.id &&
+                    !candidate.isShort &&
+                    // ערוץ לא מזוהה נפסל. באפליקציית רשימה לבנה "לא ידוע"
+                    // הוא לא "מותר" — וגרף ה-related מחזיר גם פריטים בלי
+                    // מזהה ערוץ.
+                    candidate.channelId in allowed
+            }
+
+        val scored = pool.map { candidate ->
+            var score = 0.0
+            if (candidate.id in relatedIds) score += RELATED_WEIGHT
+            val cat = catById[candidate.channelId]
+            if (seedCat != null && cat == seedCat) score += CATEGORY_WEIGHT * 2
+            if (candidate.channelId == seed.channelId) score += SAME_ARTIST_WEIGHT
+            val shared = tokens(candidate.title).count { it in seedTokens }
+            if (shared > 0) score += KEYWORD_WEIGHT * minOf(shared, 3)
+            // הטעם האישי מוסיף, אבל לא קובע: זו תחנה של *השיר הזה*.
+            score += (profile.channels[candidate.channelId] ?: 0.0) * 0.4
+            candidate to score
+        }.sortedByDescending { it.second }
+
+        val perChannel = HashMap<String, Int>()
+        val station = ArrayList<Video>(STATION_SIZE)
+        for ((candidate, _) in scored) {
+            if (station.size >= STATION_SIZE) break
+            val used = perChannel.getOrDefault(candidate.channelId, 0)
+            if (used >= MAX_PER_CHANNEL) continue
+            perChannel[candidate.channelId] = used + 1
+            station += candidate
+        }
+
+        Diagnostics.log(
+            "RADIO משיר \"${seed.title.take(40)}\": ${station.size} פריטים · " +
+                "${related.size} מגרף related, ${pool.size} מועמדים מאושרים, " +
+                "${perChannel.size} ערוצים שונים",
+        )
+        station
+    }
 }

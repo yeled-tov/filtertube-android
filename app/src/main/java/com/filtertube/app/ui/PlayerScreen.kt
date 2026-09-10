@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Favorite
@@ -107,6 +108,7 @@ fun PlayerScreen(
     controller: MediaController?,
     ui: PlayerUiState,
     onCollapse: () -> Unit,
+    onRadioFromSong: (Video) -> Unit = {},
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -193,6 +195,7 @@ fun PlayerScreen(
         OnVideoPlayerScreen(
             controller = controller, ui = ui, activity = activity,
             onCollapse = onCollapse, onFullscreen = { isFullscreen = true },
+            onRadioFromSong = onRadioFromSong,
         )
         return
     }
@@ -883,6 +886,7 @@ private fun OnVideoPlayerScreen(
     activity: Activity?,
     onCollapse: () -> Unit,
     onFullscreen: () -> Unit,
+    onRadioFromSong: (Video) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1097,6 +1101,14 @@ private fun OnVideoPlayerScreen(
             ActionPill("הורדה", Icons.Default.Download, false, Modifier.weight(1f)) {
                 if (sb.premiumActive) showDownload = true
                 else Toast.makeText(context, "הורדות — פיצ'ר פרימיום. ראה הגדרות → Premium", Toast.LENGTH_LONG).show()
+            }
+            // "רדיו" מהשיר שמתנגן — תור באותו סגנון. הזרע נבנה עם מזהה
+            // הערוץ האמיתי מ-currentData; ל-currentVideo() אין אחד, ובלעדיו
+            // התחנה מאבדת את אות ה"אותה קטגוריה".
+            ActionPill("רדיו", Icons.Default.Radio, false, Modifier.weight(1f)) {
+                val seed = currentVideo().copy(channelId = currentData?.channelId.orEmpty())
+                if (seed.id.isBlank()) Toast.makeText(context, "אין שיר פעיל", Toast.LENGTH_SHORT).show()
+                else onRadioFromSong(seed)
             }
             ActionPill(if (audioMode) "וידאו" else "אודיו", Icons.Default.GraphicEq, audioMode, Modifier.weight(1f)) {
                 if (forcedAudio) Toast.makeText(context, "תוכן זה זמין באודיו בלבד", Toast.LENGTH_SHORT).show()

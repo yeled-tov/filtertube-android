@@ -150,6 +150,27 @@ class SettingsStore(context: Context) {
      * שונה מ-audioOnlyCategories: אלה קטגוריות שתמיד אודיו לפי מדיניות
      * התוכן. זה בחירה של המשתמש שחלה על הכל.
      */
+    /**
+     * הזמרים/ערוצים שהמשתמש סימן במפורש כאהובים.
+     *
+     * זה מקור הטעם החזק ביותר שיש, והיחיד שקיים *לפני* שהמשתמש עשה משהו
+     * באפליקציה. בלעדיו הרדיו בהתקנה חדשה לא יכול היה להיות אישי בכלל —
+     * הוא היה מחזיר את הפיד הכללי וקורא לזה "רדיו".
+     */
+    var favoriteArtists: Set<String>
+        get() = prefs.getStringSet(KEY_FAV_ARTISTS, emptySet()).orEmpty()
+        set(value) = prefs.edit().putStringSet(KEY_FAV_ARTISTS, value).apply()
+
+    /**
+     * האם כבר הצגנו את בחירת הזמרים.
+     *
+     * נפרד מ-[favoriteArtists] בכוונה: משתמש שראה את המסך ובחר לדלג לא
+     * אמור לקבל אותו שוב בכל לחיצה על רדיו.
+     */
+    var artistPickerSeen: Boolean
+        get() = prefs.getBoolean(KEY_ARTIST_PICKER_SEEN, false)
+        set(value) = prefs.edit().putBoolean(KEY_ARTIST_PICKER_SEEN, value).apply()
+
     var audioOnlyMode: Boolean
         get() = prefs.getBoolean(KEY_AUDIO_ONLY, false)
         set(value) = prefs.edit().putBoolean(KEY_AUDIO_ONLY, value).apply()
@@ -547,6 +568,8 @@ class SettingsStore(context: Context) {
         private const val KEY_QUALITY = "preferred_quality"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_AUDIO_ONLY = "audio_only_mode"
+        private const val KEY_FAV_ARTISTS = "favorite_artists"
+        private const val KEY_ARTIST_PICKER_SEEN = "artist_picker_seen"
         private const val KEY_CROSSFADE = "crossfade_seconds"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_ADMIN_UNLOCKED_LEGACY = "admin_unlocked"
