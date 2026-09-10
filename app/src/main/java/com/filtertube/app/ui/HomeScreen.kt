@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
@@ -80,6 +81,7 @@ fun HomeScreen(
     onLive: () -> Unit = {},
     onStartRadio: () -> Unit = {},
     onOpenDownloads: () -> Unit = {},
+    onOpenMusic: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -203,6 +205,24 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 32.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // ── מעבר ל-FilterMusic ────────────────────────────────
+                // בפינה השמאלית של הטופ-בר, נגיש בלחיצה אחת מהמסך הראשי.
+                // אותו כפתור בדיוק, בכיוון ההפוך, יושב בטופ-בר של FilterMusic.
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(ThemeState.card)
+                        .clickable(onClick = onOpenMusic)
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Default.MusicNote, null,
+                        tint = ThemeState.accent, modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Text("Music", color = ThemeState.text, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                }
                 Spacer(Modifier.weight(1f))
                 Text("Filter Tube", color = ThemeState.text, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
             }
