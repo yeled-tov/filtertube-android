@@ -336,19 +336,6 @@ fun AppRoot() {
      * רדיו אישי: בונה תחנה שלמה ומנגן אותה, במקום לנגן סרטון בודד ולתת
      * למנוע ה"קשורים" של יוטיוב להמשיך משם.
      */
-    /**
-     * מנגן רשימה החל מ-[index], עם ההמשך שלה כתור.
-     *
-     * זה מה ש-FilterMusic משתמש בו: לחיצה על השיר החמישי ברשימה מנגנת אותו
-     * וממשיכה לשישי, כמו בכל אפליקציית מוזיקה. הפריטים שלפניו לא נכנסים
-     * לתור — הם כבר "מאחור".
-     */
-    fun playFromList(items: List<Video>, index: Int) {
-        if (items.isEmpty()) return
-        val start = index.coerceIn(0, items.lastIndex)
-        playStation(items.drop(start), "לא הצלחנו להתחיל את הניגון")
-    }
-
     /** מנגן תחנה מוכנה. משותף לרדיו האישי ולרדיו-משיר. */
     fun playStation(station: List<Video>, emptyMessage: String) {
         val first = station.firstOrNull()
@@ -367,6 +354,19 @@ fun AppRoot() {
                 navController.popBackStack("player", inclusive = true)
             }
         }
+    }
+
+    /**
+     * מנגן רשימה החל מ-[index], עם ההמשך שלה כתור.
+     *
+     * זה מה ש-FilterMusic משתמש בו: לחיצה על השיר החמישי ברשימה מנגנת אותו
+     * וממשיכה לשישי, כמו בכל אפליקציית מוזיקה. הפריטים שלפניו לא נכנסים
+     * לתור — הם כבר "מאחור".
+     */
+    fun playFromList(items: List<Video>, index: Int) {
+        if (items.isEmpty()) return
+        val start = index.coerceIn(0, items.lastIndex)
+        playStation(items.drop(start), "לא הצלחנו להתחיל את הניגון")
     }
 
     /**
