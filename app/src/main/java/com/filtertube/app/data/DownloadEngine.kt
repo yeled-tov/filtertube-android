@@ -119,16 +119,40 @@ object DownloadEngine {
             val (task, spec) = queue.removeFirst()
             running++
             scope.launch {
-                runCatching {
+                suspend fun attempt(s: Spec): String {
                     task.status = "מוריד"
-                    val uri = downloadFile(spec, task)
+                    val uri = downloadFile(s, task)
                     // רק עכשיו הסרטון באמת זמין לניגון מקומי.
-                    LibraryStore(spec.context).setDownloadLocalUri(task.video.id, uri)
+                    LibraryStore(s.context).setDownloadLocalUri(task.video.id, uri)
                     task.progress = 100; task.status = "הושלם"
                     Diagnostics.log("DOWNLOAD ${task.video.id}: נשמר ב-$uri")
-                }.onFailure {
-                    task.status = "נכשל"
-                    Diagnostics.log("DOWNLOAD ${task.video.id}: נכשל — ${it.message}")
+                    return uri
+                }
+                runCatching { attempt(spec) }.onFailure { first ->
+                    // ── ניסיון שני עם כתובת טרייה ────────────────────────
+                    // כתובות googlevideo חתומות ופגות. הורדה שממתינה בתור
+                    // מאחורי שתי הורדות אחרות יכולה לצאת לדרך אחרי שהכתובת
+                    // שנשמרה כבר מתה — וזה נראה למשתמש כמו "ההורדה נכשלה",
+                    // בלי שום דבר שבור באמת. חילוץ מחדש פותר את זה.
+                    Diagnostics.log("DOWNLOAD ${task.video.id}: ${first.message} — מחלץ כתובת טרייה ומנסה שוב")
+                    task.status = "מנסה שוב"
+                    val retried = runCatching {
+                        val fresh = StreamRepository.resolveFresh(task.video.id, null)
+                        val refreshed = if (spec.isAudio) {
+                            spec.copy(url = fresh.bestAudioUrl ?: fresh.bestVideoUrl, ua = fresh.streamUserAgent, audioUrl = null)
+                        } else {
+                            val track = fresh.bestDownloadableVideo()
+                                ?: throw IllegalStateException("אין איכות וידאו שניתן להוריד")
+                            spec.copy(url = track.videoUrl, ua = fresh.streamUserAgent, audioUrl = track.audioUrl)
+                        }
+                        attempt(refreshed)
+                    }
+                    if (retried.isFailure) {
+                        task.status = "נכשל"
+                        Diagnostics.log(
+                            "DOWNLOAD ${task.video.id}: נכשל — ${retried.exceptionOrNull()?.message}",
+                        )
+                    }
                 }
                 synchronized(this@DownloadEngine) { running--; pump() }
             }
@@ -170,15 +194,32 @@ object DownloadEngine {
         }
     }
 
-    /** מוריד כתובת אחת אל [dest], עם ריבוי חיבורים אם השרת תומך. */
+    /**
+     * מוריד כתובת אחת אל [dest], עם ריבוי חיבורים אם השרת תומך.
+     *
+     * ## הבדיקה המקדימה היא GET עם Range, לא HEAD
+     * שרתי googlevideo מחזירים 403 לבקשות HEAD. הבדיקה נכשלה תמיד, len נשאר
+     * ‎-1, וההורדה נפלה למסלול חיבור בודד בלי לדעת את הגודל — ואז גם
+     * ההורדה עצמה קיבלה 403. בקשת `Range: bytes=0-0` מוחזרת 206 עם הכותרת
+     * Content-Range, וממנה מקבלים גם את הגודל המלא וגם אישור שהשרת תומך
+     * ב-Range — בבקשה אחת שהשרת באמת עונה לה.
+     */
     private suspend fun fetch(spec: Spec, url: String, dest: File, task: DownloadTask) {
-        val probe = Request.Builder().url(url).head()
-            .apply { spec.ua?.let { header("User-Agent", it) } }.build()
+        val probe = Request.Builder().url(url)
+            .apply { spec.ua?.let { header("User-Agent", it) } }
+            .header("Range", "bytes=0-0").build()
         var len = -1L; var ranges = false
         runCatching {
             http.newCall(probe).execute().use { r ->
-                len = r.header("Content-Length")?.toLongOrNull() ?: -1L
-                ranges = r.header("Accept-Ranges")?.contains("bytes", true) == true
+                // "bytes 0-0/12345678" — האורך המלא הוא מה שאחרי הלוכסן.
+                val contentRange = r.header("Content-Range")
+                if (r.code == 206 && contentRange != null) {
+                    len = contentRange.substringAfterLast('/').toLongOrNull() ?: -1L
+                    ranges = true
+                } else if (r.isSuccessful) {
+                    len = r.header("Content-Length")?.toLongOrNull() ?: -1L
+                    ranges = r.header("Accept-Ranges")?.contains("bytes", true) == true
+                }
             }
         }
         val urlSpec = spec.copy(url = url)
@@ -232,8 +273,11 @@ object DownloadEngine {
     }
 
     private fun single(spec: Spec, tmp: File, len: Long, task: DownloadTask) {
+        // Range פתוח ("מהבייט 0 ועד הסוף"). googlevideo מגיש בקשות כאלה
+        // באופן רגיל, ובלעדיו הוא נוטה להחזיר 403 על אותה כתובת בדיוק.
         val req = Request.Builder().url(spec.url)
-            .apply { spec.ua?.let { header("User-Agent", it) } }.build()
+            .apply { spec.ua?.let { header("User-Agent", it) } }
+            .header("Range", "bytes=0-").build()
         http.newCall(req).execute().use { resp ->
             // בדיקת סטטוס. בלעדיה תגובת 403 — שקורית כשכתובת הזרם פגה או
             // נקשרה ל-User-Agent אחר — נכתבה לקובץ כאילו הייתה מדיה, וההורדה

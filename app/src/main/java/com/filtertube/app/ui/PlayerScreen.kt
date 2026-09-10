@@ -92,6 +92,7 @@ import com.filtertube.app.data.GoogleAuth
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.StreamData
+import com.filtertube.app.data.bestDownloadableVideo
 import com.filtertube.app.data.downloadableTracks
 import com.filtertube.app.data.StreamTrack
 import com.filtertube.app.data.Video
@@ -1041,8 +1042,19 @@ private fun OnVideoPlayerScreen(
                 com.filtertube.app.data.LibraryBadges.setLiked(ui.mediaId ?: "", liked)
                 syncLikeToYoutube(context, scope, ui.mediaId ?: "", liked)
                 if (liked && sb.autoDownloadLikes && sb.premiumActive && currentData != null) {
-                    com.filtertube.app.data.DownloadEngine.enqueue(context, currentVideo(), currentData.bestVideoUrl, false, currentData.streamUserAgent)
-                    Toast.makeText(context, "מוריד אוטומטית ⚡", Toast.LENGTH_SHORT).show()
+                    // bestVideoUrl לבדו הוא זרם וידאו-בלבד כשאין זרם משולב,
+                    // וההורדה האוטומטית ייצרה קובץ אילם. bestDownloadableVideo
+                    // מחזיר גם את זרם האודיו הנלווה, והמנוע ממזג אותם ל-MP4.
+                    val track = currentData.bestDownloadableVideo()
+                    if (track == null) {
+                        Toast.makeText(context, "אין איכות וידאו שניתן להוריד", Toast.LENGTH_SHORT).show()
+                    } else {
+                        com.filtertube.app.data.DownloadEngine.enqueue(
+                            context, currentVideo(), track.videoUrl, false,
+                            currentData.streamUserAgent, track.audioUrl,
+                        )
+                        Toast.makeText(context, "מוריד אוטומטית ⚡", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "אהבתי", tint = if (liked) ThemeState.accent else ThemeState.text) }
             IconButton(onClick = { showSheet = true }) { Icon(Icons.Default.Tune, "הגדרות נגן", tint = ThemeState.text) }

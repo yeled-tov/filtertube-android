@@ -38,7 +38,12 @@ class NewPipeResolver : StreamResolver {
 
             val muxed = allVideo.filter { !it.isVideoOnly && it.height > 0 }
             val videoOnly = (allVideo.filter { it.isVideoOnly } + videoOnlyList).filter { it.height > 0 }
-            val audioBest = audioStreams.maxByOrNull { it.bitrate }
+            // m4a לפני webm, ורק אז לפי ביטרייט: MediaMuxer יודע לארוז MP4
+            // עם AAC בלבד, ובלי זה שום איכות וידאו לא ניתנת להורדה.
+            val byBitrate = audioStreams.sortedByDescending { it.bitrate }
+            val audioBest = byBitrate.firstOrNull {
+                it.format?.mimeType.orEmpty().startsWith("audio/mp4")
+            } ?: byBitrate.firstOrNull()
 
             val muxedTracks = muxed.map {
                 StreamTrack(it.height, "${it.height}p", it.content, null, it.format?.mimeType.orEmpty())

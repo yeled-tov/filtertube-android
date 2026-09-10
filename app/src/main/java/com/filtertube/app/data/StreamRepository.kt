@@ -1,6 +1,8 @@
 package com.filtertube.app.data
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -65,6 +67,13 @@ fun StreamData.downloadableTracks(): List<StreamTrack> =
         .distinctBy { it.height }
         .sortedByDescending { it.height }
 
+/**
+ * האם יש כאן זרם משולב — וידאו וקול בקובץ אחד.
+ *
+ * זה ההבדל בין ניגון שמתחיל מיד לניגון שדורש מיזוג של שני מקורות בזמן אמת.
+ */
+fun StreamData.hasMuxedTrack(): Boolean = tracks.any { it.height > 0 && it.audioUrl == null }
+
 /** האיכות הגבוהה ביותר שניתנת להורדה עם קול. */
 fun StreamData.bestDownloadableVideo(): StreamTrack? = downloadableTracks().firstOrNull()
 
@@ -112,6 +121,15 @@ object StreamRepository {
 
     private const val CACHE_TTL_MS = 5 * 60 * 1000L // 5 דקות TTL (כתובות YouTube חתומות פגות מהר)
     private const val MAX_CACHE_SIZE = 50
+
+    /**
+     * כמה מחכים לזרם משולב לפני שמסתפקים ב-DASH.
+     *
+     * NewPipe — המנוע היחיד שמחזיר זרם משולב — עונה בפועל ב-1.3–1.5 שניות.
+     * 2.5 שניות נותנות לו מרווח נוח בלי להשאיר את המשתמש תקוע אם הוא נופל:
+     * במקרה הגרוע מתחילים DASH ברבע השנייה שכבר עברה ממילא.
+     */
+    private const val MUXED_GRACE_MS = 2_500L
 
     private data class CachedStream(
         val data: StreamData,
@@ -298,7 +316,20 @@ object StreamRepository {
         //   IOS נכשל 642ms → VR נכשל 335ms → NewPipe הצליח 1943ms = 2922ms
         // במקביל, הסרטון עולה כזמן המנוע המהיר שהצליח, וכישלון של מנוע אחר
         // כבר לא עולה למשתמש כלום.
+        // ── מי "מנצח" ──────────────────────────────────────────────────────
+        // קודם לכן ניצח מי שענה ראשון, וזו הייתה המדידה הלא נכונה. InnerTube
+        // IOS עונה ב-250ms אבל מחזיר DASH בלבד — וידאו וקול בשני זרמים
+        // נפרדים. NewPipe עונה ב-1400ms ומחזיר זרם משולב (muxed) שכבר כולל
+        // קול. המהיר תמיד ניצח, ולכן:
+        //   • הנגן נאלץ למזג שני מקורות, והצליל יצא אחרי ~10 שניות במקום מיד
+        //   • ההורדה נאלצה להוריד שניים ולמזג — ומכיוון שהאודיו הנבחר היה
+        //     webm, שום איכות וידאו לא עברה את בדיקת ההורדה ונשאר רק אודיו
+        //
+        // "נפתר מהר" זה לא "מתנגן מהר". לכן זרם משולב מנצח מיד, וזרם DASH
+        // נשמר בצד כגיבוי שנכנס לתפקיד רק אם אין משולב תוך זמן סביר.
         val winner = CompletableDeferred<StreamData>()
+        val fallback = AtomicReference<StreamData?>(null)
+
         val attempts = activeResolvers.map { resolver ->
             launch(Dispatchers.IO) {
                 val rT0 = System.currentTimeMillis()
@@ -317,13 +348,24 @@ object StreamRepository {
                 } catch (e: Exception) {
                     null
                 }
-                if (result == null) {
-                    Diagnostics.log("StreamRepository $videoId: ${resolver.name} נכשל (${System.currentTimeMillis() - rT0}ms)")
-                } else if (winner.complete(result)) {
-                    Diagnostics.log(
-                        "StreamRepository $videoId: ${resolver.name} ניצח ב-${System.currentTimeMillis() - rT0}ms " +
-                            "(סה\"כ ${System.currentTimeMillis() - t0}ms) · ${trackSummary(result)}"
-                    )
+                val ms = System.currentTimeMillis() - rT0
+                when {
+                    result == null ->
+                        Diagnostics.log("StreamRepository $videoId: ${resolver.name} נכשל (${ms}ms)")
+
+                    result.hasMuxedTrack() -> if (winner.complete(result)) {
+                        Diagnostics.log(
+                            "StreamRepository $videoId: ${resolver.name} ניצח ב-${ms}ms " +
+                                "(סה\"כ ${System.currentTimeMillis() - t0}ms) · ${trackSummary(result)}"
+                        )
+                    }
+
+                    else -> if (fallback.compareAndSet(null, result)) {
+                        Diagnostics.log(
+                            "StreamRepository $videoId: ${resolver.name} החזיר DASH ב-${ms}ms — " +
+                                "בגיבוי, ממתינים לזרם משולב · ${trackSummary(result)}"
+                        )
+                    }
                 }
             }
         }
@@ -334,6 +376,9 @@ object StreamRepository {
             // joinAll חוזר גם כשמנוע הצליח — כל הניסיונות פשוט הסתיימו. בלי
             // הבדיקה הזו נרשם "כל המנועים נכשלו" מיד אחרי "NewPipe ניצח".
             if (winner.isCompleted) return@launch
+            // אף מנוע לא החזיר זרם משולב, אבל יש DASH ביד. DASH איטי יותר
+            // להתחלה — הוא לא "כישלון".
+            fallback.get()?.let { winner.complete(it); return@launch }
             Diagnostics.log("StreamRepository $videoId: כל המנועים נכשלו ${System.currentTimeMillis() - t0}ms ✖")
             winner.completeExceptionally(
                 IllegalStateException("לא הצלחנו להפעיל את הסרטון. נסה שוב בעוד רגע."),
@@ -341,7 +386,16 @@ object StreamRepository {
         }
 
         val won = try {
-            winner.await()
+            // ההמתנה לזרם משולב חסומה בזמן: אם המנוע שמחזיר אותו תקוע, עדיף
+            // DASH מאשר מסך "טוען" פתוח.
+            withTimeoutOrNull(MUXED_GRACE_MS) { winner.await() }
+                ?: fallback.get()?.also {
+                    Diagnostics.log(
+                        "StreamRepository $videoId: לא הגיע זרם משולב תוך ${MUXED_GRACE_MS}ms — " +
+                            "מנגנים DASH מ-${it.resolvedBy}"
+                    )
+                }
+                ?: winner.await()
         } finally {
             // ברגע שיש מנצח אין טעם להמשיך לחכות לשאר.
             attempts.forEach { it.cancel() }

@@ -280,11 +280,23 @@ class InnerTubeResolver(
             when {
                 mime.startsWith("audio/") -> {
                     val br = f.optInt("bitrate")
-                    // מעדיפים m4a על webm בציון שווה: רק m4a ניתן למיזוג
-                    // ל-MP4, ולכן הוא שווה יותר גם אם הביטרייט דומה.
-                    val score = if (mime.startsWith("audio/mp4")) br + 1 else br
-                    if (score > bestAudioBitrate) {
-                        bestAudioBitrate = score
+                    // ── m4a תמיד מנצח webm, לא רק בתיקו ──────────────────
+                    // קודם לכן m4a קיבל בונוס של ביט אחד, וזה לא הספיק:
+                    // יוטיוב מגיש opus/webm בביטרייט גבוה יותר, אז webm ניצח
+                    // כמעט תמיד. MediaMuxer יודע לארוז MP4 עם AAC בלבד, ולכן
+                    // כל איכות וידאו נפסלה בבדיקת ההורדה ונשאר רק אודיו —
+                    // בדיוק התלונה "אי אפשר להוריד וידאו".
+                    //
+                    // ההפרש באיכות שמיעתית זניח; היכולת להוריד וידאו לא.
+                    val mp4 = mime.startsWith("audio/mp4")
+                    val currentIsMp4 = bestAudioMime.startsWith("audio/mp4")
+                    val better = when {
+                        mp4 && !currentIsMp4 -> true
+                        !mp4 && currentIsMp4 -> false
+                        else -> br > bestAudioBitrate
+                    }
+                    if (better) {
+                        bestAudioBitrate = br
                         bestAudioUrl = url
                         bestAudioMime = mime
                     }
