@@ -259,6 +259,9 @@ class PlaybackService : MediaSessionService() {
                 if (playbackState == androidx.media3.common.Player.STATE_IDLE) {
                     cancelCrossfade()
                 }
+                if (playbackState == androidx.media3.common.Player.STATE_READY) {
+                    player.currentMediaItem?.mediaId?.let { PlayerRecoveryHandler.resetAttempts(it) }
+                }
             }
 
             override fun onTimelineChanged(
@@ -268,9 +271,6 @@ class PlaybackService : MediaSessionService() {
                 // clearMediaItems() לא עובר דרך STATE_IDLE. תור ריק פירושו
                 // שאין למה לעמעם.
                 if (player.mediaItemCount == 0) cancelCrossfade()
-                if (playbackState == androidx.media3.common.Player.STATE_READY) {
-                    player.currentMediaItem?.mediaId?.let { PlayerRecoveryHandler.resetAttempts(it) }
-                }
             }
 
             override fun onPositionDiscontinuity(
