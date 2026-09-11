@@ -163,3 +163,75 @@ jobs:
           } | while IFS= read -r line; do
             [ -n "$line" ] && echo "::error::${line}"
           done
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # נדרש כדי להוריד את ה-APK מה-job הקודם: כשמצהירים permissions ברמת
+      # job, ההצהרה *מחליפה* את כל הסט — ובלי actions:read הקריאה
+      # ListArtifacts מוחזרת 403 ו-download-artifact נכשל.
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0   # דרוש להיסטוריה ולתגים, כדי לבנות רשימת שינויים
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: FilterTube-APK
+          path: artifacts
+
+      - name: Build Hebrew release notes
+        run: bash .github/release-notes.sh stable "${{ github.run_number }}" "${{ github.ref_name }}"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        with:
+          tag_name: build-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ env.RELEASE_TITLE }}
+          body_path: release-notes.md
+          files: artifacts/FilterTube.apk
+          fail_on_unmatched_files: true
+
+  # ── Pre-release לבדיקות — רק מענפי test/**, לא מגיע ללקוחות ───────────────
+  prerelease:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/test/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # נדרש כדי להוריד את ה-APK מה-job הקודם: כשמצהירים permissions ברמת
+      # job, ההצהרה *מחליפה* את כל הסט — ובלי actions:read הקריאה
+      # ListArtifacts מוחזרת 403 ו-download-artifact נכשל.
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: FilterTube-APK
+          path: artifacts
+
+      - name: Build Hebrew release notes
+        run: bash .github/release-notes.sh test "${{ github.run_number }}" "${{ github.ref_name }}"
+
+      - name: Create pre-release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        with:
+          tag_name: test-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ env.RELEASE_TITLE }}
+          prerelease: true
+          body_path: release-notes.md
+          files: artifacts/FilterTube-test.apk
+          fail_on_unmatched_files: true

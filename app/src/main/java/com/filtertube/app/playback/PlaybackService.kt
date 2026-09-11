@@ -251,6 +251,23 @@ class PlaybackService : MediaSessionService() {
                 if (playbackState == androidx.media3.common.Player.STATE_ENDED && incomingPlayer != null) {
                     completeHandoff()
                 }
+                // ── "סגור" חייב לעצור גם את נגן העמעום ────────────────────
+                // העמעום המוצלב בונה ExoPlayer *שני* שכבר מנגן את השיר הבא
+                // בפלט נפרד. stop() על הבקר נגע רק בנגן הראשי, והשני המשיך
+                // להשמיע — בדיוק מה שנראה כמו "לחצתי איקס והשיר הבא ממשיך".
+                // stop() מעביר את הנגן ל-IDLE, וזו הנקודה לתפוס.
+                if (playbackState == androidx.media3.common.Player.STATE_IDLE) {
+                    cancelCrossfade()
+                }
+            }
+
+            override fun onTimelineChanged(
+                timeline: androidx.media3.common.Timeline,
+                reason: Int,
+            ) {
+                // clearMediaItems() לא עובר דרך STATE_IDLE. תור ריק פירושו
+                // שאין למה לעמעם.
+                if (player.mediaItemCount == 0) cancelCrossfade()
                 if (playbackState == androidx.media3.common.Player.STATE_READY) {
                     player.currentMediaItem?.mediaId?.let { PlayerRecoveryHandler.resetAttempts(it) }
                 }

@@ -2,6 +2,7 @@ package com.filtertube.app.data
 
 import android.accounts.Account
 import android.content.Context
+import com.filtertube.app.R
 import com.google.android.gms.auth.GoogleAuthUtil
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
@@ -43,10 +44,18 @@ object GoogleAuth {
      * הפעלת Google, ואז הורדה מחדש של google-services.json.
      */
     fun webClientId(context: Context): String? {
-        val resId = context.resources.getIdentifier(
-            "default_web_client_id", "string", context.packageName,
-        )
-        return if (resId != 0) context.getString(resId).takeIf { it.isNotBlank() } else null
+        // עדיפות ראשונה: המשאב שתוסף google-services מייצר, אם הקובץ עודכן.
+        val generated = context.resources
+            .getIdentifier("default_web_client_id", "string", context.packageName)
+            .takeIf { it != 0 }
+            ?.let { context.getString(it) }
+            ?.takeIf { it.isNotBlank() }
+        if (generated != null) return generated
+
+        // ונפילה למחרוזת שאפשר להדביק ידנית ב-strings.xml. הורדת קובץ
+        // google-services.json מהטלפון היא מכשול אמיתי; העתקת מזהה אחד לא.
+        return runCatching { context.getString(R.string.filtertube_web_client_id) }
+            .getOrNull()?.takeIf { it.isNotBlank() }
     }
 
     /** true כשאפשר להשתמש בהתחברות מאוחדת (גוגל מאמת גם את חשבון FilterTube). */

@@ -77,6 +77,16 @@ object Playback {
         }
     }
 
+    /**
+     * מנקה בקשות "הוסף לתור" שממתינות.
+     *
+     * בלי זה, סרטון שנוסף ל-pendingNext לפני העצירה היה נכנס לתור ברגע
+     * שהמשתמש מפעיל משהו אחר — כלומר "הסגירה" לא באמת ניקתה הכל.
+     */
+    fun clearPending() {
+        synchronized(pendingNext) { pendingNext.clear() }
+    }
+
     private suspend fun addPendingNext(context: Context, controller: MediaController) {
         val requested = synchronized(pendingNext) {
             val copy = pendingNext.toList(); pendingNext.clear(); copy

@@ -164,9 +164,9 @@ fun MusicPlayerScreen(
                 ),
             )
             Row(Modifier.fillMaxWidth()) {
-                Text(formatTime(position), color = ThemeState.subtext, fontSize = 11.5.sp)
+                Text(com.filtertube.app.ui.timeLtr(formatTime(position)), color = ThemeState.subtext, fontSize = 11.5.sp)
                 Spacer(Modifier.weight(1f))
-                Text(formatTime(ui.duration), color = ThemeState.subtext, fontSize = 11.5.sp)
+                Text(com.filtertube.app.ui.timeLtr(formatTime(ui.duration)), color = ThemeState.subtext, fontSize = 11.5.sp)
             }
         }
         }

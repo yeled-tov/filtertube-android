@@ -91,6 +91,8 @@ fun MiniPlayer(
         // ביטול בניית התור חייב לקדום לניקוי: אחרת הבנייה שרצה ברקע מוסיפה
         // פריט מיד אחרי הניקוי, והנגן "קם לתחייה" עם השיר הבא.
         RadioQueueManager.cancel()
+        com.filtertube.app.playback.Playback.clearPending()
+        controller.pause()
         controller.stop()
         controller.clearMediaItems()
     }

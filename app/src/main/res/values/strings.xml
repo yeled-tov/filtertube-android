@@ -1,4 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">FilterTube</string>
+
+    <!--
+      מזהה לקוח ה-Web של פרויקט Firebase.
+      ריק = החיבור המאוחד (גוגל יוצר גם את חשבון FilterTube) כבוי.
+
+      איפה מוצאים: Firebase Console ← Authentication ← Sign-in method ←
+      Google ← Web SDK configuration ← Web client ID.
+
+      מוגדר כאן ולא נלקח מ-google-services.json בכוונה: אפשר להדביק מחרוזת
+      אחת מהטלפון, בלי להוריד ולהחליף קובץ. אם המשאב default_web_client_id
+      כן קיים (כלומר הקובץ עודכן), הוא מקבל עדיפות.
+    -->
+    <string name="filtertube_web_client_id" translatable="false"></string>
 </resources>

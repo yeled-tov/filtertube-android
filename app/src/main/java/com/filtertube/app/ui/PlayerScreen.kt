@@ -312,9 +312,9 @@ fun PlayerScreen(
             // בשמאל — הפוך ממה שכל נגן בעולם עושה.
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-                    Text(fmtTime(ui.position), color = ThemeState.subtext2, fontSize = 11.sp)
+                    Text(timeLtr(fmtTime(ui.position)), color = ThemeState.subtext2, fontSize = 11.sp)
                     Spacer(Modifier.weight(1f))
-                    Text(fmtTime(ui.duration), color = ThemeState.subtext2, fontSize = 11.sp)
+                    Text(timeLtr(fmtTime(ui.duration)), color = ThemeState.subtext2, fontSize = 11.sp)
                 }
             }
         }
@@ -559,7 +559,7 @@ private fun FullscreenVideo(
                     modifier = Modifier.fillMaxWidth().padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(fmtTime(ui.position), color = ThemeState.text, fontSize = 11.sp)
+                    Text(timeLtr(fmtTime(ui.position)), color = ThemeState.text, fontSize = 11.sp)
                     Box(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
                         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                             Slider(
@@ -572,7 +572,7 @@ private fun FullscreenVideo(
                             )
                         }
                     }
-                    Text(fmtTime(ui.duration), color = ThemeState.text, fontSize = 11.sp)
+                    Text(timeLtr(fmtTime(ui.duration)), color = ThemeState.text, fontSize = 11.sp)
                     IconButton(onClick = onExit) { Icon(Icons.Default.FullscreenExit, "צא ממסך מלא", tint = ThemeState.text) }
                 }
                 }
@@ -1030,9 +1030,9 @@ private fun OnVideoPlayerScreen(
                     Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp)) {
                         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                             Row(modifier = Modifier.fillMaxWidth()) {
-                                Text(fmtTime(ui.position), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Text(timeLtr(fmtTime(ui.position)), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.weight(1f))
-                                Text(fmtTime(ui.duration), color = Color(0xB3FFFFFF), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Text(timeLtr(fmtTime(ui.duration)), color = Color(0xB3FFFFFF), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             }
                         }
                         WaveSeekBar(
