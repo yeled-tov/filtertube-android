@@ -150,3 +150,16 @@ jobs:
           grep -E "^Execution failed for task|^\* What went wrong" -A 2 build-output.txt 2>/dev/null | tail -n 5 || true
           echo "════ שגיאות קומפילציה ════"
           grep -E '^e: ' build-output.txt 2>/dev/null | tail -n 10 || true
+          # ── והעיקר: כהערות (annotations) ולא רק כטקסט ביומן ──────────────
+          # החלון שאני קורא בו הוא סוף ה-job, ורעש ה-post-job בלבד ממלא
+          # אותו. הערות נשמרות על ה-check run ונקראות דרך ה-API בנפרד
+          # מהיומן, ולכן הן שורדות בכל מקרה.
+          {
+            grep -E '^e: ' build-output.txt 2>/dev/null | tail -n 10
+            grep -E '^Execution failed for task' build-output.txt 2>/dev/null | tail -n 2
+            for f in $(find app/build -name 'lint-results-*.txt' 2>/dev/null); do
+              grep -E 'Error:' "$f" | head -n 4
+            done
+          } | while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::${line}"
+          done

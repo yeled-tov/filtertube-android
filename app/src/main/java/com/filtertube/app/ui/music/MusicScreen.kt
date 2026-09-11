@@ -371,6 +371,21 @@ private fun MusicHome(
     }
 }
 
+/** כפתור פעולה רחב — "נגן", "ערבוב", "הורד". */
+@Composable
+private fun BigAction(label: String, icon: ImageVector, modifier: Modifier, onClick: () -> Unit) {
+    Row(
+        modifier = modifier.height(48.dp).clip(RoundedCornerShape(24.dp))
+            .background(ThemeState.card).clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(icon, null, tint = ThemeState.accent, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
 /** רצועה אופקית של כרטיסים ריבועיים. */
 @Composable
 private fun SongRow(songs: List<Video>, onPlay: (List<Video>, Int) -> Unit) {
