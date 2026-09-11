@@ -60,3 +60,23 @@
 # בקובץ mapping.txt של הבנייה, וזה מה שמאפשר לפענח דוח קריסה.
 -renamesourcefileattribute SourceFile
 -keepattributes SourceFile,LineNumberTable
+
+# ── Rhino (מנוע ה-JS של NewPipe) ─────────────────────────────────────────
+# Rhino נבנה לשרת ומתייחס למחלקות JDK שאינן קיימות באנדרואיד: javax.script
+# (ממשק ScriptEngine) ו-jdk.dynalink. הן לעולם לא נטענות בזמן ריצה, אבל
+# R8 רואה הפניה למחלקה חסרה מתוך מחלקה ששמורה — ונעצר.
+#
+# זה בדיוק מה ש-missing_rules.txt של AGP ביקש.
+-dontwarn javax.script.**
+-dontwarn jdk.dynalink.**
+-dontwarn java.lang.invoke.**
+-dontwarn org.mozilla.javascript.engine.**
+-dontwarn org.mozilla.javascript.jdk18.**
+-dontwarn org.mozilla.javascript.tools.**
+-dontwarn sun.misc.**
+
+# ── ספריות נוספות ────────────────────────────────────────────────────────
+-dontwarn org.slf4j.**
+-dontwarn javax.annotation.**
+-dontwarn javax.naming.**
+-dontwarn java.beans.**

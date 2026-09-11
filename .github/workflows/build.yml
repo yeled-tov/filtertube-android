@@ -144,14 +144,16 @@ jobs:
           grep -A 8 -F 'First failure' build-output.txt 2>/dev/null | tail -n 12 || true
           # כישלון R8 לא מייצר שורות 'e:' ולא דוח lint — הוא נראה כמו בנייה
           # שנפלה בלי שום סיבה. שני המקומות שבהם הוא כן מסביר את עצמו:
-          echo "──── R8 ────"
-          grep -nE "R8|Missing class|proguard|minify|shrink" build-output.txt 2>/dev/null | tail -n 15 || true
-          # AGP כותב לכאן בדיוק את חוקי ה-keep שחסרים.
+          # החלון שאני קורא בו הוא סוף ה-job בלבד, ולכן מה שחשוב מודפס
+          # אחרון: רשימת חוקים ארוכה דחפה קודם את שורת השגיאה אל מחוץ לחלון.
+          echo "──── חוקים חסרים (8 ראשונים) ────"
           for f in $(find app/build -name 'missing_rules.txt' 2>/dev/null); do
-            echo "── $f ──"; head -n 25 "$f"
+            head -n 8 "$f"
           done
+          echo "──── R8 ────"
+          grep -nE "Missing class|Compilation failed|R8: " build-output.txt 2>/dev/null | tail -n 10 || true
           echo "──── What went wrong ────"
-          grep -A 12 -F 'What went wrong' build-output.txt 2>/dev/null | tail -n 16 || true
+          grep -A 10 -F 'What went wrong' build-output.txt 2>/dev/null | tail -n 12 || true
 
   # ── Release יציב — רק מ-main, מגיע לכל הלקוחות ────────────────────────────
   release:
