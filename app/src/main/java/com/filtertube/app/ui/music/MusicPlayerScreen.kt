@@ -143,6 +143,11 @@ fun MusicPlayerScreen(
         Spacer(Modifier.height(12.dp))
 
         // ── סרגל ההתקדמות ─────────────────────────────────────────────────
+        // זמן תמיד זורם משמאל לימין, גם בממשק עברי: 0:00 בשמאל, ההתקדמות
+        // זוחלת ימינה, הזמן הכולל בימין.
+        CompositionLocalProvider(
+            androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Ltr,
+        ) {
         Column(modifier = Modifier.padding(horizontal = MusicDim.playerPadding)) {
             Slider(
                 value = position.coerceIn(0L, duration).toFloat(),
@@ -163,6 +168,7 @@ fun MusicPlayerScreen(
                 Spacer(Modifier.weight(1f))
                 Text(formatTime(ui.duration), color = ThemeState.subtext, fontSize = 11.5.sp)
             }
+        }
         }
 
         Spacer(Modifier.height(10.dp))

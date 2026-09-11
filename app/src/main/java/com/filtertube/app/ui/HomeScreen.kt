@@ -91,6 +91,8 @@ fun HomeScreen(
     var refreshing by remember { mutableStateOf(false) }
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
+    /** הקטגוריות שבאמת יש להן סרטונים בפיד הנוכחי. */
+    var feedCategories by remember { mutableStateOf<Set<String>>(emptySet()) }
     /** true בזמן שנבחר סרטון הפתיחה לרדיו — מונע לחיצה כפולה. */
     var radioStarting by remember { mutableStateOf(false) }
     /** null = עוד לא נבדק. false = אין חיבור, ואז מוצגת רצועת האופליין. */
@@ -247,7 +249,15 @@ fun HomeScreen(
                         modifier = Modifier.height(22.dp).width(1.dp).background(ThemeState.divider),
                     )
                     CategoryChip("הכל", selectedCategory == null) { selectedCategory = null }
-                    val categories = remember(channels) { sortedCategories(channels.map { it.category }) }
+                    // ── הצ'יפים נבנים מהפיד, לא מרשימת הערוצים ─────────
+                    // צ'יפ "ילדים" הופיע כי יש ערוצי ילדים מאושרים, אבל הפיד
+                    // לא הכיל אף סרטון מהם — ולחיצה עליו הובילה למסך ריק.
+                    // צ'יפ שמוביל לכלום הוא באג, לא תצוגה.
+                    val categories = remember(channels, feedCategories) {
+                        sortedCategories(
+                            channels.map { it.category }.filter { it in feedCategories },
+                        )
+                    }
                     categories.forEach { cat ->
                         CategoryChip(categoryLabelHe(cat), selectedCategory == cat) { selectedCategory = cat }
                     }
@@ -295,6 +305,19 @@ fun HomeScreen(
                     // סרטונים — פריים אחרי פריים.
                     val catByChannel = remember(channels) {
                         channels.associate { it.youtubeChannelId to it.category }
+                    }
+                    LaunchedEffect(s.videos, catByChannel) {
+                        feedCategories = s.videos.mapNotNullTo(HashSet()) { catByChannel[it.channelId] }
+                        // אם הקטגוריה שנבחרה נעלמה מהפיד, חוזרים ל"הכל"
+                        // במקום להשאיר את המשתמש מול מסך ריק.
+                        if (selectedCategory != null && selectedCategory !in feedCategories) {
+                            selectedCategory = null
+                        }
+                        runCatching {
+                            com.filtertube.app.data.ChannelAvatars.warm(
+                                context, s.videos.map { it.channelId }.distinct(),
+                            )
+                        }
                     }
                     val displayed = remember(s.videos, selectedCategory, catByChannel) {
                         if (selectedCategory == null) s.videos
@@ -516,12 +539,26 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
         }
         Spacer(Modifier.height(10.dp))
         Row(modifier = Modifier.fillMaxWidth()) {
+            // הסמל האמיתי של הערוץ. אות בודדת לא מזהה כלום, ובשם עברי היא
+            // גם נראית כמו תקלה. ChannelAvatars מושך אותם דרך NewPipe פעם
+            // אחת לכל ערוץ ושומר לתמיד.
             Box(
                 modifier = Modifier.size(34.dp).clip(RoundedCornerShape(50))
                     .background(Brush.linearGradient(ThemeState.accentColors)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(video.channelName.firstOrNull()?.uppercase() ?: "?", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                val avatar = com.filtertube.app.data.ChannelAvatars.avatar(video.channelId)
+                if (avatar != null) {
+                    AsyncImage(
+                        model = avatar, contentDescription = video.channelName,
+                        modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Icon(
+                        Icons.Default.Person, null, tint = Color.White,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {

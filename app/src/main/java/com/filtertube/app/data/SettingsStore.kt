@@ -215,6 +215,21 @@ class SettingsStore(context: Context) {
         get() = prefs.getInt(KEY_SLEEP_TIMER, 0).coerceIn(0, 180)
         set(value) = prefs.edit().putInt(KEY_SLEEP_TIMER, value.coerceIn(0, 180)).apply()
 
+    /** החלקה על המיני-נגן מחליפה שיר, וגרירה למטה עוצרת. */
+    var miniPlayerSwipe: Boolean
+        get() = prefs.getBoolean(KEY_MINI_SWIPE, true)
+        set(value) = prefs.edit().putBoolean(KEY_MINI_SWIPE, value).apply()
+
+    /** החלקה ימינה: false = לשיר הקודם, true = לתחילת השיר הנוכחי. */
+    var miniSwipeRightRestarts: Boolean
+        get() = prefs.getBoolean(KEY_MINI_SWIPE_RESTART, false)
+        set(value) = prefs.edit().putBoolean(KEY_MINI_SWIPE_RESTART, value).apply()
+
+    /** כמה פעמים כבר הוצג הרמז שאפשר להחליק. */
+    var miniSwipeHintsShown: Int
+        get() = prefs.getInt(KEY_MINI_SWIPE_HINTS, 0)
+        set(value) = prefs.edit().putInt(KEY_MINI_SWIPE_HINTS, value).apply()
+
     var audioOnlyMode: Boolean
         get() = prefs.getBoolean(KEY_AUDIO_ONLY, false)
         set(value) = prefs.edit().putBoolean(KEY_AUDIO_ONLY, value).apply()
@@ -612,6 +627,9 @@ class SettingsStore(context: Context) {
         private const val KEY_QUALITY = "preferred_quality"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_AUDIO_ONLY = "audio_only_mode"
+        private const val KEY_MINI_SWIPE = "mini_player_swipe"
+        private const val KEY_MINI_SWIPE_RESTART = "mini_swipe_right_restarts"
+        private const val KEY_MINI_SWIPE_HINTS = "mini_swipe_hints_shown"
         private const val KEY_AUDIO_QUALITY = "music_audio_quality"
         private const val KEY_SKIP_SILENCE = "music_skip_silence"
         private const val KEY_AUDIO_NORM = "music_audio_normalization"

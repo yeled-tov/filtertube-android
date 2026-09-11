@@ -307,10 +307,15 @@ fun PlayerScreen(
                     ),
                 )
             }
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-                Text(fmtTime(ui.position), color = ThemeState.subtext2, fontSize = 11.sp)
-                Spacer(Modifier.weight(1f))
-                Text(fmtTime(ui.duration), color = ThemeState.subtext2, fontSize = 11.sp)
+            // גם שורת הזמנים חייבת להיות LTR, לא רק הסרגל: ב-RTL הילד
+            // הראשון מרונדר בימין, ולכן "0:00" הופיע בימין והזמן הכולל
+            // בשמאל — הפוך ממה שכל נגן בעולם עושה.
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                    Text(fmtTime(ui.position), color = ThemeState.subtext2, fontSize = 11.sp)
+                    Spacer(Modifier.weight(1f))
+                    Text(fmtTime(ui.duration), color = ThemeState.subtext2, fontSize = 11.sp)
+                }
             }
         }
 
@@ -546,6 +551,7 @@ private fun FullscreenVideo(
                             modifier = Modifier.size(38.dp))
                     }
                 }
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Row(
                     modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -565,6 +571,7 @@ private fun FullscreenVideo(
                     }
                     Text(fmtTime(ui.duration), color = ThemeState.text, fontSize = 11.sp)
                     IconButton(onClick = onExit) { Icon(Icons.Default.FullscreenExit, "צא ממסך מלא", tint = ThemeState.text) }
+                }
                 }
             }
         }
@@ -1017,10 +1024,12 @@ private fun OnVideoPlayerScreen(
 
                     // bottom seek
                     Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            Text(fmtTime(ui.position), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.weight(1f))
-                            Text(fmtTime(ui.duration), color = Color(0xB3FFFFFF), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                Text(fmtTime(ui.position), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.weight(1f))
+                                Text(fmtTime(ui.duration), color = Color(0xB3FFFFFF), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                         WaveSeekBar(
                             position = ui.position, duration = ui.duration,

@@ -15,6 +15,8 @@ import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.PlayArrow
@@ -40,6 +42,7 @@ import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.forLevel
+import kotlinx.coroutines.launch
 
 /**
  * הקטגוריות שנחשבות "מוזיקה" ב-FilterMusic.
@@ -61,6 +64,7 @@ private enum class MusicTab(val label: String, val icon: ImageVector) {
     HOME("בית", Icons.Default.Home),
     SEARCH("חיפוש", Icons.Default.Search),
     LIBRARY("ספריה", Icons.Default.LibraryMusic),
+    DOWNLOADS("הורדות", Icons.Default.Download),
 }
 
 /**
@@ -97,6 +101,9 @@ fun FilterMusicScreen(
     var history by remember { mutableStateOf<List<Video>>(emptyList()) }
     var artists by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var favorites by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var downloads by remember { mutableStateOf<List<Video>>(emptyList()) }
+    /** null = טרם נבדק. false = אין חיבור. */
+    var online by remember { mutableStateOf<Boolean?>(null) }
 
     LaunchedEffect(Unit) {
         val channels = runCatching {
@@ -125,7 +132,22 @@ fun FilterMusicScreen(
         }
         artists = channels.filter { it.youtubeChannelId in musicIds }
             .sortedByDescending { it.youtubeChannelId in favorites }
+        downloads = runCatching { store.downloads() }.getOrNull().orEmpty()
+            .filter { it.localUri.isNotBlank() }
         loading = false
+    }
+
+    // ── זיהוי אופליין ─────────────────────────────────────────────────────
+    // בלי חיבור, מסך בית שמנסה לנגן מיוטיוב הוא רק תסכול. הטאב מוחלף
+    // אוטומטית להורדות — פעם אחת, כדי לא לחטוף למשתמש את הניווט בכל חזרה
+    // למסך אם הוא בכל זאת בחר ללכת למקום אחר.
+    var offlineRedirected by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        online = com.filtertube.app.data.Connectivity.isOnline(context)
+        if (online == false && !offlineRedirected) {
+            offlineRedirected = true
+            tab = MusicTab.DOWNLOADS
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
@@ -144,7 +166,8 @@ fun FilterMusicScreen(
                     },
                 )
                 tab == MusicTab.SEARCH -> MusicSearch(feed + likes + history, activeId, onPlay)
-                else -> MusicLibrary(likes, history, activeId, onPlay)
+                tab == MusicTab.LIBRARY -> MusicLibrary(likes, history, activeId, onPlay)
+                else -> MusicDownloads(downloads, online, activeId, onPlay)
             }
         }
 
@@ -432,6 +455,122 @@ private fun MusicLibrary(
             items(history.take(60), key = { "hist_${it.id}" }) { song ->
                 SongListItem(song, active = song.id == activeId, playing = song.id == activeId) {
                     onPlay(history, history.indexOf(song))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * ההורדות של FilterMusic — אודיו בלבד.
+ *
+ * ## למה רק אודיו
+ * זו אפליקציית מוזיקה. הורדת וידאו ממנה פירושה קובץ שאפשר לצפות בו
+ * מגלריית המכשיר, מחוץ לכל סינון — ולכן `enqueueByVideo(isAudio = true)`
+ * כאן תמיד, בלי קשר למתג הגלובלי.
+ */
+@Composable
+private fun MusicDownloads(
+    downloads: List<Video>,
+    online: Boolean?,
+    activeId: String?,
+    onPlay: (List<Video>, Int) -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val active = com.filtertube.app.data.DownloadEngine.active
+
+    Column(Modifier.fillMaxSize()) {
+        if (online == false) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(MusicDim.screenPadding)
+                    .clip(RoundedCornerShape(14.dp)).background(ThemeState.card)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.CloudOff, null, tint = Color(0xFFFFAA00), modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text("אין חיבור לאינטרנט", color = ThemeState.text, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                    Text("זה מה ששמור אצלך במכשיר", color = ThemeState.subtext, fontSize = 11.5.sp)
+                }
+            }
+        }
+
+        if (active.isNotEmpty()) {
+            NavigationTitle("מוריד עכשיו", label = "${active.size} פריטים")
+            active.take(4).forEach { task ->
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(horizontal = MusicDim.screenPadding, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            task.video.title, color = ThemeState.text, fontSize = 13.sp,
+                            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        )
+                        LinearProgressIndicator(
+                            progress = { task.progress / 100f },
+                            modifier = Modifier.fillMaxWidth().height(3.dp).padding(top = 4.dp),
+                            color = ThemeState.accent, trackColor = ThemeState.divider,
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Text(task.status, color = ThemeState.subtext, fontSize = 11.sp)
+                }
+            }
+        }
+
+        // הורדה של כל האהובים — האינטראקציה היחידה שבאמת מתחילה הורדה
+        // מתוך FilterMusic, ולכן היא נמצאת גם כשהרשימה עדיין ריקה.
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .padding(horizontal = MusicDim.screenPadding, vertical = 6.dp),
+        ) {
+            BigAction("הורד את מה שאהבת (אודיו)", Icons.Default.Download, Modifier.weight(1f)) {
+                scope.launch {
+                    val liked = runCatching { LibraryStore(context).likes() }.getOrNull().orEmpty()
+                    if (liked.isEmpty()) {
+                        android.widget.Toast.makeText(context, "אין שירים ב״אהבתי״", android.widget.Toast.LENGTH_SHORT).show()
+                    } else {
+                        android.widget.Toast.makeText(context, "מוסיף ${liked.size} לתור ההורדות…", android.widget.Toast.LENGTH_SHORT).show()
+                        // isAudio = true תמיד: זו אפליקציית מוזיקה, והורדת
+                        // וידאו ממנה הייתה קובץ לצפייה מחוץ לכל סינון.
+                        liked.forEach {
+                            com.filtertube.app.data.DownloadEngine.enqueueByVideo(context, it, isAudio = true)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (downloads.isEmpty()) {
+            EmptyState(
+                "עוד לא הורדת כלום.\nלחיצה ארוכה על שיר, או הכפתור בנגן, שומרת אותו לכאן — כאודיו.",
+            )
+            return@Column
+        }
+
+        LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+            item { NavigationTitle("הורדות", label = "${downloads.size} שירים · אודיו") }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(horizontal = MusicDim.screenPadding, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    BigAction("נגן הכל", Icons.Default.PlayArrow, Modifier.weight(1f)) {
+                        onPlay(downloads, 0)
+                    }
+                    BigAction("ערבוב", Icons.Default.Shuffle, Modifier.weight(1f)) {
+                        onPlay(downloads.shuffled(), 0)
+                    }
+                }
+            }
+            items(downloads, key = { "dl_${it.id}" }) { song ->
+                SongListItem(song, active = song.id == activeId, playing = song.id == activeId) {
+                    onPlay(downloads, downloads.indexOf(song))
                 }
             }
         }

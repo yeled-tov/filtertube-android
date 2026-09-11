@@ -72,6 +72,20 @@ object RadioQueueManager {
      * ([com.filtertube.app.data.PersonalRadio]), ואסור שמנוע ההמלצות של
      * יוטיוב ידרוס אותה — בדיוק זה מה שקרה קודם, ולכן הרדיו לא נשמע אישי.
      */
+    /**
+     * עוצר כל בנייה של תור שרצה כרגע.
+     *
+     * בלי זה, "סגור" במיני-נגן לא באמת סגר: stop() ו-clearMediaItems() ניקו
+     * את הנגן, אבל בניית התור המשיכה ברקע והוסיפה פריטים מיד אחרי — וזה
+     * נראה בדיוק כאילו השיר הבא עלה מעצמו.
+     */
+    fun cancel() {
+        currentQueueJob?.cancel()
+        currentQueueJob = null
+        activeQueueIds.clear()
+        Diagnostics.log("RADIO: בניית התור בוטלה")
+    }
+
     fun startQueue(
         context: Context,
         controller: MediaController?,
