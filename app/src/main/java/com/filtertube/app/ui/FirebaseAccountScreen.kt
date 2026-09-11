@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.CloudSync
+import com.filtertube.app.data.Diagnostics
 import com.filtertube.app.data.FirebaseAccount
 import com.filtertube.app.data.GoogleAuth
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -43,6 +44,14 @@ private enum class AccountEntryMode {
     SIGN_IN,
     REGISTER,
     VERIFY,
+
+    /**
+     * הגדרת הקוד ההורי אחרי כניסה עם גוגל.
+     *
+     * גוגל מאמתת מי המשתמש, אבל לא מספקת קוד. הקוד כאן מגן על רמות הסינון
+     * ועל Shorts — לא על החשבון — ולכן הוא נדרש גם כשהזהות כבר ודאית.
+     */
+    SET_CODE,
 }
 
 /**
@@ -129,8 +138,14 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
         scope.launch {
             loading = true
             try {
+                Diagnostics.log("AUTH גוגל: חזרה מבחירת חשבון")
                 val acct = GoogleSignIn.getSignedInAccountFromIntent(activityResult.data)
                     .getResult(ApiException::class.java)
+                Diagnostics.log(
+                    "AUTH גוגל: חשבון ${acct.email.orEmpty().take(3)}… · " +
+                        "idToken=${if (acct.idToken.isNullOrBlank()) "חסר" else "התקבל"}",
+                )
+
                 val signedIn = GoogleAuth.signInToFirebase(acct)
                 if (signedIn.isFailure) {
                     GoogleAuth.signOut(context)
@@ -140,18 +155,37 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                 }
                 val user = auth.currentUser
                 if (user == null) {
+                    Diagnostics.log("AUTH גוגל: signInWithCredential הצליח אבל אין currentUser")
                     message = "ההתחברות לא הושלמה. נסה שוב."
                     messageSuccess = false
                     return@launch
                 }
+
                 // מקשר את ההרשאה ליוטיוב לחשבון שזה עתה נוצר/אותר, כדי
                 // שהלייקים, המנויים והמוזיקה יימשכו מיד ולא בהתחברות נפרדת.
                 GoogleAuth.bindToCurrentFirebaseAccount(context, acct)
                 settings.cloudUid = user.uid
                 settings.cloudEmail = user.email.orEmpty()
+                user.email?.takeIf { it.isNotBlank() }?.let { settings.userEmail = it }
 
                 val restored = runCatching { CloudSync.pullCloudData(context, settings, user.uid) }
                     .getOrDefault(false)
+                Diagnostics.log("AUTH גוגל: התחברות הושלמה · שחזור מהענן=$restored")
+
+                // ── הקוד ההורי ────────────────────────────────────────────
+                // המסלול של מייל וקוד מגדיר אותו תוך כדי. גוגל לא מספקת קוד,
+                // ובלעדיו רמות הסינון ו-Shorts היו נשארים פתוחים לכל אחד
+                // שמחזיק את המכשיר — כלומר החיבור המהיר היה מבטל בשקט את
+                // ההגנה שהוא אמור לשמור עליה.
+                //
+                // אם החשבון כבר קיים והקוד שוחזר מהענן, אין מה לשאול.
+                if (!settings.hasFilterPassword) {
+                    Diagnostics.log("AUTH גוגל: אין קוד הורי — מבקשים להגדיר")
+                    message = ""
+                    mode = AccountEntryMode.SET_CODE
+                    return@launch
+                }
+
                 message = if (restored) "מחובר. משחזרים את הפרטים שלך…" else "החשבון מחובר ✓"
                 messageSuccess = true
                 onDone(!settings.onboardingDone)
@@ -161,6 +195,7 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                 // 10 = DEVELOPER_ERROR: טביעת האצבע של החתימה לא רשומה
                 // ב-Firebase. זו השגיאה היחידה כאן שהמשתמש לא יכול לפתור,
                 // ולכן היא מקבלת הסבר משלה במקום "נסה שוב".
+                Diagnostics.log("AUTH גוגל: ApiException ${e.statusCode}")
                 message = if (e.statusCode == 10) {
                     "ההתחברות עם גוגל לא מוגדרת במלואה בפרויקט (טביעת אצבע חסרה)."
                 } else {
@@ -180,10 +215,12 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
         if (loading) return
         clearMessage()
         if (!GoogleAuth.unifiedSignInAvailable(context)) {
+            Diagnostics.log("AUTH גוגל: אין מזהה לקוח Web — החיבור המאוחד כבוי")
             message = "ההתחברות עם גוגל אינה מוגדרת בגרסה הזו."
             messageSuccess = false
             return
         }
+        Diagnostics.log("AUTH גוגל: פותח בחירת חשבון")
         googleLauncher.launch(GoogleAuth.client(context).signInIntent)
     }
 
@@ -329,13 +366,21 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
         )
 
         when (mode) {
-            AccountEntryMode.WELCOME -> AccountWelcome(
-                onSignIn = { openMode(AccountEntryMode.SIGN_IN) },
-                onRegister = { openMode(AccountEntryMode.REGISTER) },
-                onGoogle = ::startGoogle,
-                googleAvailable = GoogleAuth.unifiedSignInAvailable(context),
-                loading = loading,
-            )
+            AccountEntryMode.WELCOME -> {
+                // ההודעה מוצגת גם כאן. קודם היא נכתבה רק בתוך ענף המייל/קוד,
+                // ולכן כישלון בהתחברות עם גוגל — כולל "טביעת אצבע חסרה" —
+                // נכתב למשתנה ולא הוצג לאף אחד. מבחינת המשתמש: בחרתי חשבון
+                // ולא קרה כלום.
+                AccountMessage(message, messageSuccess)
+                if (message.isNotBlank()) Spacer(Modifier.height(10.dp))
+                AccountWelcome(
+                    onSignIn = { openMode(AccountEntryMode.SIGN_IN) },
+                    onRegister = { openMode(AccountEntryMode.REGISTER) },
+                    onGoogle = ::startGoogle,
+                    googleAvailable = GoogleAuth.unifiedSignInAvailable(context),
+                    loading = loading,
+                )
+            }
             AccountEntryMode.SIGN_IN,
             AccountEntryMode.REGISTER -> {
                 val registering = mode == AccountEntryMode.REGISTER
@@ -458,6 +503,59 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                         )
                     }
                 }
+            }
+            AccountEntryMode.SET_CODE -> {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "בחר קוד הורים",
+                    color = ThemeState.text, fontSize = 19.sp, fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "הקוד הזה מגן על רמת הסינון ועל Shorts — לא על החשבון. " +
+                        "גוגל כבר אימתה מי אתה, אבל בלי קוד כל מי שמחזיק את " +
+                        "המכשיר יכול לשנות את רמת הסינון.",
+                    color = ThemeState.subtext2, fontSize = 13.sp, lineHeight = 19.sp,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(16.dp))
+                AccountField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = "קוד (4 תווים לפחות)",
+                    icon = { Icon(Icons.Default.Lock, null, tint = ThemeState.subtext2) },
+                    keyboardType = KeyboardType.Password,
+                    password = true,
+                )
+                Spacer(Modifier.height(10.dp))
+                AccountField(
+                    value = confirmPassword,
+                    onValueChange = { confirmPassword = it },
+                    label = "אישור הקוד",
+                    icon = { Icon(Icons.Default.Lock, null, tint = ThemeState.subtext2) },
+                    keyboardType = KeyboardType.Password,
+                    password = true,
+                )
+                AccountMessage(message, messageSuccess)
+                Spacer(Modifier.height(14.dp))
+                Button(
+                    onClick = {
+                        if (password.length < 4) {
+                            message = "הקוד חייב להכיל לפחות 4 תווים."
+                            messageSuccess = false
+                        } else if (password != confirmPassword) {
+                            message = "הקודים אינם תואמים."
+                            messageSuccess = false
+                        } else {
+                            settings.setFilterPassword(password)
+                            Diagnostics.log("AUTH גוגל: קוד הורי נקבע")
+                            onDone(!settings.onboardingDone)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = ThemeState.accent),
+                ) { Text("שמור והמשך", fontWeight = FontWeight.Bold) }
             }
             AccountEntryMode.VERIFY -> Unit
         }
