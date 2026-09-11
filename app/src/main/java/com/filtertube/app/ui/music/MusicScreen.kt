@@ -120,7 +120,14 @@ fun FilterMusicScreen(
                 .distinctBy { it.id }
 
         feed = runCatching { FeedCache.loadFeed(context) }.getOrNull().orEmpty().musicOnly()
-        likes = runCatching { store.likes() }.getOrNull().orEmpty().musicOnly()
+        // ── מה נחשב "אהבתי" ב-FilterMusic ──────────────────────────────
+        // שלושה מקורות, ובמכוון לא כולל את הלייקים של יוטיוב הרגיל:
+        // מוזיקה שאהבת ביוטיוב מיוזיק, ולייקים מקומיים שניתנו בתוך
+        // FilterMusic עצמה. לייק על שיעור תורה נשאר ב-FilterTube.
+        likes = (
+            runCatching { store.musicLikes() }.getOrNull().orEmpty() +
+                runCatching { store.likes() }.getOrNull().orEmpty()
+            ).musicOnly()
         history = runCatching { store.localHistory() }.getOrNull().orEmpty().musicOnly()
         favorites = runCatching { settings.favoriteArtists }.getOrNull().orEmpty()
         // הסמלים של הערוצים — נמשכים בהדרגה ונשמרים לתמיד. בלעדיהם עיגול

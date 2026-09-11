@@ -143,7 +143,7 @@ class LibraryStore(context: Context) {
                 saveVideos(key, filtered)
             }
         }
-        listOf(KEY_LIKES, KEY_DOWNLOADS, KEY_HISTORY, KEY_LOCAL_HISTORY, KEY_RECS, KEY_NEW_VIDEOS, KEY_YT_LIKES)
+        listOf(KEY_LIKES, KEY_DOWNLOADS, KEY_HISTORY, KEY_LOCAL_HISTORY, KEY_RECS, KEY_NEW_VIDEOS, KEY_YT_LIKES, KEY_MUSIC_LIKES)
             .forEach(::removeFrom)
         val updatedPlaylists = playlists().map { playlist ->
             val filtered = playlist.videos.filterNot { it.id == video.id }
@@ -157,6 +157,19 @@ class LibraryStore(context: Context) {
     }
 
     fun youtubeLikes(): List<Video> = videos(KEY_YT_LIKES)
+
+    /**
+     * לייקים מיוטיוב מיוזיק — מאוחסנים בנפרד מלייקים של יוטיוב הרגיל.
+     *
+     * אלה שני דברים שונים גם אצל גוגל: "אהבתי" ביוטיוב נשמר בפלייליסט LL,
+     * ו"מוזיקה שאהבתי" במיוזיק נשמר ב-LM. ערבוב שלהם היה מכניס שיעורי תורה
+     * לרשימת השירים ושירים לרשימת הסרטונים.
+     */
+    fun musicLikes(): List<Video> = videos(KEY_MUSIC_LIKES)
+
+    fun setMusicLikes(list: List<Video>) {
+        if (saveVideos(KEY_MUSIC_LIKES, list)) queueCloudBackup()
+    }
 
     fun setYoutubeLikes(list: List<Video>) {
         if (saveVideos(KEY_YT_LIKES, list)) queueCloudBackup()
@@ -331,6 +344,7 @@ class LibraryStore(context: Context) {
         private const val KEY_DOWNLOADS = "downloads"
         private const val KEY_PLAYLISTS = "playlists"
         private const val KEY_YT_LIKES = "youtube_likes"
+        private const val KEY_MUSIC_LIKES = "youtube_music_likes"
         private const val KEY_SUBS = "youtube_subscriptions"
         private const val KEY_HISTORY = "youtube_history"
         private const val KEY_RECS = "youtube_recommendations"

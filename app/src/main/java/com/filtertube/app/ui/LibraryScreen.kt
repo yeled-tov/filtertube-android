@@ -42,6 +42,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.filtertube.app.data.InnerTube
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.YouTubeAccountRepository
+import com.filtertube.app.data.YouTubeMusicApi
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.common.api.ApiException
@@ -103,7 +104,17 @@ fun LibraryScreen(
                 val subList = YouTubeAccountRepository.subscriptions(token).filter { it.channelId in approved }
                 if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
                 store.setSubscriptions(subList); subs = subList
-                status = "סונכרנו ${liked.size} לייקים ו-${subList.size} מנויים (מאושרים בלבד) ✓"
+
+                // ── יוטיוב מיוזיק, באותו חיבור ────────────────────────────
+                // "מוזיקה שאהבתי" היא פלייליסט אחר מ"אהבתי" של יוטיוב, ולכן
+                // היא נשמרת בנפרד: שירים ל-FilterMusic, סרטונים ל-FilterTube.
+                // ערבוב ביניהם היה מכניס שיעורי תורה לרשימת השירים.
+                val musicLiked = YouTubeMusicApi.likedSongs(token, approved)
+                if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
+                store.setMusicLikes(musicLiked)
+
+                status = "סונכרנו ${liked.size} לייקים, ${musicLiked.size} שירים ממיוזיק " +
+                    "ו-${subList.size} מנויים (מאושרים בלבד) ✓"
             } catch (e: Exception) {
                 status = "שגיאה בסנכרון: ${e.message}"
             } finally { syncing = false }

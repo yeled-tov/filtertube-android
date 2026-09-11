@@ -13,5 +13,5 @@
       אחת מהטלפון, בלי להוריד ולהחליף קובץ. אם המשאב default_web_client_id
       כן קיים (כלומר הקובץ עודכן), הוא מקבל עדיפות.
     -->
-    <string name="filtertube_web_client_id" translatable="false"></string>
+    <string name="filtertube_web_client_id" translatable="false">63693398191-pfmfvt2si5tm18mgmjoq539e1smnv1u9.apps.googleusercontent.com</string>
 </resources>
