@@ -142,6 +142,16 @@ jobs:
           done
           # Gradle מדפיס את פירוט הכישלון הראשון אחרי השורה הזו.
           grep -A 8 -F 'First failure' build-output.txt 2>/dev/null | tail -n 12 || true
+          # כישלון R8 לא מייצר שורות 'e:' ולא דוח lint — הוא נראה כמו בנייה
+          # שנפלה בלי שום סיבה. שני המקומות שבהם הוא כן מסביר את עצמו:
+          echo "──── R8 ────"
+          grep -nE "R8|Missing class|proguard|minify|shrink" build-output.txt 2>/dev/null | tail -n 15 || true
+          # AGP כותב לכאן בדיוק את חוקי ה-keep שחסרים.
+          for f in $(find app/build -name 'missing_rules.txt' 2>/dev/null); do
+            echo "── $f ──"; head -n 25 "$f"
+          done
+          echo "──── What went wrong ────"
+          grep -A 12 -F 'What went wrong' build-output.txt 2>/dev/null | tail -n 16 || true
 
   # ── Release יציב — רק מ-main, מגיע לכל הלקוחות ────────────────────────────
   release:
