@@ -551,9 +551,12 @@ private fun FullscreenVideo(
                             modifier = Modifier.size(38.dp))
                     }
                 }
+                // ה-align חייב להישאר על ילד ישיר של ה-Box: CompositionLocalProvider
+                // אינו BoxScope, ולכן Modifier.align לא היה נפתר בתוכו.
+                Box(modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter)) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(fmtTime(ui.position), color = ThemeState.text, fontSize = 11.sp)
@@ -571,6 +574,7 @@ private fun FullscreenVideo(
                     }
                     Text(fmtTime(ui.duration), color = ThemeState.text, fontSize = 11.sp)
                     IconButton(onClick = onExit) { Icon(Icons.Default.FullscreenExit, "צא ממסך מלא", tint = ThemeState.text) }
+                }
                 }
                 }
             }

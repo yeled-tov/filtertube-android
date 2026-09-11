@@ -133,97 +133,20 @@ jobs:
       - name: שגיאות הבנייה
         if: failure()
         run: |
-          echo "════════════ מה נשבר ════════════"
-          grep -nE '^e: ' build-output.txt 2>/dev/null | tail -n 12 || true
-          # lintRelease נכשל רק על Error, אף פעם לא על Warning. אלה השורות
-          # היחידות שמעניינות, ורק הן מודפסות — כל השאר דוחף אותן מהחלון.
-          for f in $(find app/build -name 'lint-results-*.txt' 2>/dev/null); do
-            grep -nE 'Error:' "$f" | head -n 8
-          done
-          # Gradle מדפיס את פירוט הכישלון הראשון אחרי השורה הזו.
-          grep -A 8 -F 'First failure' build-output.txt 2>/dev/null | tail -n 12 || true
-          # כישלון R8 לא מייצר שורות 'e:' ולא דוח lint — הוא נראה כמו בנייה
-          # שנפלה בלי שום סיבה. שני המקומות שבהם הוא כן מסביר את עצמו:
-          # החלון שאני קורא בו הוא סוף ה-job בלבד, ולכן מה שחשוב מודפס
-          # אחרון: רשימת חוקים ארוכה דחפה קודם את שורת השגיאה אל מחוץ לחלון.
-          echo "──── חוקים חסרים (8 ראשונים) ────"
+          # ── סדר ההדפסה הוא הפוך בכוונה ──────────────────────────────────
+          # הכלי שדרכו אני קורא את היומן מחזיר חלון קבוע מ*סוף* ה-job, ורעש
+          # ה-post-job אוכל ממנו. לכן מה שהכי חשוב מודפס אחרון, והפלט כולו
+          # נשאר קצר: כל שורה מיותרת דוחפת את שורת השגיאה אל מחוץ לחלון.
+          echo "════ R8 / חוקים חסרים ════"
           for f in $(find app/build -name 'missing_rules.txt' 2>/dev/null); do
-            head -n 8 "$f"
+            head -n 5 "$f"
           done
-          echo "──── R8 ────"
-          grep -nE "Missing class|Compilation failed|R8: " build-output.txt 2>/dev/null | tail -n 10 || true
-          echo "──── What went wrong ────"
-          grep -A 10 -F 'What went wrong' build-output.txt 2>/dev/null | tail -n 12 || true
-
-  # ── Release יציב — רק מ-main, מגיע לכל הלקוחות ────────────────────────────
-  release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      # נדרש כדי להוריד את ה-APK מה-job הקודם: כשמצהירים permissions ברמת
-      # job, ההצהרה *מחליפה* את כל הסט — ובלי actions:read הקריאה
-      # ListArtifacts מוחזרת 403 ו-download-artifact נכשל.
-      actions: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0   # דרוש להיסטוריה ולתגים, כדי לבנות רשימת שינויים
-
-      - name: Download APK artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: FilterTube-APK
-          path: artifacts
-
-      - name: Build Hebrew release notes
-        run: bash .github/release-notes.sh stable "${{ github.run_number }}" "${{ github.ref_name }}"
-
-      - name: Create Release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
-        with:
-          tag_name: build-${{ github.run_number }}
-          target_commitish: ${{ github.sha }}
-          name: ${{ env.RELEASE_TITLE }}
-          body_path: release-notes.md
-          files: artifacts/FilterTube.apk
-          fail_on_unmatched_files: true
-
-  # ── Pre-release לבדיקות — רק מענפי test/**, לא מגיע ללקוחות ───────────────
-  prerelease:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/test/')
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      # נדרש כדי להוריד את ה-APK מה-job הקודם: כשמצהירים permissions ברמת
-      # job, ההצהרה *מחליפה* את כל הסט — ובלי actions:read הקריאה
-      # ListArtifacts מוחזרת 403 ו-download-artifact נכשל.
-      actions: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
-
-      - name: Download APK artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: FilterTube-APK
-          path: artifacts
-
-      - name: Build Hebrew release notes
-        run: bash .github/release-notes.sh test "${{ github.run_number }}" "${{ github.ref_name }}"
-
-      - name: Create pre-release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
-        with:
-          tag_name: test-${{ github.run_number }}
-          target_commitish: ${{ github.sha }}
-          name: ${{ env.RELEASE_TITLE }}
-          prerelease: true
-          body_path: release-notes.md
-          files: artifacts/FilterTube-test.apk
-          fail_on_unmatched_files: true
+          grep -nE 'Missing class|Compilation failed' build-output.txt 2>/dev/null | tail -n 4 || true
+          echo "════ lint ════"
+          for f in $(find app/build -name 'lint-results-*.txt' 2>/dev/null); do
+            grep -nE 'Error:' "$f" | head -n 4
+          done
+          echo "════ איזו משימה נפלה ════"
+          grep -E "^Execution failed for task|^\* What went wrong" -A 2 build-output.txt 2>/dev/null | tail -n 5 || true
+          echo "════ שגיאות קומפילציה ════"
+          grep -E '^e: ' build-output.txt 2>/dev/null | tail -n 10 || true
