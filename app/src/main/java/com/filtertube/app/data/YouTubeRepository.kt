@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit
 
 object YouTubeRepository {
 
-    private val httpClient = OkHttpClient.Builder()
+    private val httpClient = Http.newBuilder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()

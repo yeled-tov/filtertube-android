@@ -48,7 +48,7 @@ object ChannelsRepository {
     private const val CACHE_TTL_MS = 30 * 60 * 1000L // 30 דקות TTL למטמון
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val httpClient = OkHttpClient.Builder()
+    private val httpClient = Http.newBuilder()
         .connectTimeout(6, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .build()

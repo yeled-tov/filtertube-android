@@ -79,7 +79,7 @@ class InnerTubeResolver(
 
         private val jsonMedia = "application/json".toMediaType()
 
-        private val http = OkHttpClient.Builder()
+        private val http = Http.newBuilder()
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(6, TimeUnit.SECONDS)
             .build()

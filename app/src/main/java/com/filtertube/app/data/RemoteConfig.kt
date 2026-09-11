@@ -18,7 +18,7 @@ object RemoteConfig {
     private const val URL =
         "https://raw.githubusercontent.com/yeled-tov/filtertube-android/main/remote_config.json"
 
-    private val http = OkHttpClient.Builder()
+    private val http = Http.newBuilder()
         .connectTimeout(6, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .build()

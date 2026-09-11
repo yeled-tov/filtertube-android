@@ -39,7 +39,7 @@ object DownloadEngine {
     const val FOLDER = "FilterTube"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val http = OkHttpClient.Builder()
+    private val http = Http.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
@@ -326,7 +326,11 @@ object DownloadEngine {
             }
             val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 ?: throw IllegalStateException("MediaStore נכשל")
-            resolver.openOutputStream(uri).use { out -> tmp.inputStream().use { it.copyTo(out!!) } }
+            // openOutputStream מחזיר null כשהמערכת מסרבת לפתוח את היעד.
+            // ‎!!‎ היה הופך את זה לקריסה של האפליקציה במקום להורדה שנכשלה.
+            val out = resolver.openOutputStream(uri)
+                ?: throw IllegalStateException("לא ניתן לכתוב לקובץ היעד")
+            out.use { stream -> tmp.inputStream().use { it.copyTo(stream) } }
             values.clear(); values.put(MediaStore.Downloads.IS_PENDING, 0)
             resolver.update(uri, values, null, null)
             return uri.toString()

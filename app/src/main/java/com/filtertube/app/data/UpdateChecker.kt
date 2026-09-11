@@ -29,7 +29,7 @@ object UpdateChecker {
     private const val LIST_URL =
         "https://api.github.com/repos/yeled-tov/filtertube-android/releases?per_page=100"
 
-    private val http = OkHttpClient.Builder()
+    private val http = Http.newBuilder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()

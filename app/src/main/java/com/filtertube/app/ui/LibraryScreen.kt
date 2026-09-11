@@ -128,9 +128,13 @@ fun LibraryScreen(
         scope.launch {
             try {
                 val approved = ChannelsRepository.getChannels(context).map { it.youtubeChannelId }.toHashSet()
-                val hist = InnerTube.history(accountStore.cookies).filter { it.channelId.isEmpty() || it.channelId in approved }
+                // ערוץ שלא זוהה נפסל. באפליקציית רשימה לבנה "לא ידוע" אינו
+                // "מותר", ו-InnerTube מחזירה לא מעט פריטים שלא הצליחה לחלץ
+                // להם מזהה ערוץ — כלומר זו הדרך העיקרית שבה תוכן לא מאושר
+                // יכול היה להגיע לספרייה ומשם לנגן.
+                val hist = InnerTube.history(accountStore.cookies).filter { it.channelId in approved }
                 store.setHistory(hist); history = hist
-                val rec = InnerTube.recommendations(accountStore.cookies).filter { it.channelId.isEmpty() || it.channelId in approved }
+                val rec = InnerTube.recommendations(accountStore.cookies).filter { it.channelId in approved }
                 store.setRecommendations(rec); recs = rec
                 status = "סונכרנו ${hist.size} בהיסטוריה ו-${rec.size} המלצות ✓"
             } catch (e: Exception) {

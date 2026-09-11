@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 
 object AdminDashboard {
     private const val API = "https://europe-west1-filter-tube-52d8e.cloudfunctions.net/adminDashboard"
-    private val http = OkHttpClient.Builder().readTimeout(30, TimeUnit.SECONDS).build()
+    private val http = Http.newBuilder().readTimeout(30, TimeUnit.SECONDS).build()
 
     data class Summary(
         val totalAccounts: Int,

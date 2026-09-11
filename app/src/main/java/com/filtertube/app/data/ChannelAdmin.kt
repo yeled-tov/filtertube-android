@@ -30,7 +30,7 @@ object ChannelAdmin {
     private const val API = "https://api.github.com/repos/$OWNER/$REPO/contents/$PATH"
 
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
-    private val http = OkHttpClient.Builder()
+    private val http = Http.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .build()

@@ -190,7 +190,10 @@ object RadioQueueManager {
 
             // 1. טעינת related סרטונים מ-InnerTube ברקע
             val relatedRaw = runCatching { InnerTube.related(currentVideo.id) }.getOrNull().orEmpty()
-                .filter { it.channelId.isEmpty() || it.channelId in allowedIds }
+                // ערוץ לא מזוהה נפסל — ראה ההסבר ב-LibraryScreen. כאן זה
+                // קריטי במיוחד: תור הרדיו מנגן אוטומטית, בלי שהמשתמש בוחר
+                // כל פריט בנפרד.
+                .filter { it.channelId in allowedIds }
             val relatedIds = relatedRaw.map { it.id }.toHashSet()
 
             // 2. טעינת feed מקומי

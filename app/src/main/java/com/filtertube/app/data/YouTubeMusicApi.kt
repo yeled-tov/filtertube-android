@@ -39,7 +39,7 @@ object YouTubeMusicApi {
     private const val CLIENT_NAME = "WEB_REMIX"
     private const val CLIENT_VERSION = "1.20240103.01.00"
 
-    private val http = OkHttpClient.Builder()
+    private val http = Http.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(25, TimeUnit.SECONDS)
         .build()
