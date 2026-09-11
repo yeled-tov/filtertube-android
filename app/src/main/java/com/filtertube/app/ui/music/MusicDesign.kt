@@ -6,7 +6,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,85 +21,103 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.filtertube.app.ThemeState
+import com.filtertube.app.data.ChannelAvatars
 import com.filtertube.app.data.Video
 
 /**
- * מידות הממשק של FilterMusic.
+ * מידות הממשק של FilterMusic, לפי Metrolist.
  *
- * הערכים לקוחים מ-Metrolist, שהמשתמש ביקש שנראה כמוה. ערך מידה הוא עובדה
- * ולא קוד — הקוד עצמו נכתב כאן מאפס. Metrolist מפורסמת תחת GPL-3.0, ולכן
- * העתקת מקור ממנה הייתה מחייבת את FilterTube כולה להפוך ל-GPL ולקוד פתוח.
- *
- * מה שמייצר את המראה הוא בעיקר היחסים: תמונה ריבועית עם פינות כמעט חדות,
- * שורת רשימה נמוכה (64dp) עם תמונה קטנה (48dp), וכרטיסי גריד של 128dp.
+ * ערך מידה הוא עובדה ולא קוד — הקוד עצמו נכתב כאן מאפס. Metrolist מפורסמת
+ * תחת GPL-3.0, ולכן העתקת מקור ממנה הייתה מחייבת את FilterTube כולה להפוך
+ * ל-GPL ולקוד פתוח.
  */
 object MusicDim {
     val listItemHeight = 64.dp
     val listThumbnail = 48.dp
     val gridThumbnail = 128.dp
+    val albumThumbnail = 144.dp
     val artistCircle = 96.dp
     val navBarHeight = 80.dp
+    val miniPlayerHeight = 64.dp
     val thumbnailCorner = 6.dp
     val screenPadding = 12.dp
+    val playerPadding = 32.dp
 }
 
 /**
- * תמונת שיר — ריבועית, עם fallback לתו מוזיקלי.
+ * תמונת שיר — ריבועית.
  *
- * ל-Video של FilterTube יש תמונה ממוזערת של יוטיוב ביחס 16:9. חיתוך ל-Crop
- * הוא מה שנותן את הריבוע של אפליקציית מוזיקה במקום מלבן של אפליקציית וידאו.
+ * התמונות של יוטיוב הן 16:9. חיתוך ל-Crop הוא ההבדל הוויזואלי הגדול ביותר
+ * בין אפליקציית וידאו לאפליקציית מוזיקה, והוא מה שגורם לרשת להיראות נכון.
  */
 @Composable
-fun SongArt(video: Video, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
+fun SongArt(video: Video, size: Dp, modifier: Modifier = Modifier, corner: Dp = MusicDim.thumbnailCorner) {
     Box(
-        modifier = modifier
-            .size(size)
-            .clip(RoundedCornerShape(MusicDim.thumbnailCorner))
-            .background(ThemeState.bg2),
+        modifier = modifier.size(size).clip(RoundedCornerShape(corner)).background(ThemeState.bg2),
         contentAlignment = Alignment.Center,
     ) {
-        if (video.thumbnailUrl.isNotBlank()) {
+        // כשאין תמונה לסרטון — הסמל של הערוץ, ורק אם גם הוא חסר תו מוזיקלי.
+        val fallback = ChannelAvatars.avatar(video.channelId)
+        val model = video.thumbnailUrl.takeIf { it.isNotBlank() } ?: fallback
+        if (model != null) {
             AsyncImage(
-                model = video.thumbnailUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                model = model, contentDescription = null,
+                contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
             )
         } else {
-            Icon(
-                Icons.Default.MusicNote, null,
-                tint = ThemeState.subtext, modifier = Modifier.size(size / 3),
-            )
+            Icon(Icons.Default.MusicNote, null, tint = ThemeState.subtext, modifier = Modifier.size(size / 3))
         }
     }
 }
 
-/** שורת שיר ברשימה — 64dp גובה, תמונה 48dp. */
+/** שורת שיר — 64dp גובה, תמונה 48dp, שתי שורות טקסט, ואפשרות לתוכן נגרר. */
 @Composable
-fun MusicListItem(
+fun SongListItem(
     video: Video,
+    active: Boolean = false,
     playing: Boolean = false,
+    modifier: Modifier = Modifier,
+    leading: @Composable (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)? = null,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(MusicDim.listItemHeight)
-            .clickable(onClick = onClick)
+            .let { if (onClick != null) it.clickable(onClick = onClick) else it }
             .padding(horizontal = MusicDim.screenPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SongArt(video, MusicDim.listThumbnail)
+        leading?.let { it(); Spacer(Modifier.width(4.dp)) }
+        Box(contentAlignment = Alignment.Center) {
+            SongArt(video, MusicDim.listThumbnail)
+            // סימון "זה מה שמתנגן" על התמונה עצמה, כמו ביוטיוב מיוזיק.
+            if (active) {
+                Box(
+                    modifier = Modifier.size(MusicDim.listThumbnail)
+                        .clip(RoundedCornerShape(MusicDim.thumbnailCorner))
+                        .background(Color.Black.copy(alpha = 0.55f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Default.Equalizer, null,
+                        tint = if (playing) ThemeState.accent else Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+        }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 video.title,
-                color = if (playing) ThemeState.accent else ThemeState.text,
+                color = if (active) ThemeState.accent else ThemeState.text,
                 fontSize = 14.sp, fontWeight = FontWeight.Medium,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
@@ -106,19 +127,15 @@ fun MusicListItem(
                 fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
-        trailing?.let { Spacer(Modifier.width(8.dp)); it() }
+        trailing?.let { Spacer(Modifier.width(6.dp)); it() }
     }
 }
 
-/** כרטיס בגריד אופקי — תמונה 128dp ושתי שורות טקסט מתחת. */
+/** כרטיס בגריד אופקי — תמונה ריבועית ושתי שורות מתחת. */
 @Composable
-fun MusicGridItem(video: Video, onClick: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .width(MusicDim.gridThumbnail)
-            .clickable(onClick = onClick),
-    ) {
-        SongArt(video, MusicDim.gridThumbnail)
+fun MusicGridItem(video: Video, size: Dp = MusicDim.gridThumbnail, onClick: () -> Unit) {
+    Column(modifier = Modifier.width(size).clickable(onClick = onClick)) {
+        SongArt(video, size)
         Spacer(Modifier.height(6.dp))
         Text(
             video.title, color = ThemeState.text, fontSize = 13.sp,
@@ -132,25 +149,43 @@ fun MusicGridItem(video: Video, onClick: () -> Unit) {
     }
 }
 
-/** אמן — עיגול עם האות הראשונה, כמו באפליקציות מוזיקה בלי תמונות פרופיל. */
+/** אמן — עיגול עם הסמל האמיתי של הערוץ. */
 @Composable
-fun ArtistCircle(name: String, highlighted: Boolean, onClick: () -> Unit) {
+fun ArtistCircle(
+    channelId: String,
+    name: String,
+    highlighted: Boolean,
+    size: Dp = MusicDim.artistCircle,
+    onClick: () -> Unit,
+) {
     Column(
-        modifier = Modifier.width(MusicDim.artistCircle).clickable(onClick = onClick),
+        modifier = Modifier.width(size).clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            modifier = Modifier
-                .size(MusicDim.artistCircle)
-                .clip(CircleShape)
-                .background(if (highlighted) ThemeState.accent else ThemeState.bg2),
+            modifier = Modifier.size(size).clip(CircleShape).background(ThemeState.bg2),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                name.trim().take(1).ifBlank { "?" },
-                color = if (highlighted) Color.White else ThemeState.subtext2,
-                fontSize = 30.sp, fontWeight = FontWeight.Bold,
-            )
+            val avatar = ChannelAvatars.avatar(channelId)
+            if (avatar != null) {
+                AsyncImage(
+                    model = avatar, contentDescription = null,
+                    contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                // עד שהסמל נמשך — צללית אדם, לא אות באנגלית. שם עברי שמוצג
+                // כאות לטינית בודדת נראה כמו תקלה, וזה גם לא מזהה כלום.
+                Icon(
+                    Icons.Default.Person, null,
+                    tint = ThemeState.subtext, modifier = Modifier.size(size / 2.4f),
+                )
+            }
+            if (highlighted) {
+                Box(
+                    modifier = Modifier.fillMaxSize().clip(CircleShape)
+                        .background(ThemeState.accent.copy(alpha = 0.22f)),
+                )
+            }
         }
         Spacer(Modifier.height(6.dp))
         Text(
@@ -161,12 +196,40 @@ fun ArtistCircle(name: String, highlighted: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** כותרת קטע — טיפוגרפיה גדולה ומודגשת, כמו בכל אפליקציית מוזיקה. */
+/**
+ * כותרת קטע — שם גדול ומודגש בצבע ההדגשה, עם חץ כשיש לאן ללחוץ.
+ *
+ * זו הצורה שחוזרת בכל קטע ב-Metrolist וביוטיוב מיוזיק, והיא מה שנותן לדף
+ * הבית את הקצב שלו: כותרת גדולה, רצועה, כותרת גדולה, רצועה.
+ */
 @Composable
-fun SectionTitle(text: String, modifier: Modifier = Modifier) {
-    Text(
-        text, color = ThemeState.text, fontSize = 19.sp,
-        fontWeight = FontWeight.ExtraBold,
-        modifier = modifier.padding(horizontal = MusicDim.screenPadding, vertical = 10.dp),
-    )
+fun NavigationTitle(
+    title: String,
+    modifier: Modifier = Modifier,
+    label: String? = null,
+    onClick: (() -> Unit)? = null,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .let { if (onClick != null) it.clickable(onClick = onClick) else it }
+            .padding(horizontal = MusicDim.screenPadding, vertical = 12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            label?.let {
+                Text(it, color = ThemeState.subtext, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            }
+            Text(
+                title, color = ThemeState.accent, fontSize = 20.sp,
+                fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (onClick != null) {
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowLeft, null,
+                tint = ThemeState.subtext, modifier = Modifier.size(22.dp),
+            )
+        }
+    }
 }

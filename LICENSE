@@ -1,0 +1,42 @@
+FilterTube — כל הזכויות שמורות
+FilterTube — All Rights Reserved
+
+Copyright (c) 2026 yeled-tov. All rights reserved.
+
+עברית
+------
+התוכנה הזו, קוד המקור שלה, העיצוב שלה וכל חלק ממנה הם קניינו הבלעדי של
+בעל זכויות היוצרים.
+
+אין להעתיק, לשכפל, לשנות, להפיץ, לפרסם, למכור, להשכיר, להנדס לאחור,
+לפרק או לגזור יצירות נגזרות מהתוכנה או מכל חלק ממנה, כולה או חלקה, בכל
+צורה ובכל אמצעי, ללא אישור מפורש ובכתב מבעל זכויות היוצרים.
+
+היעדר קובץ רישיון אינו מקנה רשות: קוד ללא רישיון מפורש אינו קוד פתוח,
+וכל הזכויות בו שמורות ממילא. הקובץ הזה מבהיר זאת במפורש.
+
+התוכנה ניתנת כמות שהיא, ללא אחריות מכל סוג.
+
+English
+-------
+This software, its source code, its design, and every part thereof are the
+exclusive property of the copyright holder.
+
+No part of this software may be copied, reproduced, modified, distributed,
+published, sold, rented, reverse-engineered, decompiled, or used to create
+derivative works, in whole or in part, in any form or by any means, without
+the prior express written permission of the copyright holder.
+
+Viewing this repository does not grant any license. Code published without
+an explicit license is not open source; all rights remain reserved. This
+file states that explicitly.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+Third-party components
+----------------------
+This application bundles third-party libraries that remain under their own
+licenses. Those licenses apply to those components only, and none of them
+extends to FilterTube's own source code.

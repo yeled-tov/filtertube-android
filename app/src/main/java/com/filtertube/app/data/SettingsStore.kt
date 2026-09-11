@@ -171,6 +171,50 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_ARTIST_PICKER_SEEN, false)
         set(value) = prefs.edit().putBoolean(KEY_ARTIST_PICKER_SEEN, value).apply()
 
+    // ── הגדרות FilterMusic ────────────────────────────────────────────────
+    // כל אחת מהן מחוברת לנגן בפועל. הגדרה דקורטיבית שלא עושה כלום גרועה
+    // מהיעדר הגדרה: המשתמש מדליק אותה, לא שומע הבדל, ומפסיק לסמוך על המסך.
+
+    /** איכות שמע: 0 = אוטומטי, 1 = גבוהה, 2 = חסכונית בנתונים. */
+    var audioQuality: Int
+        get() = prefs.getInt(KEY_AUDIO_QUALITY, 0)
+        set(value) = prefs.edit().putInt(KEY_AUDIO_QUALITY, value).apply()
+
+    /** דילוג אוטומטי על קטעי שקט (ExoPlayer skipSilence). */
+    var skipSilence: Boolean
+        get() = prefs.getBoolean(KEY_SKIP_SILENCE, false)
+        set(value) = prefs.edit().putBoolean(KEY_SKIP_SILENCE, value).apply()
+
+    /** השוואת עוצמת שמע בין שירים. */
+    var audioNormalization: Boolean
+        get() = prefs.getBoolean(KEY_AUDIO_NORM, false)
+        set(value) = prefs.edit().putBoolean(KEY_AUDIO_NORM, value).apply()
+
+    /** מהירות ניגון באחוזים (50–200). */
+    var playbackSpeed: Int
+        get() = prefs.getInt(KEY_SPEED, 100).coerceIn(50, 200)
+        set(value) = prefs.edit().putInt(KEY_SPEED, value.coerceIn(50, 200)).apply()
+
+    /** גובה הצליל באחוזים (50–200). שינוי מהירות בלי זה משנה גם את הטון. */
+    var playbackPitch: Int
+        get() = prefs.getInt(KEY_PITCH, 100).coerceIn(50, 200)
+        set(value) = prefs.edit().putInt(KEY_PITCH, value.coerceIn(50, 200)).apply()
+
+    /** המשך אוטומטי לרדיו כשהתור נגמר. */
+    var autoRadioQueue: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_RADIO, true)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_RADIO, value).apply()
+
+    /** מניעת הוספת אותו שיר פעמיים לתור. */
+    var preventQueueDuplicates: Boolean
+        get() = prefs.getBoolean(KEY_NO_DUP_QUEUE, true)
+        set(value) = prefs.edit().putBoolean(KEY_NO_DUP_QUEUE, value).apply()
+
+    /** טיימר שינה בדקות. 0 = כבוי. */
+    var sleepTimerMinutes: Int
+        get() = prefs.getInt(KEY_SLEEP_TIMER, 0).coerceIn(0, 180)
+        set(value) = prefs.edit().putInt(KEY_SLEEP_TIMER, value.coerceIn(0, 180)).apply()
+
     var audioOnlyMode: Boolean
         get() = prefs.getBoolean(KEY_AUDIO_ONLY, false)
         set(value) = prefs.edit().putBoolean(KEY_AUDIO_ONLY, value).apply()
@@ -568,6 +612,14 @@ class SettingsStore(context: Context) {
         private const val KEY_QUALITY = "preferred_quality"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_AUDIO_ONLY = "audio_only_mode"
+        private const val KEY_AUDIO_QUALITY = "music_audio_quality"
+        private const val KEY_SKIP_SILENCE = "music_skip_silence"
+        private const val KEY_AUDIO_NORM = "music_audio_normalization"
+        private const val KEY_SPEED = "music_playback_speed"
+        private const val KEY_PITCH = "music_playback_pitch"
+        private const val KEY_AUTO_RADIO = "music_auto_radio"
+        private const val KEY_NO_DUP_QUEUE = "music_no_dup_queue"
+        private const val KEY_SLEEP_TIMER = "music_sleep_timer"
         private const val KEY_FAV_ARTISTS = "favorite_artists"
         private const val KEY_ARTIST_PICKER_SEEN = "artist_picker_seen"
         private const val KEY_CROSSFADE = "crossfade_seconds"

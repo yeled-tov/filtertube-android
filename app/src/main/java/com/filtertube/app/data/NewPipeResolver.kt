@@ -44,6 +44,8 @@ class NewPipeResolver : StreamResolver {
             val audioBest = byBitrate.firstOrNull {
                 it.format?.mimeType.orEmpty().startsWith("audio/mp4")
             } ?: byBitrate.firstOrNull()
+            // הזרם הקל ביותר — למצב חיסכון בנתונים בהגדרות FilterMusic.
+            val audioLow = byBitrate.lastOrNull()
 
             val muxedTracks = muxed.map {
                 StreamTrack(it.height, "${it.height}p", it.content, null, it.format?.mimeType.orEmpty())
@@ -83,6 +85,7 @@ class NewPipeResolver : StreamResolver {
                 thumbnailUrl = runCatching { extractor.thumbnails?.maxByOrNull { it.height }?.url }.getOrNull(),
                 tracks = tracks,
                 bestAudioUrl = audioBest?.content,
+                lowAudioUrl = audioLow?.content,
                 bestVideoUrl = bestMuxed,
                 related = emptyList(),
                 streamUserAgent = null

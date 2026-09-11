@@ -272,6 +272,8 @@ class InnerTubeResolver(
         var bestAudioUrl: String? = null
         var bestAudioMime = ""
         var bestAudioBitrate = -1
+        var lowAudioUrl: String? = null
+        var lowAudioBitrate = Int.MAX_VALUE
 
         fun processFormat(f: JSONObject, adaptive: Boolean) {
             val url = f.optString("url")
@@ -299,6 +301,11 @@ class InnerTubeResolver(
                         bestAudioBitrate = br
                         bestAudioUrl = url
                         bestAudioMime = mime
+                    }
+                    // הזרם הקל ביותר, לאותה משפחת פורמטים — למצב חיסכון בנתונים.
+                    if (mp4 && br in 1 until lowAudioBitrate) {
+                        lowAudioBitrate = br
+                        lowAudioUrl = url
                     }
                 }
                 mime.startsWith("video/") -> {
@@ -345,6 +352,7 @@ class InnerTubeResolver(
             thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
             tracks = tracks,
             bestAudioUrl = if (isLive) null else au,
+            lowAudioUrl = if (isLive) null else lowAudioUrl,
             bestVideoUrl = bestMuxed,
             related = emptyList(),
             streamUserAgent = userAgent

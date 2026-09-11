@@ -370,6 +370,30 @@ fun AppRoot() {
     }
 
     /**
+     * ניגון מתוך FilterMusic — נפתח בנגן המוזיקה ולא בנגן הווידאו.
+     *
+     * אותו תור ואותו שירות ניגון; רק המסך שונה. מסך וידאו שנפתח מתוך
+     * אפליקציית מוזיקה היה שובר את התחושה שזה מצב אחר.
+     */
+    fun playFromListInMusic(items: List<Video>, index: Int) {
+        if (items.isEmpty()) return
+        val start = index.coerceIn(0, items.lastIndex)
+        val station = items.drop(start)
+        val first = station.firstOrNull() ?: return
+        navController.navigate("musicplayer") { launchSingleTop = true }
+        scope.launch {
+            try {
+                com.filtertube.app.playback.Playback.start(context, controller, first, station)
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(
+                    context, "שגיאה בניגון: ${e.message}", android.widget.Toast.LENGTH_LONG,
+                ).show()
+                navController.popBackStack("musicplayer", inclusive = true)
+            }
+        }
+    }
+
+    /**
      * רדיו מהשיר שמתנגן — תור באותו סגנון, לא בהכרח אותו זמר.
      */
     fun openRadioFromSong(seed: Video) {
@@ -661,14 +685,29 @@ fun AppRoot() {
             composable("music") {
                 com.filtertube.app.ui.music.FilterMusicScreen(
                     onExit = { navController.popBackStack() },
-                    onPlay = ::playFromList,
+                    onPlay = ::playFromListInMusic,
+                    onOpenSettings = { navController.navigate("musicsettings") },
+                    activeId = playerUi.mediaId,
                     miniPlayer = {
                         com.filtertube.app.ui.MiniPlayer(
                             controller = controller,
                             ui = playerUi,
-                            onOpen = { navController.navigate("player") { launchSingleTop = true } },
+                            onOpen = { navController.navigate("musicplayer") { launchSingleTop = true } },
                         )
                     },
+                )
+            }
+            composable("musicplayer") {
+                com.filtertube.app.ui.music.MusicPlayerScreen(
+                    controller = controller,
+                    ui = playerUi,
+                    onCollapse = { navController.popBackStack() },
+                    onOpenSettings = { navController.navigate("musicsettings") },
+                )
+            }
+            composable("musicsettings") {
+                com.filtertube.app.ui.music.MusicSettingsScreen(
+                    onBack = { navController.popBackStack() },
                 )
             }
             composable("devicemedia") {

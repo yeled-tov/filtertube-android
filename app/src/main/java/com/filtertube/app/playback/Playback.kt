@@ -135,6 +135,23 @@ object Playback {
         }.getOrDefault(false)
     }
 
+    /**
+     * כתובת האודיו לפי הגדרת "איכות שמע" של המשתמש.
+     *
+     * 0 אוטומטי ו-1 גבוהה מנגנים את הזרם הטוב ביותר; 2 בוחר את הקל ביותר,
+     * וזה ההבדל האמיתי בנתונים — לא תווית במסך.
+     */
+    private fun audioUrlFor(data: StreamData): String {
+        val choice = audioQualityChoice
+        val low = data.lowAudioUrl
+        return if (choice == 2 && !low.isNullOrBlank()) low
+        else data.bestAudioUrl ?: data.bestVideoUrl
+    }
+
+    /** נקרא פעם אחת לכל הכנה, ב-IO, ונשמר כאן כדי לא לגעת בדיסק בבניית הפריט. */
+    @Volatile
+    private var audioQualityChoice: Int = 0
+
     fun localItem(video: Video): MediaItem =
         MediaItem.Builder()
             .setUri(Uri.parse(video.localUri))
@@ -152,7 +169,7 @@ object Playback {
         val extras = Bundle().apply { putBoolean(EXTRA_IS_AUDIO, audio) }
         data.streamUserAgent?.let { extras.putString(FilterTubeMediaSourceFactory.EXTRA_USER_AGENT, it) }
         val uri: String = if (audio) {
-            data.bestAudioUrl ?: data.bestVideoUrl
+            audioUrlFor(data)
         } else {
             val t = data.tracks.getOrNull(qualityIndex)
             if (t == null) data.bestVideoUrl
@@ -296,6 +313,7 @@ object Playback {
             val direct = video.takeIf { it.localUri.isNotBlank() && localFileReadable(context, it.localUri) }
             val downloaded = direct ?: LibraryStore(context).downloadedVideo(video.id)
                 ?.takeIf { localFileReadable(context, it.localUri) }
+            audioQualityChoice = settings.audioQuality
             Prep(
                 level = settings.filterLevel,
                 preferred = settings.preferredQuality,

@@ -49,7 +49,18 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // ── ערבול הקוד (R8) ──────────────────────────────────────────
+            // APK הוא ארכיון שכל אחד יכול לפתוח, ו-dex ניתן לפירוק חזרה
+            // לג'אווה קריאה בכלים חינמיים. בלי R8 כל שם מחלקה, שם פונקציה
+            // ושם משתנה נשארים כפי שנכתבו — כלומר הקוד למעשה גלוי.
+            //
+            // R8 משנה את השמות לחסרי משמעות, מסיר קוד שלא בשימוש ומטמיע
+            // פונקציות. זה לא הופך פירוק לבלתי אפשרי — שום דבר בצד הלקוח
+            // לא — אבל זה מעלה את המחיר מ"העתק-הדבק" ל"עבודה של ימים".
+            //
+            // shrinkResources מסיר גם משאבים שאינם בשימוש ומקטין את ה-APK.
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.getByName("shared")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -139,6 +150,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // גרירה לסידור מחדש של התור. ספרייה קטנה וטהורת-Compose; בדקתי את
+    // aar-metadata שלה — minCompileSdk=1, כלומר אין תקרת AGP/compileSdk.
+    implementation("sh.calvin.reorderable:reorderable:3.1.0")
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
     // 21.4.0 ולא 22.0.0, למרות שהיא עוברת את בדיקת ה-compileSdk: ב-22.0.0
     // ה-API הישן של GoogleSignIn הוסר לגמרי (GoogleSignIn, GoogleSignInClient,

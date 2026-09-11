@@ -170,6 +170,82 @@ class PlaybackService : MediaSessionService() {
         }
         crossfadeHandler.post(crossfadeWatch)
 
+        // ── הגדרות FilterMusic, מוחלות על הנגן החי ───────────────────────
+        // הן נקראות מחדש כל 800ms במקום להיות מוזרקות מהמסך, כי המסך והשירות
+        // הם שני תהליכים לוגיים נפרדים: שינוי בהגדרות חייב להישמע מיד גם
+        // כשהניגון כבר רץ ברקע והמסך סגור. הבדיקה זולה — קריאה מ-SharedPreferences
+        // שכבר במטמון — ומוחלת רק כשהערך באמת השתנה.
+        val applySettings = object : Runnable {
+            private var lastSpeed = -1
+            private var lastPitch = -1
+            private var lastSkipSilence: Boolean? = null
+            private var enhancer: android.media.audiofx.LoudnessEnhancer? = null
+            private var enhancerSession = 0
+            private var sleepArmedAt = 0L
+            private var sleepMinutes = 0
+
+            override fun run() {
+                val speed = settings.playbackSpeed
+                val pitch = settings.playbackPitch
+                if (speed != lastSpeed || pitch != lastPitch) {
+                    lastSpeed = speed
+                    lastPitch = pitch
+                    player.playbackParameters = androidx.media3.common.PlaybackParameters(
+                        speed / 100f, pitch / 100f,
+                    )
+                }
+
+                val skip = settings.skipSilence
+                if (skip != lastSkipSilence) {
+                    lastSkipSilence = skip
+                    player.skipSilenceEnabled = skip
+                }
+
+                // ── הגברת עוצמה ──────────────────────────────────────
+                // LoudnessEnhancer מוסיף הגבר קבוע לפלט. הוא נקשר ל-session
+                // של הנגן, וה-session מתחלף כשהנגן נבנה מחדש — לכן בודקים
+                // גם את המזהה ולא רק את ההגדרה, אחרת האפקט היה נשאר תלוי
+                // באוויר על session מת.
+                val wantBoost = settings.audioNormalization
+                val session = player.audioSessionId
+                if (!wantBoost || session != enhancerSession) {
+                    runCatching { enhancer?.release() }
+                    enhancer = null
+                    enhancerSession = 0
+                }
+                if (wantBoost && enhancer == null && session != androidx.media3.common.C.AUDIO_SESSION_ID_UNSET) {
+                    runCatching {
+                        enhancer = android.media.audiofx.LoudnessEnhancer(session).apply {
+                            setTargetGain(700)   // 7dB — מורגש בלי לעוות
+                            enabled = true
+                        }
+                        enhancerSession = session
+                    }.onFailure {
+                        com.filtertube.app.data.Diagnostics.log("AUDIO: הגברת עוצמה לא נתמכת — ${it.message}")
+                    }
+                }
+
+                // טיימר שינה: נמדד מרגע ההדלקה, ומכבה את הניגון כשהזמן עבר.
+                val minutes = settings.sleepTimerMinutes
+                if (minutes != sleepMinutes) {
+                    sleepMinutes = minutes
+                    sleepArmedAt = if (minutes > 0) System.currentTimeMillis() else 0L
+                }
+                if (sleepMinutes > 0 && sleepArmedAt > 0L &&
+                    System.currentTimeMillis() - sleepArmedAt >= sleepMinutes * 60_000L
+                ) {
+                    player.pause()
+                    settings.sleepTimerMinutes = 0
+                    sleepMinutes = 0
+                    sleepArmedAt = 0L
+                    com.filtertube.app.data.Diagnostics.log("SLEEP TIMER: הניגון נעצר")
+                }
+
+                crossfadeHandler.postDelayed(this, 800L)
+            }
+        }
+        crossfadeHandler.post(applySettings)
+
         player.addListener(object : androidx.media3.common.Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == androidx.media3.common.Player.STATE_ENDED && incomingPlayer != null) {

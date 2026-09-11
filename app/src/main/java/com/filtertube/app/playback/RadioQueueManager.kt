@@ -91,8 +91,10 @@ object RadioQueueManager {
             com.filtertube.app.data.PlaybackPriority.awaitIdle()
             if (preset.isNotEmpty()) {
                 enqueueAll(context, c, preset.filter { it.id != currentVideo.id })
-            } else {
+            } else if (SettingsStore(context).autoRadioQueue) {
                 refillInternal(context, c, currentVideo)
+            } else {
+                Diagnostics.log("RADIO: המשך אוטומטי כבוי בהגדרות — התור לא מתמלא")
             }
         }
     }
