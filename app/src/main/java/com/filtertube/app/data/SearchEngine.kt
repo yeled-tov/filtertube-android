@@ -68,7 +68,21 @@ object SearchEngine {
                 it.id.isNotBlank() && it.channelId in allowedIds && !collected.containsKey(it.id)
             }
             if (fresh.isEmpty()) return
-            rank(fresh, query).forEach { collected[it.id] = it }
+            // ── סף רלוונטיות ──────────────────────────────────────────────
+            // הסינון לרשימה הלבנה לבדו לא מספיק. יוטיוב מחזירה לכל שאילתה גם
+            // תוצאות "קשורות בערך", ואחרי שמשאירים רק ערוצים מאושרים נשאר
+            // מה שבמקרה שרד — שירים של זמר אחר לגמרי, בלי שום קשר למה
+            // שהמשתמש הקליד. rank מיין אותם, אבל מיון לא מוריד כלום.
+            //
+            // עדיף "לא נמצא" מאשר תשובה שגויה: ממסך ריק אפשר לבקש להוסיף
+            // ערוץ, מתוצאה שגויה אי אפשר כלום.
+            val relevant = fresh.filter { relevance(it, query) >= MIN_RELEVANCE }
+            val dropped = fresh.size - relevant.size
+            if (dropped > 0) {
+                Diagnostics.log("SEARCH: $dropped תוצאות נפסלו — לא רלוונטיות לשאילתה")
+            }
+            if (relevant.isEmpty()) return
+            rank(relevant, query).forEach { collected[it.id] = it }
             onPartial(collected.values.toList())
         }
 
@@ -180,6 +194,54 @@ object SearchEngine {
      * הנרמול נעשה פעם אחת לכל סרטון ולא בתוך ה-Comparator: sortedWith קורא
      * להשוואה O(n log n) פעמים, כך שאותו כותרת הייתה מנורמלת שוב ושוב.
      */
+    /**
+     * כמה התוצאה באמת עונה על השאילתה — 0 עד 1.
+     *
+     * ## למה לא פשוט "מכיל את הטקסט"
+     * שאילתה עברית טיפוסית מכילה מילות קישור קצרות ("מה", "לך", "של")
+     * שמופיעות כמעט בכל כותרת. דרישה שכולן יופיעו פוסלת תוצאות נכונות;
+     * ספירה שמתייחסת אליהן כשוות-ערך מאשרת תוצאות שגויות. לכן המילים
+     * הקצרות נספרות כבונוס בלבד, וההכרעה נעשית על המילים המשמעותיות.
+     *
+     * ## התאמת תחילית
+     * בעברית אותה מילה מופיעה עם ובלי וי"ו החיבור, ה"א הידיעה ולמ"ד.
+     * "טובות" מול "הטובות" הן אותה מילה לצורך חיפוש, ולכן התאמה נחשבת גם
+     * כשמילה אחת היא תחילית של השנייה.
+     */
+    private fun relevance(video: Video, query: String): Double {
+        val q = normalize(query)
+        if (q.isBlank()) return 0.0
+        val title = normalize(video.title)
+        val channel = normalize(video.channelName)
+        val hay = "$title $channel"
+
+        // הביטוי המלא ככתבו — ההתאמה החזקה ביותר שיש.
+        if (title.contains(q) || channel.contains(q)) return 1.0
+
+        val tokens = q.split(' ').filter { it.isNotBlank() }
+        if (tokens.isEmpty()) return 0.0
+        val significant = tokens.filter { it.length >= 3 }.ifEmpty { tokens }
+        val words = hay.split(' ').filter { it.isNotBlank() }
+
+        val hits = significant.count { token ->
+            words.any { word ->
+                word == token ||
+                    word.startsWith(token) ||
+                    (token.startsWith(word) && word.length >= 3)
+            }
+        }
+        return hits.toDouble() / significant.size
+    }
+
+    /**
+     * כמה מהמילים המשמעותיות חייבות להימצא כדי שתוצאה תוצג.
+     *
+     * חצי הוא האיזון: שאילתה של ארבע מילים עוברת עם שתיים — מספיק כדי לא
+     * לפסול ניסוח שונה במקצת של אותו שיר, ולא מספיק כדי להכניס שיר אקראי
+     * שבמקרה חולק מילה אחת.
+     */
+    private const val MIN_RELEVANCE = 0.5
+
     private suspend fun rank(videos: List<Video>, query: String): List<Video> =
         withContext(Dispatchers.Default) {
             val q = normalize(query)

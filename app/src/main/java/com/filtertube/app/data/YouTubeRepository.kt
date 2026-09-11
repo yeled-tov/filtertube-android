@@ -105,8 +105,14 @@ object YouTubeRepository {
             Diagnostics.log(
                 "FEED: $answered מתוך ${targets.size} ערוצים החזירו סרטונים · $codes",
             )
+            if (deadChannels.isNotEmpty()) {
+                Diagnostics.log(
+                    "FEED: ערוצים עם מזהה שגוי או שנמחקו — ${deadChannels.joinToString(", ")}",
+                )
+            }
         }
         feedFailures.clear()
+        deadChannels.clear()
         videos
     }
 
@@ -143,6 +149,10 @@ object YouTubeRepository {
                 httpClient.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         feedFailures.merge(response.code, 1, Int::plus)
+                        // 404 = הערוץ לא קיים יותר, או שהמזהה ברשימה שגוי.
+                        // זה לא ייפתר מעצמו ולא שווה ניסיון שני — שמים את
+                        // השם ביומן כדי שיהיה מה לתקן ברשימה.
+                        if (response.code == 404) deadChannels.add(channel.name)
                         null
                     } else {
                         response.body?.string()?.let { parseChannelXml(it, channel) }
@@ -150,6 +160,8 @@ object YouTubeRepository {
                 }
             }.getOrNull()
             if (result != null) return@withContext result
+            // ניסיון שני על 404 הוא בזבוז: ערוץ שלא קיים לא יתחיל להתקיים.
+            if (channel.name in deadChannels) return@withContext emptyList()
             // 429 ו-5xx חולפים. השהיה קצרה וגדלה מספיקה כדי לצאת מהחלון
             // שבו יוטיוב חונקת, בלי להאריך את הרענון בצורה מורגשת.
             if (attempt == 0) kotlinx.coroutines.delay(400L + Random.nextLong(300L))
@@ -159,6 +171,11 @@ object YouTubeRepository {
 
     /** קודי השגיאה שחזרו ברענון האחרון — נרשמים ליומן בסיכום. */
     private val feedFailures = java.util.concurrent.ConcurrentHashMap<Int, Int>()
+
+    /** ערוצים שהחזירו 404 — מזהה שגוי או ערוץ שנמחק. */
+    private val deadChannels = java.util.Collections.newSetFromMap(
+        java.util.concurrent.ConcurrentHashMap<String, Boolean>(),
+    )
 
     private fun parseChannelXml(xml: String, channel: Channel): List<Video> {
         val videos = mutableListOf<Video>()
