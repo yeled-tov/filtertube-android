@@ -420,7 +420,7 @@ private fun MusicLibrary(
     }
     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
         if (likes.isNotEmpty()) {
-            item { SectionTitle("אהבתי (${likes.size})") }
+            item { NavigationTitle("אהבתי", label = "${likes.size} שירים") }
             items(likes, key = { "like_${it.id}" }) { song ->
                 SongListItem(song, active = song.id == activeId, playing = song.id == activeId) {
                     onPlay(likes, likes.indexOf(song))
@@ -428,7 +428,7 @@ private fun MusicLibrary(
             }
         }
         if (history.isNotEmpty()) {
-            item { SectionTitle("הושמע לאחרונה") }
+            item { NavigationTitle("הושמע לאחרונה") }
             items(history.take(60), key = { "hist_${it.id}" }) { song ->
                 SongListItem(song, active = song.id == activeId, playing = song.id == activeId) {
                     onPlay(history, history.indexOf(song))
