@@ -97,6 +97,91 @@ object InnerTube {
         return collectVideos(resp)
     }
 
+    /**
+     * הסרטונים שסומנו ב"אהבתי" ביוטיוב.
+     *
+     * "VLLL" הוא מזהה הדפדוף של פלייליסט ה-Liked videos. הוא זמין דרך אותה
+     * הזדהות בעוגיות שכבר משמשת להיסטוריה, ולכן לא נדרש כאן שום OAuth,
+     * שום מפתח API ושום הגדרה בצד גוגל.
+     */
+    suspend fun likedVideos(cookies: String): List<Video> {
+        val resp = post("browse", cookies, JSONObject().put("browseId", "VLLL")) ?: return emptyList()
+        return collectVideos(resp)
+    }
+
+    /**
+     * הערוצים שהמשתמש מנוי אליהם.
+     *
+     * מוחזרים כזוגות (מזהה, שם). הפענוח מחפש browseId שמתחיל ב-UC בתוך
+     * הצומת של כל פריט — אותה גישה רקורסיבית שמשמשת בשאר הקובץ, ומאותה
+     * סיבה: מבנה התשובה של יוטיוב משתנה, מזהה ערוץ לא.
+     */
+    suspend fun subscriptions(cookies: String): List<Pair<String, String>> {
+        val resp = post("browse", cookies, JSONObject().put("browseId", "FEchannels"))
+            ?: return emptyList()
+        val out = LinkedHashMap<String, String>()
+        walk(resp) { node ->
+            val id = node.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("browseEndpoint")?.optString("browseId")
+                ?: node.optJSONObject("browseEndpoint")?.optString("browseId")
+            if (id.isNullOrBlank() || !id.startsWith("UC") || out.containsKey(id)) return@walk
+            val name = textOf(node.optJSONObject("title"))
+                ?: textOf(node.optJSONObject("displayName"))
+                ?: return@walk
+            out[id] = name
+        }
+        return out.entries.map { it.key to it.value }
+    }
+
+    /**
+     * "מוזיקה שאהבתי" מיוטיוב מיוזיק, דרך אותן עוגיות.
+     *
+     * מסלול חלופי ל-YouTubeMusicApi שעובד עם access token. שניהם מגיעים
+     * לאותו פלייליסט; ההבדל הוא בזהות שמציגים — וזה מה שמאפשר למשוך את
+     * המוזיקה גם כשההתחברות עם גוגל לא זמינה.
+     */
+    suspend fun likedMusic(cookies: String): List<Video> = withContext(Dispatchers.IO) {
+        val auth = authHeader(cookies) ?: return@withContext emptyList()
+        val body = JSONObject().apply {
+            put("browseId", "FEmusic_liked_videos")
+            put(
+                "context",
+                JSONObject().put(
+                    "client",
+                    JSONObject().apply {
+                        put("clientName", "WEB_REMIX")
+                        put("clientVersion", "1.20240103.01.00")
+                        put("hl", "he")
+                        put("gl", "IL")
+                    },
+                ),
+            )
+        }
+        val request = Request.Builder()
+            .url("https://music.youtube.com/youtubei/v1/browse?prettyPrint=false")
+            .header("Content-Type", "application/json")
+            .header("User-Agent", USER_AGENT)
+            .header("Cookie", cookies)
+            .header("Authorization", auth)
+            .header("X-Goog-AuthUser", "0")
+            .header("Origin", "https://music.youtube.com")
+            .header("X-Origin", "https://music.youtube.com")
+            .post(body.toString().toRequestBody(jsonMedia))
+            .build()
+        runCatching {
+            http.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    Diagnostics.log("YT MUSIC (עוגיות): השרת החזיר ${resp.code}")
+                    return@use emptyList()
+                }
+                resp.body?.string()?.let { collectVideos(JSONObject(it)) }.orEmpty()
+            }
+        }.getOrElse {
+            Diagnostics.log("YT MUSIC (עוגיות): נכשל — ${it.message}")
+            emptyList()
+        }
+    }
+
     /** סימון/ביטול לייק אמיתי דרך InnerTube. */
     suspend fun rate(cookies: String, videoId: String, like: Boolean): Boolean {
         val endpoint = if (like) "like/like" else "like/removelike"

@@ -41,6 +41,7 @@ import com.filtertube.app.data.GoogleAuth
 import com.google.firebase.auth.FirebaseAuth
 import com.filtertube.app.data.InnerTube
 import com.filtertube.app.data.LibraryStore
+import com.filtertube.app.data.SubChannel
 import com.filtertube.app.data.YouTubeAccountRepository
 import com.filtertube.app.data.YouTubeMusicApi
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -121,10 +122,22 @@ fun LibraryScreen(
         }
     }
 
-    // סנכרון מלא דרך InnerTube — היסטוריה והמלצות מותאמות
+    /**
+     * סנכרון מלא דרך העוגיות של הדפדפן — **הכול בפעולה אחת**.
+     *
+     * ## למה זה המסלול הראשי ולא גיבוי
+     * ההתחברות עם גוגל תלויה בהגדרת OAuth בצד גוגל (לקוח אנדרואיד עם
+     * טביעת האצבע של האפליקציה). כשההגדרה חסרה, Play Services מחזיר
+     * DEVELOPER_ERROR ואי אפשר לעשות דבר בקוד כדי לעקוף את זה.
+     *
+     * המסלול הזה לא דורש שום הגדרה: הזדהות SAPISIDHASH מהעוגיות שהמשתמש
+     * כבר נתן בהתחברות בדפדפן. הוא מביא היסטוריה, המלצות, לייקים, מנויים
+     * ומוזיקה שאהבת — כלומר את כל מה שההתחברות עם גוגל הייתה אמורה להביא,
+     * ועוד היסטוריה שהיא ממילא לא יכולה.
+     */
     fun syncInnerTube() {
         if (!accountStore.isLoggedIn) return
-        syncing = true; status = "מסנכרן היסטוריה והמלצות..."
+        syncing = true; status = "מסנכרן את החשבון שלך..."
         scope.launch {
             try {
                 val approved = ChannelsRepository.getChannels(context).map { it.youtubeChannelId }.toHashSet()
@@ -136,7 +149,25 @@ fun LibraryScreen(
                 store.setHistory(hist); history = hist
                 val rec = InnerTube.recommendations(accountStore.cookies).filter { it.channelId in approved }
                 store.setRecommendations(rec); recs = rec
-                status = "סונכרנו ${hist.size} בהיסטוריה ו-${rec.size} המלצות ✓"
+
+                // לייקים, מנויים ומוזיקה — אותן עוגיות, אותה פעולה.
+                val liked = InnerTube.likedVideos(accountStore.cookies)
+                    .filter { it.channelId in approved }
+                if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
+
+                val music = InnerTube.likedMusic(accountStore.cookies)
+                    .filter { it.channelId in approved }
+                if (music.isNotEmpty()) store.setMusicLikes(music)
+
+                val subsFromCookies = InnerTube.subscriptions(accountStore.cookies)
+                    .filter { it.first in approved }
+                    .map { (id, name) -> SubChannel(id, name) }
+                if (subsFromCookies.isNotEmpty()) {
+                    store.setSubscriptions(subsFromCookies); subs = subsFromCookies
+                }
+
+                status = "סונכרן ✓ ${hist.size} בהיסטוריה · ${liked.size} לייקים · " +
+                    "${music.size} שירים ממיוזיק · ${subsFromCookies.size} מנויים · ${rec.size} המלצות"
             } catch (e: Exception) {
                 status = "שגיאה בסנכרון מלא: ${e.message}"
             } finally { syncing = false }
@@ -145,7 +176,10 @@ fun LibraryScreen(
 
     // סנכרון אוטומטי כשמתחברים (loggedIn עובר ל-true בחזרה ממסך ההתחברות)
     LaunchedEffect(loggedIn) {
-        if (loggedIn && store.history().isEmpty()) syncInnerTube()
+        // בעבר הסנכרון רץ רק כשההיסטוריה הייתה ריקה, ולכן מי שכבר היה לו
+        // משהו לא קיבל לעולם את הלייקים והמנויים. ההתחברות עצמה היא
+        // האירוע שמצדיק משיכה — לא מצב הספרייה.
+        if (loggedIn) syncInnerTube()
     }
 
     val signInLauncher = rememberLauncherForActivityResult(
