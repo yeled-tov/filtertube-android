@@ -200,11 +200,18 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                     // מציגים את טביעת האצבע האמיתית של האפליקציה. "טביעת
                     // אצבע חסרה" בלי לומר איזו הוא מבוי סתום — עם המחרוזת
                     // עצמה אפשר להשוות מול Firebase בשנייה.
+                    // הסיבה אומתה מול הפרויקט: ברשימת מזהי ה-OAuth קיים רק
+                    // לקוח מסוג "אפליקציית אינטרנט". חסר לקוח מסוג Android
+                    // לצמד (חבילה, טביעת אצבע), ובלעדיו Play Services דוחה
+                    // כל בקשה עם idToken. הודעה שאומרת רק "טביעת אצבע חסרה"
+                    // שולחת למסך הלא נכון.
                     val sha = GoogleAuth.signatureSha1(context) ?: "לא ידוע"
-                    "ההתחברות עם גוגל לא מאושרת לאפליקציה הזו.\n\n" +
-                        "יש לרשום ב-Firebase (Project settings ← Your apps ← " +
-                        "Add fingerprint) בדיוק את הטביעה הזו:\n$sha\n\n" +
-                        "חבילה: ${context.packageName}"
+                    "חסר לקוח OAuth מסוג Android בפרויקט.\n\n" +
+                        "Google Cloud Console ← Credentials ← Create credentials " +
+                        "← OAuth client ID ← Android, עם:\n\n" +
+                        "חבילה: ${context.packageName}\nSHA-1: $sha\n\n" +
+                        "בינתיים אפשר להתחבר עם מייל וקוד, ולמשוך את נתוני " +
+                        "יוטיוב מהספרייה דרך ההתחברות בדפדפן."
                 } else {
                     "ההתחברות דרך גוגל נכשלה (${e.statusCode})"
                 }
