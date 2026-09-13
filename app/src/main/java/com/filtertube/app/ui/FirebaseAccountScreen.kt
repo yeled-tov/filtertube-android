@@ -197,7 +197,14 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                 // ולכן היא מקבלת הסבר משלה במקום "נסה שוב".
                 Diagnostics.log("AUTH גוגל: ApiException ${e.statusCode}")
                 message = if (e.statusCode == 10) {
-                    "ההתחברות עם גוגל לא מוגדרת במלואה בפרויקט (טביעת אצבע חסרה)."
+                    // מציגים את טביעת האצבע האמיתית של האפליקציה. "טביעת
+                    // אצבע חסרה" בלי לומר איזו הוא מבוי סתום — עם המחרוזת
+                    // עצמה אפשר להשוות מול Firebase בשנייה.
+                    val sha = GoogleAuth.signatureSha1(context) ?: "לא ידוע"
+                    "ההתחברות עם גוגל לא מאושרת לאפליקציה הזו.\n\n" +
+                        "יש לרשום ב-Firebase (Project settings ← Your apps ← " +
+                        "Add fingerprint) בדיוק את הטביעה הזו:\n$sha\n\n" +
+                        "חבילה: ${context.packageName}"
                 } else {
                     "ההתחברות דרך גוגל נכשלה (${e.statusCode})"
                 }
@@ -221,7 +228,10 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
             return
         }
         Diagnostics.log("AUTH גוגל: פותח בחירת חשבון")
-        googleLauncher.launch(GoogleAuth.client(context).signInIntent)
+        GoogleAuth.logSignInConfig(context)
+        // הלקוח ה"רזה": מייל ו-idToken בלבד. ההרשאה ליוטיוב מתבקשת בנפרד
+        // בספרייה, כשבאמת מושכים נתונים.
+        googleLauncher.launch(GoogleAuth.basicClient(context).signInIntent)
     }
 
     fun submitAccount() {

@@ -2,6 +2,9 @@ package com.filtertube.app.data
 
 import android.accounts.Account
 import android.content.Context
+import java.security.MessageDigest
+import android.os.Build
+import android.content.pm.PackageManager
 import com.filtertube.app.R
 import com.google.android.gms.auth.GoogleAuthUtil
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -60,6 +63,66 @@ object GoogleAuth {
 
     /** true כשאפשר להשתמש בהתחברות מאוחדת (גוגל מאמת גם את חשבון FilterTube). */
     fun unifiedSignInAvailable(context: Context): Boolean = webClientId(context) != null
+
+    /**
+     * טביעת האצבע (SHA-1) של המפתח שבו האפליקציה **הזו** חתומה בפועל.
+     *
+     * ## למה זה נחוץ
+     * שגיאה 10 (DEVELOPER_ERROR) אומרת רק "ההגדרה בצד גוגל לא תואמת את
+     * האפליקציה". היא לא אומרת במה. הרוב המכריע של המקרים הוא טביעת אצבע
+     * שלא נרשמה, נרשמה לאפליקציה אחרת, או נרשמה מתוך מפתח אחר מזה שחתם
+     * על ה-APK שמותקן.
+     *
+     * לנחש איזה מהשלושה זה בזבוז זמן. האפליקציה יכולה פשוט להסתכל על
+     * החתימה של עצמה ולומר אותה — ואז ההשוואה מול מה שרשום ב-Firebase היא
+     * מיידית וודאית.
+     */
+    fun signatureSha1(context: Context): String? = runCatching {
+        val pm = context.packageManager
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+                .signingInfo?.apkContentsSigners
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES).signatures
+        }
+        val first = signatures?.firstOrNull() ?: return@runCatching null
+        MessageDigest.getInstance("SHA-1")
+            .digest(first.toByteArray())
+            .joinToString(":") { "%02X".format(it) }
+    }.getOrNull()
+
+    /** שורת אבחון אחת שאומרת כל מה שצריך כדי לפתור שגיאה 10. */
+    fun logSignInConfig(context: Context) {
+        val id = webClientId(context)
+        Diagnostics.log(
+            "AUTH הגדרה: חבילה=${context.packageName} · " +
+                "SHA1=${signatureSha1(context) ?: "לא ידוע"} · " +
+                "מזהה לקוח Web=${if (id.isNullOrBlank()) "חסר" else "…" + id.takeLast(28)}",
+        )
+    }
+
+    /**
+     * התחברות "רזה": מייל ו-idToken בלבד, בלי הרשאת יוטיוב.
+     *
+     * ## למה בנפרד
+     * youtube.force-ssl היא הרשאה רגישה. בקשה שלה *יחד* עם idToken באותה
+     * קריאה מחייבת שגם מסך ההסכמה של הפרויקט יהיה מוגדר ומאושר לאותה
+     * הרשאה, ולא רק שטביעת האצבע תהיה רשומה — כלומר שני תנאים במקום אחד,
+     * ושניהם מחזירים בדיוק את אותה שגיאה 10 חסרת הפרטים.
+     *
+     * יצירת החשבון לא צריכה את יוטיוב בכלל. היא משתמשת במסלול הסטנדרטי
+     * והיציב, וההרשאה ליוטיוב מתבקשת בנפרד — רק כשבאמת מושכים נתונים.
+     * זה גם עדיף למשתמש: לא מבקשים גישה לחשבון היוטיוב שלו לפני שהיא
+     * נחוצה.
+     */
+    fun basicClient(context: Context): GoogleSignInClient {
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .apply { webClientId(context)?.let { requestIdToken(it) } }
+            .build()
+        return GoogleSignIn.getClient(context, gso)
+    }
 
     fun client(context: Context): GoogleSignInClient {
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)

@@ -258,6 +258,10 @@ fun AppRoot() {
         com.filtertube.app.data.Diagnostics.log(
             "גרסה ${BuildConfig.VERSION_NAME} (בנייה ${BuildConfig.VERSION_CODE})"
         )
+        // חבילה, טביעת אצבע ומזהה לקוח — בכל דוח אבחון, לא רק אחרי כישלון.
+        // שגיאת התחברות של גוגל נפתרת בהשוואה של שלושת אלה למה שרשום
+        // בפרויקט, ובלעדיהם כל דיון עליה מתחיל מלנחש.
+        com.filtertube.app.data.GoogleAuth.logSignInConfig(context)
         try {
             // לקוחות מקבלים רק גרסאות יציבות; גרסאות טסט רק אם הופעל ערוץ בדיקות.
             val u = com.filtertube.app.data.UpdateChecker.check(includeTestBuilds = settings.testChannel)
