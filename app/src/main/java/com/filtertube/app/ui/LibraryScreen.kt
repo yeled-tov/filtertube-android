@@ -151,10 +151,20 @@ fun LibraryScreen(
                 if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
                 if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
 
+                // ── המנויים נשמרים במלואם, כולל הלא-מאושרים ───────────────
+                // קודם הם נזרקו כאן, והמשתמש ראה רשימה קטועה בלי שום רמז
+                // שחסר בה משהו. עכשיו הרשימה מלאה, ומסך המנויים מציג את
+                // הלא-מאושרים באפור ומאפשר לבקש להוסיף אותם.
+                //
+                // זה לא פותח שום פרצה: הרשימה הלבנה נאכפת בכניסה לערוץ
+                // ובניגון, לא בשמירה. ערוץ לא מאושר אינו ניתן לפתיחה.
                 val subList = syncStep("מנויים") {
                     YouTubeAccountRepository.subscriptions(token)
-                }.filter { it.channelId in approved }
-                Diagnostics.log("SYNC גוגל · מנויים: ${subList.size} מאושרים")
+                }
+                Diagnostics.log(
+                    "SYNC גוגל · מנויים: ${subList.size} התקבלו · " +
+                        "${subList.count { it.channelId in approved }} מאושרים",
+                )
                 if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
                 if (subList.isNotEmpty()) { store.setSubscriptions(subList); subs = subList }
 
@@ -245,10 +255,10 @@ fun LibraryScreen(
                 if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
 
                 val allSubs = InnerTube.subscriptions(accountStore.cookies)
-                val subsFromCookies = allSubs.filter { it.first in approved }
-                    .map { (id, name) -> SubChannel(id, name) }
+                val subsFromCookies = allSubs.map { (id, name) -> SubChannel(id, name) }
                 Diagnostics.log(
-                    "SYNC מנויים: ${allSubs.size} התקבלו · ${subsFromCookies.size} מאושרים",
+                    "SYNC מנויים: ${allSubs.size} התקבלו · " +
+                        "${allSubs.count { it.first in approved }} מאושרים",
                 )
                 if (subsFromCookies.isNotEmpty()) {
                     store.setSubscriptions(subsFromCookies); subs = subsFromCookies

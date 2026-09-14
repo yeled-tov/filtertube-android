@@ -10,13 +10,11 @@ plugins {
 
 // נקרא ברמת הקובץ ולא בתוך defaultConfig: שם קיים מאפיין בשם `java`
 // שמסתיר את *החבילה* java, ו-java.util.Properties לא מתקמפל שם.
-// בסיס הגרסה: שתי הספרות הראשונות בלבד (למשל "1.2"). הספרה השלישית
-// נקבעת אוטומטית ממספר הבנייה, ראה versionName ב-defaultConfig.
-val appVersionBase: String = Properties().let { props ->
+// הגרסה השיווקית המלאה, כמו שהלקוח רואה אותה — למשל "2.0.0".
+val appVersionName: String = Properties().let { props ->
     val f = rootProject.file("version.properties")
     if (f.exists()) f.inputStream().use { props.load(it) }
-    val raw = props.getProperty("versionName")?.trim()?.takeIf { it.isNotEmpty() } ?: "1.0"
-    raw.split(".").filter { it.isNotBlank() }.take(2).joinToString(".").ifEmpty { "1.0" }
+    props.getProperty("versionName")?.trim()?.takeIf { it.isNotEmpty() } ?: "1.0.0"
 }
 
 android {
@@ -34,13 +32,16 @@ android {
         val buildNum = (project.findProperty("buildNumber") as String?)?.toIntOrNull() ?: 3
         versionCode = buildNum
 
-        // versionName = בסיס הגרסה + מספר הבנייה, למשל "1.2.200".
+        // ── שתי דרישות שנראו סותרות ──────────────────────────────────
+        // ללקוח מגיע מספר נקי: "2.0.0", בלי זנב טכני.
+        // בפיתוח צריך שכל בנייה תיראה חדשה, אחרת אי אפשר לדעת במבט אם
+        // המכשיר מריץ את מה שהרגע נבנה.
         //
-        // קודם כאן ישבה גרסה שיווקית קבועה ("1.2.0"), ולידה הוצג מספר בנייה
-        // נפרד. זה הפך כל בנייה חדשה לגרסה שנראית *זהה* לקודמת: אי אפשר היה
-        // להגיד במבט אם המכשיר מריץ את מה שהרגע נבנה. עכשיו מספר הגרסה
-        // עצמו עולה בכל בנייה, והשניים כבר לא סותרים זה את זה.
-        versionName = "$appVersionBase.$buildNum"
+        // שתיהן מתקיימות כי אלה שני ערוצים שונים: בנייה מ-main היא הגרסה
+        // השיווקית כלשונה, וכל בנייה אחרת נושאת את מספר הבנייה בזנב.
+        // versionCode עולה בכל מקרה, ולכן זיהוי העדכונים לא נשען על זה.
+        val stableBuild = (project.findProperty("stableBuild") as String?)?.toBoolean() ?: false
+        versionName = if (stableBuild) appVersionName else "$appVersionName-test.$buildNum"
 
         // RTL support
         resourceConfigurations += listOf("en", "iw")
