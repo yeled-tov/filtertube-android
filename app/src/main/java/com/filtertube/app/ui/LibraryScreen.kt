@@ -37,11 +37,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filtertube.app.data.AccountStore
 import com.filtertube.app.data.ChannelsRepository
+import com.filtertube.app.data.Diagnostics
 import com.filtertube.app.data.GoogleAuth
 import com.google.firebase.auth.FirebaseAuth
 import com.filtertube.app.data.InnerTube
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SubChannel
+import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeAccountRepository
 import com.filtertube.app.data.YouTubeMusicApi
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -150,18 +152,33 @@ fun LibraryScreen(
                 val rec = InnerTube.recommendations(accountStore.cookies).filter { it.channelId in approved }
                 store.setRecommendations(rec); recs = rec
 
-                // לייקים, מנויים ומוזיקה — אותן עוגיות, אותה פעולה.
-                val liked = InnerTube.likedVideos(accountStore.cookies)
-                    .filter { it.channelId in approved }
+                // ── לייקים, מנויים ומוזיקה — אותן עוגיות, אותה פעולה ──────
+                // כל מקור מדווח שלוש מספרים: כמה הגיעו, כמה נפלו כי לא זוהה
+                // להם ערוץ, וכמה נשארו אחרי הרשימה הלבנה. "התחבר והכל נשאר
+                // ריק" יכול לנבוע מכל אחד מהשלושה, ובלי הפירוט אי אפשר לדעת
+                // מאיזה.
+                fun report(name: String, items: List<Video>): List<Video> {
+                    val noChannel = items.count { it.channelId.isBlank() }
+                    val kept = items.filter { it.channelId in approved }
+                    Diagnostics.log(
+                        "SYNC $name: ${items.size} התקבלו · $noChannel בלי מזהה ערוץ · " +
+                            "${kept.size} מאושרים",
+                    )
+                    return kept
+                }
+
+                val liked = report("אהבתי", InnerTube.likedVideos(accountStore.cookies))
                 if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
 
-                val music = InnerTube.likedMusic(accountStore.cookies)
-                    .filter { it.channelId in approved }
+                val music = report("מיוזיק", InnerTube.likedMusic(accountStore.cookies))
                 if (music.isNotEmpty()) store.setMusicLikes(music)
 
-                val subsFromCookies = InnerTube.subscriptions(accountStore.cookies)
-                    .filter { it.first in approved }
+                val allSubs = InnerTube.subscriptions(accountStore.cookies)
+                val subsFromCookies = allSubs.filter { it.first in approved }
                     .map { (id, name) -> SubChannel(id, name) }
+                Diagnostics.log(
+                    "SYNC מנויים: ${allSubs.size} התקבלו · ${subsFromCookies.size} מאושרים",
+                )
                 if (subsFromCookies.isNotEmpty()) {
                     store.setSubscriptions(subsFromCookies); subs = subsFromCookies
                 }
@@ -187,27 +204,19 @@ fun LibraryScreen(
     ) { result ->
         try {
             val acct = GoogleSignIn.getSignedInAccountFromIntent(result.data).getResult(ApiException::class.java)
-            scope.launch {
-                // ── לחיצה אחת, שתי מטרות ──────────────────────────────────
-                // אם עדיין אין חשבון FilterTube, אותה בחירת חשבון גוגל יוצרת
-                // אותו: גוגל כבר אימת את המייל, אז אין שלב אימות נפרד. ורק
-                // אחר כך נקשרת ההרשאה למשוך את הלייקים והמנויים.
-                if (FirebaseAuth.getInstance().currentUser?.isEmailVerified != true) {
-                    status = "מאמת דרך גוגל…"
-                    val signedIn = GoogleAuth.signInToFirebase(acct)
-                    if (signedIn.isFailure) {
-                        GoogleAuth.signOut(context)
-                        status = signedIn.exceptionOrNull()?.message ?: "ההתחברות נכשלה"
-                        return@launch
-                    }
-                }
-                if (GoogleAuth.bindToCurrentFirebaseAccount(context, acct) == null) {
-                    GoogleAuth.signOut(context)
-                    status = "לא הצלחנו לקשר את החשבון"
-                } else {
-                    account = acct
-                    syncAccount(acct)
-                }
+            // ── התפקיד היחיד של הכרטיס הזה: למשוך נתונים מיוטיוב ─────────
+            // ניסיתי לתלות כאן גם יצירת חשבון דרך גוגל, וזה הפך כפתור עובד
+            // לכפתור שנכשל תמיד: אותה זרימה דרשה idToken, ו-idToken דורש
+            // לקוח OAuth מסוג Android שאינו קיים בפרויקט.
+            //
+            // יצירת חשבון דרך גוגל נמצאת במסך הפתיחה, בזרימה נפרדת. תקלה
+            // בהגדרת OAuth פוגעת רק בה, ולא גוררת איתה תכונה שעובדת.
+            if (GoogleAuth.bindToCurrentFirebaseAccount(context, acct) == null) {
+                GoogleAuth.signOut(context)
+                status = "יש להתחבר קודם לחשבון FilterTube"
+            } else {
+                account = acct
+                syncAccount(acct)
             }
         } catch (e: ApiException) {
             status = "ההתחברות נכשלה (${e.statusCode})"

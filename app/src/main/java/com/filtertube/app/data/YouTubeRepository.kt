@@ -105,9 +105,22 @@ object YouTubeRepository {
             Diagnostics.log(
                 "FEED: $answered מתוך ${targets.size} ערוצים החזירו סרטונים · $codes",
             )
-            if (deadChannels.isNotEmpty()) {
+            // ── מתי 404 באמת אומר "הערוץ לא קיים" ────────────────────────
+            // כשהרשת עצמה נופלת, יוטיוב מחזירה 404 להמון ערוצים בבת אחת —
+            // וביומן הופיעה רשימה של 159 "ערוצים מחוקים" שכולם תקינים
+            // לחלוטין. דיווח כזה גרוע מכלום: הוא שולח למחוק ערוצים טובים.
+            //
+            // 404 נחשב אמין רק כשרוב הערוצים כן ענו, כלומר הרשת עובדת
+            // והכישלון ייחודי לערוץ עצמו.
+            val networkHealthy = answered > targets.size / 2
+            if (deadChannels.isNotEmpty() && networkHealthy) {
                 Diagnostics.log(
                     "FEED: ערוצים עם מזהה שגוי או שנמחקו — ${deadChannels.joinToString(", ")}",
+                )
+            } else if (deadChannels.isNotEmpty()) {
+                Diagnostics.log(
+                    "FEED: ${deadChannels.size} שגיאות 404 בזמן שהרשת לא יציבה — " +
+                        "לא מדווחות כערוצים מחוקים",
                 )
             }
         }

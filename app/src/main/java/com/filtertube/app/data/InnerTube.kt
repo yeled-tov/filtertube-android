@@ -398,6 +398,18 @@ object InnerTube {
             .takeIf { it.isNotEmpty() }
     }
 
+    /**
+     * מזהה הערוץ של פריט.
+     *
+     * ## למה יש כאן שלב שני
+     * שלושת השדות המוכרים (ownerText וחבריו) קיימים ברשימות רגילות, אבל
+     * **לא** ברשימות פלייליסט: playlistVideoRenderer מציג את שם היוצר
+     * במבנה אחר. התוצאה הייתה שכל הלייקים נמשכו בלי מזהה ערוץ, ואז נפסלו
+     * בסינון לרשימה הלבנה — כלומר ההתחברות "עבדה" ולא הוסיפה כלום.
+     *
+     * הנפילה לחיפוש רקורסיבי בתוך הפריט פותרת את זה בלי להיות תלויה במבנה
+     * מסוים, בדיוק כמו בשאר הקובץ.
+     */
     private fun bylineChannelId(vr: JSONObject): String? {
         for (key in listOf("ownerText", "longBylineText", "shortBylineText")) {
             val runs = vr.optJSONObject(key)?.optJSONArray("runs") ?: continue
@@ -407,6 +419,24 @@ object InnerTube {
                 if (!id.isNullOrEmpty() && id.startsWith("UC")) return id
             }
         }
-        return null
+        var found: String? = null
+        walkAll(vr) { node ->
+            if (found != null) return@walkAll
+            val id = node.optJSONObject("browseEndpoint")?.optString("browseId")
+            if (!id.isNullOrEmpty() && id.startsWith("UC")) found = id
+        }
+        return found
+    }
+
+    /** מעבר רקורסיבי על כל צומת, בלי לחפש מפתח מסוים. */
+    private fun walkAll(node: Any?, visit: (JSONObject) -> Unit) {
+        when (node) {
+            is JSONObject -> {
+                visit(node)
+                val keys = node.keys()
+                while (keys.hasNext()) walkAll(node.opt(keys.next()), visit)
+            }
+            is JSONArray -> for (i in 0 until node.length()) walkAll(node.opt(i), visit)
+        }
     }
 }

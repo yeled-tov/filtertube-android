@@ -124,15 +124,25 @@ object GoogleAuth {
         return GoogleSignIn.getClient(context, gso)
     }
 
+    /**
+     * הלקוח למשיכת נתונים מיוטיוב — מייל והרשאת יוטיוב, **בלי idToken**.
+     *
+     * ## למה בלי, ולמה זה חשוב
+     * זו הייתה רגרסיה שלי. הוספתי כאן requestIdToken כדי לאחד את ההתחברות,
+     * ובכך הפכתי כפתור שעבד מצוין לכפתור שנכשל תמיד.
+     *
+     * הסיבה: בקשת idToken מחייבת שיהיה בפרויקט לקוח OAuth מסוג Android
+     * לצמד (חבילה, טביעת אצבע). בלעדיו Play Services מחזיר DEVELOPER_ERROR
+     * — ולא רק לחלק המאוחד, אלא לכל הבקשה. בלי idToken אין דרישה כזו
+     * בכלל, ולכן משיכת הלייקים והמנויים עבדה קודם ותעבוד שוב.
+     *
+     * ההתחברות המאוחדת (יצירת חשבון דרך גוגל) עברה ל-[basicClient] הנפרד.
+     * כך תקלה בהגדרת OAuth פוגעת רק בה, ולא גוררת איתה תכונה שעובדת.
+     */
     fun client(context: Context): GoogleSignInClient {
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
             .requestScopes(Scope(YT_SCOPE))
-            .apply {
-                // בקשת idToken היא מה שמאפשר להזדהות מול Firebase באותה
-                // לחיצה. בלעדיה גוגל מחזיר רק הרשאה ל-YouTube.
-                webClientId(context)?.let { requestIdToken(it) }
-            }
             .build()
         return GoogleSignIn.getClient(context, gso)
     }
