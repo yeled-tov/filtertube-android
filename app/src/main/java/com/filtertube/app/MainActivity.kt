@@ -262,10 +262,6 @@ fun AppRoot() {
         // שגיאת התחברות של גוגל נפתרת בהשוואה של שלושת אלה למה שרשום
         // בפרויקט, ובלעדיהם כל דיון עליה מתחיל מלנחש.
         com.filtertube.app.data.GoogleAuth.logSignInConfig(context)
-        // העוגיות של החשבון המחובר נטענות פעם אחת לזיכרון, כדי שמנוע
-        // החילוץ — שרץ בתוך שירות הניגון ואין לו Context — יוכל להזדהות
-        // מולן כשיוטיוב דורשת חשבון.
-        com.filtertube.app.data.AccountStore.prime(context)
         try {
             // לקוחות מקבלים רק גרסאות יציבות; גרסאות טסט רק אם הופעל ערוץ בדיקות.
             val u = com.filtertube.app.data.UpdateChecker.check(includeTestBuilds = settings.testChannel)
@@ -311,6 +307,10 @@ fun AppRoot() {
     val showBottomBar = currentRoute in mainRoutes
 
     fun openVideo(video: Video) {
+        // מסך הנגן של FilterTube מציג וידאו. הדגל נקבע בכל מסלול הפעלה ולא
+        // פעם אחת: המשתמש עובר בין FilterTube ל-FilterMusic באותה הפעלה,
+        // וערך שנשאר מהניגון הקודם היה מכבה וידאו או מדליק אותו בטעות.
+        com.filtertube.app.playback.Playback.setMusicMode(false)
         navController.navigate("player") { launchSingleTop = true }
         scope.launch {
             try {
@@ -329,6 +329,7 @@ fun AppRoot() {
      * והמעבר האוטומטי לפריט הבא צריך לעבוד גם כשהמסך סגור.
      */
     fun openLocalList(items: List<Video>, index: Int) {
+        com.filtertube.app.playback.Playback.setMusicMode(false)
         navController.navigate("player") { launchSingleTop = true }
         scope.launch {
             try {
@@ -346,6 +347,7 @@ fun AppRoot() {
      */
     /** מנגן תחנה מוכנה. משותף לרדיו האישי ולרדיו-משיר. */
     fun playStation(station: List<Video>, emptyMessage: String) {
+        com.filtertube.app.playback.Playback.setMusicMode(false)
         val first = station.firstOrNull()
         if (first == null) {
             android.widget.Toast.makeText(context, emptyMessage, android.widget.Toast.LENGTH_LONG).show()
@@ -385,6 +387,9 @@ fun AppRoot() {
      */
     fun playFromListInMusic(items: List<Video>, index: Int) {
         if (items.isEmpty()) return
+        // FilterMusic היא אפליקציית מוזיקה: אין שום סיבה להוריד מסלול וידאו
+        // שאיש לא רואה. זה גם מה שגרם לתקיעות דווקא כאן.
+        com.filtertube.app.playback.Playback.setMusicMode(true)
         val start = index.coerceIn(0, items.lastIndex)
         val station = items.drop(start)
         val first = station.firstOrNull() ?: return
@@ -435,6 +440,7 @@ fun AppRoot() {
                 ).show()
                 return@launch
             }
+            com.filtertube.app.playback.Playback.setMusicMode(false)
             navController.navigate("player") { launchSingleTop = true }
             try {
                 com.filtertube.app.playback.Playback.start(context, controller, first, station)

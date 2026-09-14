@@ -36,63 +36,29 @@ object PlaybackPriority {
 
     private val active = AtomicInteger(0)
 
-    /**
-     * האם הנגן ממלא באפר *ברגע זה*.
-     *
-     * ## למה חלון קבוע לא הספיק
-     * השער נסגר לשתים-עשרה שניות בתחילת הניגון ואז נפתח לתמיד. זה כיסה את
-     * הטעינה הראשונה, אבל בדיוק בשנייה השתים-עשרה כל עבודות הרקע יצאו לדרך
-     * בבת אחת — עשרה חילוצים לתור הרדיו ועוד שמונה לחימום. הבאפר של השיר
-     * התרוקן, והמשתמש שמע בדיוק את מה שתיאר: "מתחיל מהר, אחרי כמה שניות
-     * נעצר, גומר לטעון את כל התור, וממשיך".
-     *
-     * מצב הבאפר הוא המדד הנכון ולא השעון: כשהנגן מתחיל למלא — הוא זקוק
-     * לרשת, לא משנה אם זו השנייה השנייה או המאתיים. [MAX_WAIT_MS] מבטיח
-     * שעבודת רקע לא תירעב לנצח גם אם הבאפר מתעקש.
-     */
-    @Volatile
-    private var buffering = false
-
     @Volatile
     private var gate: CompletableDeferred<Unit> =
         CompletableDeferred<Unit>().also { it.complete(Unit) }
 
-    private val busy: Boolean get() = active.get() > 0 || buffering
+    /** מסמן שניגון תופס עכשיו את הרשת. חייב להיות מלווה ב-[end] ב-finally. */
+    fun begin() {
+        if (active.incrementAndGet() == 1) {
+            gate = CompletableDeferred()
+            Diagnostics.log("PRIORITY: ניגון בחזית — עבודות רקע ממתינות")
+        }
+    }
 
-    @Synchronized
-    private fun refresh(reason: String) {
-        if (busy) {
-            if (gate.isCompleted) {
-                gate = CompletableDeferred()
-                Diagnostics.log("PRIORITY: $reason — עבודות רקע ממתינות")
-            }
-        } else if (!gate.isCompleted) {
+    fun end() {
+        if (active.decrementAndGet() <= 0) {
+            active.set(0)
             gate.complete(Unit)
             Diagnostics.log("PRIORITY: החזית פנויה — עבודות הרקע ממשיכות")
         }
     }
 
-    /** מסמן שניגון תופס עכשיו את הרשת. חייב להיות מלווה ב-[end] ב-finally. */
-    fun begin() {
-        active.incrementAndGet()
-        refresh("ניגון בחזית")
-    }
-
-    fun end() {
-        if (active.decrementAndGet() < 0) active.set(0)
-        refresh("ניגון בחזית")
-    }
-
-    /** מדווח על מצב הבאפר של הנגן. נקרא מ-PlaybackService. */
-    fun setBuffering(value: Boolean) {
-        if (buffering == value) return
-        buffering = value
-        refresh("הנגן ממלא באפר")
-    }
-
     /** נקודת המתנה לעבודת רקע, לפני כל יחידת רשת. */
     suspend fun awaitIdle() {
-        if (!busy) return
+        if (active.get() == 0) return
         withTimeoutOrNull(MAX_WAIT_MS) { gate.await() }
     }
 }

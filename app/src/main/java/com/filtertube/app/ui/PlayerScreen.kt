@@ -1183,6 +1183,18 @@ private fun OnVideoPlayerScreen(
 //  2) פס התקדמות — ישר / גלי / מזוגזג + עובי + זוהר (מראה זהה למוקאפ)
 // ---------------------------------------------------------------------------
 
+/**
+ * מידות הגל בפס ההתקדמות — ב-dp, כמו ב-Material ובנגן של מטרוליסט.
+ *
+ * משרעת קטנה ואורך גל רחב: זה ההבדל בין "פס שנושם" לבין שיניים. הגזירה
+ * הקודמת מגובה הרכיב נתנה משרעת כפולה מזו ואורך גל של שני שליש ממנה.
+ */
+private val WAVE_AMPLITUDE = 4.dp
+private val WAVE_LENGTH = 24.dp
+
+/** זמן מעבר של מחזור גל שלם. איטי מספיק כדי לא למשוך את העין מהתוכן. */
+private const val WAVE_PERIOD_MS = 2000
+
 @Composable
 private fun WaveSeekBar(
     position: Long,
@@ -1218,7 +1230,7 @@ private fun WaveSeekBar(
             initialValue = 0f,
             targetValue = 2f * Math.PI.toFloat(),
             animationSpec = infiniteRepeatable(
-                animation = tween(1500, easing = LinearEasing),
+                animation = tween(WAVE_PERIOD_MS, easing = LinearEasing),
                 repeatMode = RepeatMode.Restart,
             ),
             label = "phase",
@@ -1241,8 +1253,14 @@ private fun WaveSeekBar(
     ) {
         val w = size.width
         val midY = size.height / 2f
-        val amp = if (shape == 0) 0f else size.height * 0.22f * ampScale
-        val waves = 22f
+        // ── מידות הגל ─────────────────────────────────────────────────────
+        // קודם הגל נגזר מגובה הרכיב (22% ממנו) ומספר המחזורים היה קבוע —
+        // עשרים ושניים על פני כל הרוחב. יצא גל צפוף וגבוה שנראה כמו שיניים
+        // ולא כמו חיווי. כאן המידות ב-dp ולא באחוזים, כמו ב-Material ובנגן
+        // של מטרוליסט: אורך גל רחב ומשרעת קטנה — קרוב לישר, רק נושם.
+        val amp = if (shape == 0) 0f else WAVE_AMPLITUDE.toPx() * ampScale
+        val wavelength = WAVE_LENGTH.toPx()
+        val waves = if (wavelength > 0f) w / wavelength else 1f
         val stroke = thickness.dp.toPx().coerceAtLeast(2f)
         val twoPi = 2f * Math.PI.toFloat()
 
@@ -1271,7 +1289,17 @@ private fun WaveSeekBar(
 
         val progX = w * frac
         val brush = Brush.linearGradient(listOf(accent, accent2), start = Offset(0f, 0f), end = Offset(w, 0f))
-        drawPath(pathTo(w), color = track, style = Stroke(width = stroke, cap = StrokeCap.Round))
+        // ── רק מה שנוגן מתגלגל ────────────────────────────────────────────
+        // כל הפס היה גלי, כולל החלק שעוד לא נוגן, וזה הכפיל את הרעש הוויזואלי
+        // בלי להוסיף מידע. כמו במטרוליסט וב-Material: הגל הוא החלק שכבר עבר,
+        // ומה שנותר הוא קו ישר.
+        drawLine(
+            color = track,
+            start = Offset(progX, midY),
+            end = Offset(w, midY),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
         if (glow) drawPath(pathTo(progX), brush = brush, style = Stroke(width = stroke * 2.8f, cap = StrokeCap.Round), alpha = 0.28f)
         drawPath(pathTo(progX), brush = brush, style = Stroke(width = stroke, cap = StrokeCap.Round))
         if (glow) drawCircle(color = accent, radius = (thickness + 7).dp.toPx(), center = Offset(progX, yAt(progX)), alpha = 0.30f)

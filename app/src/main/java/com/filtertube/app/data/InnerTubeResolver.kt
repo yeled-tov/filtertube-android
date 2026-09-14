@@ -23,27 +23,6 @@ enum class InnerTubeClientType {
 
     /** יוטיוב לנייד בדפדפן. ההתנהגות הכי קרובה לגלישה רגילה. */
     MWEB,
-
-    /**
-     * לקוח WEB עם ההזדהות של החשבון שהמשתמש חיבר בדפדפן.
-     *
-     * ## למה דווקא הוא מקבל את העוגיות
-     * בדיקת ה"אני לא בוט" של יוטיוב פוגעת בכתובות IP ולא בסרטונים, ולכן היא
-     * מפילה מנוע שלם בבת אחת (LOGIN_REQUIRED). חשבון מחובר הוא בדיוק מה
-     * שהבדיקה הזו מחפשת.
-     *
-     * אבל אי אפשר פשוט לצרף עוגיות לשאר המנועים: IOS ו-ANDROID_VR עובדים
-     * *משום* שהם אנונימיים — הם לקוחות שיוטיוב לא מצפה מהם להזדהות, וצירוף
-     * זהות אליהם מוציא אותם מהמסלול שבו הם מצליחים. לכן ההזדהות מרוכזת
-     * בלקוח אחד, WEB, שאצלו היא טבעית.
-     *
-     * ## המחיר, ולמה הוא מוצא אחרון
-     * בלי PO token לקוח WEB מחזיר בעיקר את הזרם המשולב של 360p. במרוץ שבו
-     * "משולב מנצח מיד" הוא היה גובר על DASH של 1080p מ-IOS *גם כשהכול
-     * תקין* — כלומר הופך שיפור למכה באיכות. לכן isLastResort: הוא נשמר בצד
-     * ונכנס רק כשאף מנוע אחר לא החזיר כלום.
-     */
-    WEB_AUTH,
 }
 
 /**
@@ -58,10 +37,7 @@ class InnerTubeResolver(
         InnerTubeClientType.ANDROID_VR -> "ANDROID_VR"
         InnerTubeClientType.TVHTML5_EMBED -> "TVHTML5_EMBED"
         InnerTubeClientType.MWEB -> "MWEB"
-        InnerTubeClientType.WEB_AUTH -> "WEB_AUTH"
     }
-
-    override val isLastResort: Boolean = clientType == InnerTubeClientType.WEB_AUTH
 
     override val name: String = "InnerTube $clientKey"
 
@@ -82,12 +58,6 @@ class InnerTubeResolver(
         private const val DEF_TV_VER = "2.0"
         private const val DEF_TV_UA =
             "Mozilla/5.0 (PlayStation; PlayStation 4/12.00) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15"
-
-        private const val DEF_WEB_VER = "2.20260901.00.00"
-        private const val DEF_WEB_UA =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
-        private const val WEB_ORIGIN = "https://www.youtube.com"
 
         private const val DEF_MWEB_VER = "2.20260901.00.00"
         private const val DEF_MWEB_UA =
@@ -185,15 +155,6 @@ class InnerTubeResolver(
                     put("gl", "IL")
                 }
             }
-            InnerTubeClientType.WEB_AUTH -> {
-                ua = RemoteConfig.clientUserAgent("web", DEF_WEB_UA)
-                client.apply {
-                    put("clientName", "WEB")
-                    put("clientVersion", RemoteConfig.clientVersion("web", DEF_WEB_VER))
-                    put("hl", "he")
-                    put("gl", "IL")
-                }
-            }
         }
         visitorDataByClient[clientKey]?.takeIf { it.isNotBlank() }?.let { client.put("visitorData", it) }
         return client to ua
@@ -208,16 +169,6 @@ class InnerTubeResolver(
         if (!force && !ResolverHealthMonitor.isAvailable(clientKey)) {
             Diagnostics.log("$name $videoId: מנוע ב-cooldown (נכשל לאחרונה)")
             return@withContext null
-        }
-
-        // ── מנוע שדורש חשבון ──────────────────────────────────────────────
-        // בלי חיבור בדפדפן אין לו במה להזדהות, והוא פשוט לא יוצא לדרך: אפס
-        // בקשות רשת, ובלי לספור כישלון שייכנס לצינון מנוע תקין.
-        val cookies = if (clientType == InnerTubeClientType.WEB_AUTH) AccountStore.live else ""
-        val auth = if (clientType == InnerTubeClientType.WEB_AUTH) {
-            InnerTube.authHeader(cookies, WEB_ORIGIN) ?: return@withContext null
-        } else {
-            null
         }
 
         val t0 = System.currentTimeMillis()
@@ -260,19 +211,6 @@ class InnerTubeResolver(
             .header("Content-Type", "application/json")
             .header("User-Agent", userAgent)
             .header("X-Goog-Api-Format-Version", "2")
-            .apply {
-                // החתימה חייבת להיות על אותו origin שנשלח בכותרת Origin,
-                // אחרת יוטיוב מחזירה 400 ולא שגיאת הרשאה — וזה נראה כמו
-                // באג ברשת במקום כמו חתימה שגויה.
-                if (auth != null) {
-                    header("Cookie", cookies)
-                    header("Authorization", auth)
-                    header("Origin", WEB_ORIGIN)
-                    header("X-Origin", WEB_ORIGIN)
-                    header("Referer", "$WEB_ORIGIN/watch?v=$videoId")
-                    header("X-Goog-AuthUser", "0")
-                }
-            }
             .post(body.toString().toRequestBody(jsonMedia))
             .build()
 

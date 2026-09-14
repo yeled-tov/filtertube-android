@@ -108,15 +108,41 @@ object Playback {
         data.defaultTrackIndex(preferred)
 
     /**
+     * האם הניגון הנוכחי התחיל מתוך FilterMusic.
+     *
+     * ## הבאג שזה סוגר
+     * FilterMusic ניגנה **וידאו**. זה לא נראה במסך הנגן — הוא מצייר כריכה —
+     * אבל ברגע שמקטינים למיני-נגן הווידאו הופיע שם בקטן, וזו הייתה ההוכחה.
+     * המשמעות: כל שיר הוריד גם מסלול וידאו, כלומר פי כמה נתונים ממה שצריך,
+     * וכל תור רדיו הכפיל את זה. זו הסיבה שדווקא ב-FilterMusic הכול היה איטי
+     * ונתקע.
+     *
+     * הכפייה לא נגזרה מהקטגוריה כי היא לא תכונה של התוכן אלא של *המסך*:
+     * אותו שיר בדיוק הוא וידאו לגיטימי ב-FilterTube. לכן זה דגל של הפעלה.
+     */
+    @Volatile
+    var musicMode: Boolean = false
+        private set
+
+    fun setMusicMode(on: Boolean) {
+        if (musicMode != on) {
+            musicMode = on
+            Diagnostics.log(if (on) "PLAYBACK: מצב מוזיקה — אודיו בלבד" else "PLAYBACK: מצב וידאו")
+        }
+    }
+
+    /**
      * האם הפריט הזה חייב להתנגן כאודיו בלבד.
      *
-     * שלושה מקורות, וכל אחד מהם מספיק:
+     * ארבעה מקורות, וכל אחד מהם מספיק:
+     *  • [musicMode] — הניגון התחיל מ-FilterMusic, שהיא אפליקציית מוזיקה
      *  • [audioOnlyMode] — בחירה גלובלית של המשתמש, חלה בכל רמות הסינון
      *  • קטגוריה שהיא אודיו-בלבד לפי מדיניות התוכן
      *  • מוזיקה ברמת הסינון המחמירה
      */
     fun forcedAudio(category: String?, level: Int, audioOnlyMode: Boolean = false): Boolean =
-        audioOnlyMode || category in audioOnlyCategories || (level == 1 && category == "music")
+        musicMode || audioOnlyMode || category in audioOnlyCategories ||
+            (level == 1 && category == "music")
 
     /** גרסה שקוראת את ההעדפה בעצמה — לנתיבים שאין להם SettingsStore ביד. */
     fun forcedAudio(context: Context, category: String?): Boolean {

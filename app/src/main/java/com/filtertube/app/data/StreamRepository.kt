@@ -151,7 +151,6 @@ object StreamRepository {
         "TVHTML5_EMBED" to InnerTubeResolver(InnerTubeClientType.TVHTML5_EMBED),
         "MWEB" to InnerTubeResolver(InnerTubeClientType.MWEB),
         "ANDROID_VR" to InnerTubeResolver(InnerTubeClientType.ANDROID_VR),
-        "WEB_AUTH" to InnerTubeResolver(InnerTubeClientType.WEB_AUTH),
         "NewPipe" to NewPipeResolver()
     )
 
@@ -338,14 +337,6 @@ object StreamRepository {
         val winner = CompletableDeferred<StreamData>()
         val fallback = AtomicReference<StreamData?>(null)
 
-        // ── מוצא אחרון ────────────────────────────────────────────────────
-        // מנוע מחובר-חשבון (WEB_AUTH) מצליח דווקא כשהאחרים נחסמים בבדיקת
-        // "אני לא בוט", אבל בלי PO token הוא מחזיר בעיקר 360p משולב. במרוץ
-        // שבו משולב מנצח מיד הוא היה גובר על DASH של 1080p גם כשהכול תקין.
-        // לכן התוצאה שלו נשמרת במגירה נפרדת — לא ב-fallback, כדי שלא תחסום
-        // שם DASH אמיתי — ונפתחת רק כשאין שום דבר אחר.
-        val lastResort = AtomicReference<StreamData?>(null)
-
         val attempts = activeResolvers.map { resolver ->
             launch(Dispatchers.IO) {
                 val rT0 = System.currentTimeMillis()
@@ -366,20 +357,8 @@ object StreamRepository {
                 }
                 val ms = System.currentTimeMillis() - rT0
                 when {
-                    // מנוע מוצא-אחרון שלא החזיר כלום הוא ברוב המקרים מנוע
-                    // שדילג על עצמו (אין חשבון מחובר), והוא רשם שורה כזאת
-                    // לכל סרטון. כישלון אמיתי שלו נרשם ממילא אצלו עצמו.
                     result == null ->
-                        if (!resolver.isLastResort) {
-                            Diagnostics.log("StreamRepository $videoId: ${resolver.name} נכשל (${ms}ms)")
-                        }
-
-                    resolver.isLastResort -> if (lastResort.compareAndSet(null, result)) {
-                        Diagnostics.log(
-                            "StreamRepository $videoId: ${resolver.name} הצליח ב-${ms}ms — " +
-                                "נשמר כמוצא אחרון · ${trackSummary(result)}"
-                        )
-                    }
+                        Diagnostics.log("StreamRepository $videoId: ${resolver.name} נכשל (${ms}ms)")
 
                     result.hasMuxedTrack() -> if (winner.complete(result)) {
                         Diagnostics.log(
@@ -407,16 +386,6 @@ object StreamRepository {
             // אף מנוע לא החזיר זרם משולב, אבל יש DASH ביד. DASH איטי יותר
             // להתחלה — הוא לא "כישלון".
             fallback.get()?.let { winner.complete(it); return@launch }
-            // רק כאן: אף מנוע רגיל לא החזיר כלום, וזה בדיוק המצב שבשבילו
-            // המנוע המחובר קיים.
-            lastResort.get()?.let {
-                Diagnostics.log(
-                    "StreamRepository $videoId: כל המנועים הרגילים נכשלו — " +
-                        "מנגנים מהחשבון המחובר (${it.resolvedBy})"
-                )
-                winner.complete(it)
-                return@launch
-            }
             Diagnostics.log("StreamRepository $videoId: כל המנועים נכשלו ${System.currentTimeMillis() - t0}ms ✖")
             winner.completeExceptionally(
                 IllegalStateException("לא הצלחנו להפעיל את הסרטון. נסה שוב בעוד רגע."),
@@ -431,12 +400,6 @@ object StreamRepository {
                     Diagnostics.log(
                         "StreamRepository $videoId: לא הגיע זרם משולב תוך ${MUXED_GRACE_MS}ms — " +
                             "מנגנים DASH מ-${it.resolvedBy}"
-                    )
-                }
-                ?: lastResort.get()?.also {
-                    Diagnostics.log(
-                        "StreamRepository $videoId: אין תוצאה תוך ${MUXED_GRACE_MS}ms — " +
-                            "מנגנים מהחשבון המחובר (${it.resolvedBy})"
                     )
                 }
                 ?: winner.await()

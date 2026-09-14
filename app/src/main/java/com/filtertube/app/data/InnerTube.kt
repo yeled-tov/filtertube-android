@@ -57,7 +57,7 @@ object InnerTube {
      * כששלחתי ל-music.youtube.com — והשרת החזיר 400 על כל בקשה למיוזיק.
      * זה מה שהפיל את משיכת "מוזיקה שאהבתי".
      */
-    fun authHeader(cookies: String, origin: String = ORIGIN): String? {
+    private fun authHeader(cookies: String, origin: String = ORIGIN): String? {
         val sid = sapisid(cookies) ?: return null
         val ts = System.currentTimeMillis() / 1000
         return "SAPISIDHASH ${ts}_${sha1("$ts $sid $origin")}"
