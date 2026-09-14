@@ -385,6 +385,14 @@ object InnerTube {
     }
 
     // ── פירוש רקורסיבי ───────────────────────────────────────────────────
+    /**
+     * פענוח משותף של תשובת InnerTube.
+     *
+     * חשוף כדי ש-[InnerTubeOAuth] יפענח בדיוק אותו דבר: התשובה זהה, רק
+     * ההזדהות שונה. פענוח כפול היה נשבר בנפרד בכל עדכון של יוטיוב.
+     */
+    fun parseVideos(root: JSONObject): List<Video> = collectVideos(root)
+
     private fun collectVideos(root: JSONObject): List<Video> {
         val out = LinkedHashMap<String, Video>()
         walk(root) { vr ->

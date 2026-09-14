@@ -41,6 +41,7 @@ import com.filtertube.app.data.Diagnostics
 import com.filtertube.app.data.GoogleAuth
 import com.google.firebase.auth.FirebaseAuth
 import com.filtertube.app.data.InnerTube
+import com.filtertube.app.data.InnerTubeOAuth
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SubChannel
 import com.filtertube.app.data.Video
@@ -116,8 +117,26 @@ fun LibraryScreen(
                 if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
                 store.setMusicLikes(musicLiked)
 
-                status = "סונכרנו ${liked.size} לייקים, ${musicLiked.size} שירים ממיוזיק " +
-                    "ו-${subList.size} מנויים (מאושרים בלבד) ✓"
+                // ── המסלול השלישי ─────────────────────────────────────────
+                // אותו אסימון של החשבון שכבר במכשיר, מול השרת הפנימי של
+                // יוטיוב — זה שכן מחזיק היסטוריה ומוזיקה. אם הוא נענה, אפשר
+                // להביא הכל בלי שהמשתמש יקליד סיסמה אף פעם.
+                //
+                // כל כישלון כאן הוא שקוף: מה שכבר נמשך ב-API הרשמי נשמר,
+                // והיומן אומר בדיוק מה גוגל ענתה.
+                val oauthMusic = InnerTubeOAuth.likedMusic(token)
+                    .filter { it.channelId in approved }
+                if (oauthMusic.size > musicLiked.size) store.setMusicLikes(oauthMusic)
+
+                val oauthHistory = InnerTubeOAuth.history(token)
+                    .filter { it.channelId in approved }
+                if (oauthHistory.isNotEmpty()) {
+                    store.setHistory(oauthHistory); history = oauthHistory
+                }
+
+                val music = maxOf(musicLiked.size, oauthMusic.size)
+                status = "סונכרנו ${liked.size} לייקים · $music שירים ממיוזיק · " +
+                    "${subList.size} מנויים · ${oauthHistory.size} בהיסטוריה ✓"
             } catch (e: Exception) {
                 status = "שגיאה בסנכרון: ${e.message}"
             } finally { syncing = false }
