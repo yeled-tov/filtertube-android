@@ -277,7 +277,7 @@ fun LibraryScreen(
                 }
 
                 status = "סונכרן ✓ ${hist.size} בהיסטוריה · ${liked.size} לייקים · " +
-                    "${music.size} שירים ממיוזיק · ${subsFromCookies.size} מנויים · ${rec.size} המלצות"
+                    "${musicRaw.size} שירים ממיוזיק · ${subsFromCookies.size} מנויים · ${rec.size} המלצות"
             } catch (e: Exception) {
                 status = "שגיאה בסנכרון מלא: ${e.message}"
             } finally { syncing = false }
