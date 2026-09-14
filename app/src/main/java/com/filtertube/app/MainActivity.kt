@@ -262,6 +262,10 @@ fun AppRoot() {
         // שגיאת התחברות של גוגל נפתרת בהשוואה של שלושת אלה למה שרשום
         // בפרויקט, ובלעדיהם כל דיון עליה מתחיל מלנחש.
         com.filtertube.app.data.GoogleAuth.logSignInConfig(context)
+        // העוגיות של החשבון המחובר נטענות פעם אחת לזיכרון, כדי שמנוע
+        // החילוץ — שרץ בתוך שירות הניגון ואין לו Context — יוכל להזדהות
+        // מולן כשיוטיוב דורשת חשבון.
+        com.filtertube.app.data.AccountStore.prime(context)
         try {
             // לקוחות מקבלים רק גרסאות יציבות; גרסאות טסט רק אם הופעל ערוץ בדיקות.
             val u = com.filtertube.app.data.UpdateChecker.check(includeTestBuilds = settings.testChannel)

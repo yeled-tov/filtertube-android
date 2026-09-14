@@ -28,34 +28,37 @@ class AccountStore(context: Context) {
     )
 
     var cookies: String
-        get() {
-            val ciphertext = prefs.getString(KEY_COOKIES_CIPHERTEXT, "").orEmpty()
-            val iv = prefs.getString(KEY_COOKIES_IV, "").orEmpty()
-            if (ciphertext.isNotBlank() && iv.isNotBlank()) {
-                return decrypt(ciphertext, iv) ?: run {
-                    clearStoredSession()
-                    ""
-                }
-            }
-
-            // One-time migration from builds that persisted plaintext cookies.
-            val legacy = prefs.getString(KEY_COOKIES_LEGACY, "").orEmpty()
-            if (legacy.isBlank()) return ""
-            return if (saveEncrypted(legacy)) {
-                prefs.edit().remove(KEY_COOKIES_LEGACY).apply()
-                legacy
-            } else {
-                clearStoredSession()
-                ""
-            }
-        }
+        get() = readCookies().also { live = it }
         set(value) {
             if (value.isBlank()) {
                 clearStoredSession()
             } else if (!saveEncrypted(value)) {
                 clearStoredSession()
             }
+            live = readCookies()
         }
+
+    private fun readCookies(): String {
+        val ciphertext = prefs.getString(KEY_COOKIES_CIPHERTEXT, "").orEmpty()
+        val iv = prefs.getString(KEY_COOKIES_IV, "").orEmpty()
+        if (ciphertext.isNotBlank() && iv.isNotBlank()) {
+            return decrypt(ciphertext, iv) ?: run {
+                clearStoredSession()
+                ""
+            }
+        }
+
+        // One-time migration from builds that persisted plaintext cookies.
+        val legacy = prefs.getString(KEY_COOKIES_LEGACY, "").orEmpty()
+        if (legacy.isBlank()) return ""
+        return if (saveEncrypted(legacy)) {
+            prefs.edit().remove(KEY_COOKIES_LEGACY).apply()
+            legacy
+        } else {
+            clearStoredSession()
+            ""
+        }
+    }
 
     var authUser: Int
         get() = prefs.getInt(KEY_AUTHUSER, 0)
@@ -148,9 +151,28 @@ class AccountStore(context: Context) {
 
     private fun clearStoredSession() {
         prefs.edit().clear().apply()
+        live = ""
     }
 
     companion object {
+        /**
+         * העוגיות של החשבון המחובר, נגישות לרכיבים שאין להם Context.
+         *
+         * מנוע חילוץ הזרמים רץ עמוק בתוך שירות הניגון ואין לו דרך להגיע
+         * ל-SharedPreferences. השדה הזה מתעדכן בכל קריאה וכתיבה של
+         * [cookies], ומתחיל להתמלא כבר בעליית האפליקציה (ראה [prime]).
+         *
+         * ריק = לא מחובר, וזה מצב תקין לגמרי: המנוע שתלוי בו פשוט מדלג.
+         */
+        @Volatile
+        var live: String = ""
+            private set
+
+        /** ממלא את [live] פעם אחת בעליית האפליקציה. */
+        fun prime(context: Context) {
+            runCatching { AccountStore(context).cookies }
+        }
+
         private const val KEY_COOKIES_LEGACY = "cookies"
         private const val KEY_COOKIES_CIPHERTEXT = "cookies_ciphertext_v2"
         private const val KEY_COOKIES_IV = "cookies_iv_v2"

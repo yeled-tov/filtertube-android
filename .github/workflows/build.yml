@@ -148,6 +148,12 @@ jobs:
           done
           echo "════ איזו משימה נפלה ════"
           grep -E "^Execution failed for task|^\* What went wrong" -A 2 build-output.txt 2>/dev/null | tail -n 5 || true
+          echo "════ קריסה פנימית (R8 / lint) ════"
+          # R8 ו-lint נופלים לפעמים בלי אף שורת 'e:' — שגיאה פנימית שלהם,
+          # שהסיבה האמיתית שלה מופיעה רק ב-Caused by. בלי השורות האלה
+          # היומן אומר רק "Compilation failed to complete", וזה לא אבחון.
+          grep -nE 'OutOfMemoryError|Caused by:|Missing class' build-output.txt 2>/dev/null \
+            | tail -n 6 || true
           echo "════ שגיאות קומפילציה ════"
           grep -E '^e: ' build-output.txt 2>/dev/null | tail -n 10 || true
           # ── והעיקר: כהערות (annotations) ולא רק כטקסט ביומן ──────────────
@@ -157,6 +163,7 @@ jobs:
           {
             grep -E '^e: ' build-output.txt 2>/dev/null | tail -n 10
             grep -E '^Execution failed for task' build-output.txt 2>/dev/null | tail -n 2
+            grep -E 'OutOfMemoryError|Caused by:|Missing class' build-output.txt 2>/dev/null | tail -n 6
             for f in $(find app/build -name 'lint-results-*.txt' 2>/dev/null); do
               grep -E 'Error:' "$f" | head -n 4
             done

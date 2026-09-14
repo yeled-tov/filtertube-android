@@ -99,7 +99,13 @@ object RemoteConfig {
             //
             // ANDROID_VR נשאר למרות LOGIN_REQUIRED: הוא נכשל על בדיקת בוט
             // שתלויה בכתובת ה-IP, כלומר הוא כן עובד עבור חלק מהמשתמשים.
-            return listOf("IOS", "ANDROID_VR", "NewPipe")
+            //
+            // WEB_AUTH הוא בדיוק המענה לאותה בדיקה — הוא מזדהה עם החשבון
+            // שהמשתמש חיבר. הוא לא מייקר כלום: בלי חיבור בדפדפן הוא יוצא
+            // מהמרוץ בלי לשלוח אפילו בקשה אחת, ועם חיבור הוא מנוע שמצליח
+            // בדיוק כשכל השאר חוזרים LOGIN_REQUIRED. הוא לעולם לא מנצח
+            // מנוע תקין — ראה isLastResort.
+            return listOf("IOS", "ANDROID_VR", "WEB_AUTH", "NewPipe")
         }
         return list
     }
