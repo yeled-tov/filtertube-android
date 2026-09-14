@@ -129,10 +129,110 @@ class SettingsStore(context: Context) {
         get() = prefs.getInt(KEY_QUALITY, 0)
         set(value) = prefs.edit().putInt(KEY_QUALITY, value).apply()
 
-    /** עיצוב הנגן: 1 = "מתנגן עכשיו" (נוכחי), 2 = בקרים על הוידאו + הבא בתור מתחת. */
+    /**
+     * עיצוב הנגן: 1 = "מתנגן עכשיו", 2 = בקרים על הוידאו + הבא בתור מתחת.
+     *
+     * ברירת המחדל היא 2: בקרים *על* הסרטון הם מה שכל נגן וידאו עושה, והם
+     * משאירים את הסרטון גדול במקום לדחוף אותו למעלה.
+     */
     var playerStyle: Int
-        get() = prefs.getInt(KEY_PLAYER_STYLE, 1)
+        get() = prefs.getInt(KEY_PLAYER_STYLE, 2)
         set(value) = prefs.edit().putInt(KEY_PLAYER_STYLE, value).apply()
+
+    /**
+     * מצב אודיו בלבד — גלובלי, בכל רמות הסינון.
+     *
+     * כשהוא דלוק שום וידאו לא מוצג ושום וידאו לא ניתן להורדה. שני החצאים
+     * חייבים ללכת יחד: מצב האזנה שמאפשר להוריד את הווידאו לצפייה מאוחר יותר
+     * לא שווה כלום. זו הסיבה ש-[DownloadEngine] ומסך ההורדה בודקים אותו גם
+     * הם, ולא רק הנגן.
+     *
+     * שונה מ-audioOnlyCategories: אלה קטגוריות שתמיד אודיו לפי מדיניות
+     * התוכן. זה בחירה של המשתמש שחלה על הכל.
+     */
+    /**
+     * הזמרים/ערוצים שהמשתמש סימן במפורש כאהובים.
+     *
+     * זה מקור הטעם החזק ביותר שיש, והיחיד שקיים *לפני* שהמשתמש עשה משהו
+     * באפליקציה. בלעדיו הרדיו בהתקנה חדשה לא יכול היה להיות אישי בכלל —
+     * הוא היה מחזיר את הפיד הכללי וקורא לזה "רדיו".
+     */
+    var favoriteArtists: Set<String>
+        get() = prefs.getStringSet(KEY_FAV_ARTISTS, emptySet()).orEmpty()
+        set(value) = prefs.edit().putStringSet(KEY_FAV_ARTISTS, value).apply()
+
+    /**
+     * האם כבר הצגנו את בחירת הזמרים.
+     *
+     * נפרד מ-[favoriteArtists] בכוונה: משתמש שראה את המסך ובחר לדלג לא
+     * אמור לקבל אותו שוב בכל לחיצה על רדיו.
+     */
+    var artistPickerSeen: Boolean
+        get() = prefs.getBoolean(KEY_ARTIST_PICKER_SEEN, false)
+        set(value) = prefs.edit().putBoolean(KEY_ARTIST_PICKER_SEEN, value).apply()
+
+    // ── הגדרות FilterMusic ────────────────────────────────────────────────
+    // כל אחת מהן מחוברת לנגן בפועל. הגדרה דקורטיבית שלא עושה כלום גרועה
+    // מהיעדר הגדרה: המשתמש מדליק אותה, לא שומע הבדל, ומפסיק לסמוך על המסך.
+
+    /** איכות שמע: 0 = אוטומטי, 1 = גבוהה, 2 = חסכונית בנתונים. */
+    var audioQuality: Int
+        get() = prefs.getInt(KEY_AUDIO_QUALITY, 0)
+        set(value) = prefs.edit().putInt(KEY_AUDIO_QUALITY, value).apply()
+
+    /** דילוג אוטומטי על קטעי שקט (ExoPlayer skipSilence). */
+    var skipSilence: Boolean
+        get() = prefs.getBoolean(KEY_SKIP_SILENCE, false)
+        set(value) = prefs.edit().putBoolean(KEY_SKIP_SILENCE, value).apply()
+
+    /** השוואת עוצמת שמע בין שירים. */
+    var audioNormalization: Boolean
+        get() = prefs.getBoolean(KEY_AUDIO_NORM, false)
+        set(value) = prefs.edit().putBoolean(KEY_AUDIO_NORM, value).apply()
+
+    /** מהירות ניגון באחוזים (50–200). */
+    var playbackSpeed: Int
+        get() = prefs.getInt(KEY_SPEED, 100).coerceIn(50, 200)
+        set(value) = prefs.edit().putInt(KEY_SPEED, value.coerceIn(50, 200)).apply()
+
+    /** גובה הצליל באחוזים (50–200). שינוי מהירות בלי זה משנה גם את הטון. */
+    var playbackPitch: Int
+        get() = prefs.getInt(KEY_PITCH, 100).coerceIn(50, 200)
+        set(value) = prefs.edit().putInt(KEY_PITCH, value.coerceIn(50, 200)).apply()
+
+    /** המשך אוטומטי לרדיו כשהתור נגמר. */
+    var autoRadioQueue: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_RADIO, true)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_RADIO, value).apply()
+
+    /** מניעת הוספת אותו שיר פעמיים לתור. */
+    var preventQueueDuplicates: Boolean
+        get() = prefs.getBoolean(KEY_NO_DUP_QUEUE, true)
+        set(value) = prefs.edit().putBoolean(KEY_NO_DUP_QUEUE, value).apply()
+
+    /** טיימר שינה בדקות. 0 = כבוי. */
+    var sleepTimerMinutes: Int
+        get() = prefs.getInt(KEY_SLEEP_TIMER, 0).coerceIn(0, 180)
+        set(value) = prefs.edit().putInt(KEY_SLEEP_TIMER, value.coerceIn(0, 180)).apply()
+
+    /** החלקה על המיני-נגן מחליפה שיר, וגרירה למטה עוצרת. */
+    var miniPlayerSwipe: Boolean
+        get() = prefs.getBoolean(KEY_MINI_SWIPE, true)
+        set(value) = prefs.edit().putBoolean(KEY_MINI_SWIPE, value).apply()
+
+    /** החלקה ימינה: false = לשיר הקודם, true = לתחילת השיר הנוכחי. */
+    var miniSwipeRightRestarts: Boolean
+        get() = prefs.getBoolean(KEY_MINI_SWIPE_RESTART, false)
+        set(value) = prefs.edit().putBoolean(KEY_MINI_SWIPE_RESTART, value).apply()
+
+    /** כמה פעמים כבר הוצג הרמז שאפשר להחליק. */
+    var miniSwipeHintsShown: Int
+        get() = prefs.getInt(KEY_MINI_SWIPE_HINTS, 0)
+        set(value) = prefs.edit().putInt(KEY_MINI_SWIPE_HINTS, value).apply()
+
+    var audioOnlyMode: Boolean
+        get() = prefs.getBoolean(KEY_AUDIO_ONLY, false)
+        set(value) = prefs.edit().putBoolean(KEY_AUDIO_ONLY, value).apply()
 
     /** Smooth volume transition between playlist items (0 = disabled). */
     var crossfadeSeconds: Int
@@ -526,6 +626,20 @@ class SettingsStore(context: Context) {
         private const val KEY_ACCENT2 = "accent2_color"
         private const val KEY_QUALITY = "preferred_quality"
         private const val KEY_PLAYER_STYLE = "player_style"
+        private const val KEY_AUDIO_ONLY = "audio_only_mode"
+        private const val KEY_MINI_SWIPE = "mini_player_swipe"
+        private const val KEY_MINI_SWIPE_RESTART = "mini_swipe_right_restarts"
+        private const val KEY_MINI_SWIPE_HINTS = "mini_swipe_hints_shown"
+        private const val KEY_AUDIO_QUALITY = "music_audio_quality"
+        private const val KEY_SKIP_SILENCE = "music_skip_silence"
+        private const val KEY_AUDIO_NORM = "music_audio_normalization"
+        private const val KEY_SPEED = "music_playback_speed"
+        private const val KEY_PITCH = "music_playback_pitch"
+        private const val KEY_AUTO_RADIO = "music_auto_radio"
+        private const val KEY_NO_DUP_QUEUE = "music_no_dup_queue"
+        private const val KEY_SLEEP_TIMER = "music_sleep_timer"
+        private const val KEY_FAV_ARTISTS = "favorite_artists"
+        private const val KEY_ARTIST_PICKER_SEEN = "artist_picker_seen"
         private const val KEY_CROSSFADE = "crossfade_seconds"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_ADMIN_UNLOCKED_LEGACY = "admin_unlocked"

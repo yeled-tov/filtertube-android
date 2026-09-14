@@ -29,7 +29,7 @@ object UpdateChecker {
     private const val LIST_URL =
         "https://api.github.com/repos/yeled-tov/filtertube-android/releases?per_page=100"
 
-    private val http = OkHttpClient.Builder()
+    private val http = Http.newBuilder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
@@ -46,11 +46,19 @@ object UpdateChecker {
     ) {
         val isNewer: Boolean get() = build > BuildConfig.VERSION_CODE
 
-        /** "גרסה 1.1.0 (בנייה 142)" — מוכן להצגה. */
+        /**
+         * "גרסה 1.2.200" — מוכן להצגה.
+         *
+         * מספר הבנייה כבר *הוא* הספרה האחרונה של מספר הגרסה, ולכן אין טעם
+         * לחזור עליו בסוגריים. גרסאות ישנות שבהן השם לא הכיל אותו עדיין
+         * מקבלות אותו, כדי שלא ייראו כאילו לא השתנו.
+         */
         val displayName: String
             get() = buildString {
                 append("גרסה ").append(versionName)
-                append(" (בנייה ").append(build).append(')')
+                if (!versionName.endsWith(".$build")) {
+                    append(" (בנייה ").append(build).append(')')
+                }
                 if (isTestBuild) append(" · בדיקה")
             }
     }

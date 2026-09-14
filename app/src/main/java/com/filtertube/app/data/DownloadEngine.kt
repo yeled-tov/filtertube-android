@@ -35,8 +35,11 @@ class DownloadTask(val video: Video, val isAudio: Boolean) {
  */
 object DownloadEngine {
 
+    /** שם התיקייה בזיכרון הראשי שאליה נשמרות כל ההורדות. */
+    const val FOLDER = "FilterTube"
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val http = OkHttpClient.Builder()
+    private val http = Http.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
@@ -47,34 +50,120 @@ object DownloadEngine {
     private data class Spec(
         val url: String, val fileName: String, val ua: String?,
         val connections: Int, val isAudio: Boolean, val context: Context,
+        /**
+         * זרם האודיו הנפרד, כשמורידים וידאו בפורמט DASH.
+         *
+         * יוטיוב כמעט לא מגיש היום זרמים משולבים, ולכן זה המסלול הרגיל
+         * לווידאו: מורידים שני קבצים וממזגים אותם ל-MP4 אחד ב-Mp4Muxer.
+         */
+        val audioUrl: String? = null,
     )
 
     private val queue = ArrayDeque<Pair<DownloadTask, Spec>>()
     private var running = 0
     private var maxConcurrent = 3
 
+    /**
+     * [audioUrl] — זרם אודיו נפרד, כשמורידים וידאו בפורמט DASH. כשהוא לא
+     * null, שני הזרמים יורדים וממוזגים לקובץ MP4 אחד.
+     */
+    /**
+     * האם הערוץ של [video] מוגבל לאודיו לפי מדיניות התוכן.
+     *
+     * הקטגוריה נלקחת מהמטמון המקומי ולא מהרשת: הורדה לא אמורה לחכות לרשת
+     * כדי לדעת מה מותר, ואם המטמון ריק נשארת ההגדרה הגלובלית של המשתמש.
+     */
+    fun audioOnlyFor(context: Context, video: Video): Boolean {
+        val settings = SettingsStore(context.applicationContext)
+        val category = runCatching {
+            ChannelsRepository.getCachedChannelsFast(context.applicationContext)
+                .firstOrNull { it.youtubeChannelId == video.channelId }?.category
+        }.getOrNull()
+        return isAudioOnlyContent(category, settings.filterLevel, settings.audioOnlyMode)
+    }
+
     @Synchronized
-    fun enqueue(context: Context, video: Video, url: String, isAudio: Boolean, userAgent: String?) {
+    fun enqueue(
+        context: Context,
+        video: Video,
+        url: String,
+        isAudio: Boolean,
+        userAgent: String?,
+        audioUrl: String? = null,
+    ) {
         val ctx = context.applicationContext
         val settings = SettingsStore(ctx)
         maxConcurrent = settings.concurrentDownloads
+
+        // ── השער האחרון ───────────────────────────────────────────────────
+        // כאן, ולא רק אצל הקוראים: יש חמישה מסלולים שמגיעים להורדה (דיאלוג
+        // ההורדה, הורדה אוטומטית בלייק, לחיצה ארוכה בבית, הורדה מרוכזת
+        // מהספרייה, ו-FilterMusic), וכל אחד מהם בדק לבד רק את ההגדרה
+        // הגלובלית. "דתי לייט" התנגן כאודיו אבל ירד כווידאו — כלומר ההגבלה
+        // הייתה תקפה עד הרגע שלוחצים "הורד".
+        //
+        // מי שמבקש וידאו מתוכן שמוגבל לאודיו מקבל את פס הקול. אם אין זרם
+        // אודיו נפרד — ההורדה נעצרת, כי קובץ וידאו לא ייווצר כאן בשום מצב.
+        @Suppress("NAME_SHADOWING")
+        var isAudio = isAudio
+        @Suppress("NAME_SHADOWING")
+        var url = url
+        @Suppress("NAME_SHADOWING")
+        var audioUrl = audioUrl
+        if (!isAudio && audioOnlyFor(ctx, video)) {
+            val sound = audioUrl
+            if (sound.isNullOrBlank()) {
+                Diagnostics.log("DOWNLOAD ${video.id}: תוכן אודיו-בלבד ואין זרם קול נפרד — ההורדה בוטלה")
+                return
+            }
+            Diagnostics.log("DOWNLOAD ${video.id}: תוכן אודיו-בלבד — יורד כפס קול")
+            isAudio = true
+            url = sound
+            audioUrl = null
+        }
+
         val task = DownloadTask(video, isAudio)
         active.add(0, task)
         while (active.size > 60) active.removeAt(active.lastIndex)
-        queue.addLast(task to Spec(url, fileName(video.title, isAudio), userAgent, settings.connectionsPerDownload, isAudio, ctx))
+        queue.addLast(
+            task to Spec(
+                url = url,
+                fileName = fileName(video.title, isAudio),
+                ua = userAgent,
+                connections = settings.connectionsPerDownload,
+                isAudio = isAudio,
+                context = ctx,
+                audioUrl = audioUrl,
+            ),
+        )
         pump()
     }
 
-    /** מחלץ את הזרם של [video] (זרם משולב עם קול) ומוסיף אותו לתור. */
+    /**
+     * מחלץ את הזרם של [video] (זרם משולב עם קול) ומוסיף אותו לתור.
+     *
+     * במצב אודיו בלבד הבקשה מומרת לאודיו גם אם המבקש ביקש וידאו. אחרת המצב
+     * לא היה שווה כלום: אפשר היה להאזין בלבד, אבל להוריד את הווידאו המלא
+     * ולצפות בו מגלריית המכשיר.
+     */
     suspend fun enqueueByVideo(context: Context, video: Video, isAudio: Boolean): Boolean {
         val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull() ?: return false
-        val url = if (isAudio) (data.bestAudioUrl ?: data.bestVideoUrl) else data.bestVideoUrl
         val v = video.copy(
             title = data.title.ifBlank { video.title },
             channelName = data.uploaderName.ifBlank { video.channelName },
             thumbnailUrl = data.thumbnailUrl ?: video.thumbnailUrl,
+            // מזהה הערוץ מהזרם ולא מהרשומה: פריט שהגיע מהיסטוריה או מחיפוש
+            // יכול להגיע בלי מזהה, ובלי מזהה אין קטגוריה ואין מדיניות.
+            channelId = video.channelId.ifBlank { data.channelId },
         )
-        enqueue(context, v, url, isAudio, data.streamUserAgent)
+        @Suppress("NAME_SHADOWING")
+        val isAudio = isAudio || audioOnlyFor(context, v)
+        if (isAudio) {
+            enqueue(context, v, data.bestAudioUrl ?: data.bestVideoUrl, true, data.streamUserAgent)
+            return true
+        }
+        val track = data.bestDownloadableVideo() ?: return false
+        enqueue(context, v, track.videoUrl, false, data.streamUserAgent, track.audioUrl)
         return true
     }
 
@@ -84,11 +173,41 @@ object DownloadEngine {
             val (task, spec) = queue.removeFirst()
             running++
             scope.launch {
-                runCatching {
+                suspend fun attempt(s: Spec): String {
                     task.status = "מוריד"
-                    downloadFile(spec, task)
+                    val uri = downloadFile(s, task)
+                    // רק עכשיו הסרטון באמת זמין לניגון מקומי.
+                    LibraryStore(s.context).setDownloadLocalUri(task.video.id, uri)
                     task.progress = 100; task.status = "הושלם"
-                }.onFailure { task.status = "נכשל" }
+                    Diagnostics.log("DOWNLOAD ${task.video.id}: נשמר ב-$uri")
+                    return uri
+                }
+                runCatching { attempt(spec) }.onFailure { first ->
+                    // ── ניסיון שני עם כתובת טרייה ────────────────────────
+                    // כתובות googlevideo חתומות ופגות. הורדה שממתינה בתור
+                    // מאחורי שתי הורדות אחרות יכולה לצאת לדרך אחרי שהכתובת
+                    // שנשמרה כבר מתה — וזה נראה למשתמש כמו "ההורדה נכשלה",
+                    // בלי שום דבר שבור באמת. חילוץ מחדש פותר את זה.
+                    Diagnostics.log("DOWNLOAD ${task.video.id}: ${first.message} — מחלץ כתובת טרייה ומנסה שוב")
+                    task.status = "מנסה שוב"
+                    val retried = runCatching {
+                        val fresh = StreamRepository.resolveFresh(task.video.id, null)
+                        val refreshed = if (spec.isAudio) {
+                            spec.copy(url = fresh.bestAudioUrl ?: fresh.bestVideoUrl, ua = fresh.streamUserAgent, audioUrl = null)
+                        } else {
+                            val track = fresh.bestDownloadableVideo()
+                                ?: throw IllegalStateException("אין איכות וידאו שניתן להוריד")
+                            spec.copy(url = track.videoUrl, ua = fresh.streamUserAgent, audioUrl = track.audioUrl)
+                        }
+                        attempt(refreshed)
+                    }
+                    if (retried.isFailure) {
+                        task.status = "נכשל"
+                        Diagnostics.log(
+                            "DOWNLOAD ${task.video.id}: נכשל — ${retried.exceptionOrNull()?.message}",
+                        )
+                    }
+                }
                 synchronized(this@DownloadEngine) { running--; pump() }
             }
         }
@@ -99,24 +218,72 @@ object DownloadEngine {
         return "$safe.${if (isAudio) "m4a" else "mp4"}"
     }
 
-    private suspend fun downloadFile(spec: Spec, task: DownloadTask) {
+    private suspend fun downloadFile(spec: Spec, task: DownloadTask): String {
         val tmp = File(spec.context.cacheDir, "ft_dl_${System.nanoTime()}.tmp")
+        val audioTmp = File(spec.context.cacheDir, "ft_dl_${System.nanoTime()}_a.tmp")
         try {
-            // בדיקה: גודל הקובץ + תמיכה ב-Range
-            val probe = Request.Builder().url(spec.url).head()
-                .apply { spec.ua?.let { header("User-Agent", it) } }.build()
-            var len = -1L; var ranges = false
-            runCatching {
-                http.newCall(probe).execute().use { r ->
+            fetch(spec, spec.url, tmp, task)
+
+            // ── וידאו בפורמט DASH ──────────────────────────────────────────
+            // הזרם שהורדנו הוא וידאו בלבד. מורידים גם את האודיו וממזגים,
+            // אחרת מתקבל קובץ אילם.
+            val audio = spec.audioUrl
+            if (audio != null) {
+                task.status = "מוריד קול"
+                fetch(spec.copy(connections = 1), audio, audioTmp, task)
+                task.status = "ממזג"
+                val merged = File(spec.context.cacheDir, "ft_dl_${System.nanoTime()}_m.mp4")
+                try {
+                    Mp4Muxer.combine(tmp, audioTmp, merged)
+                    return publish(spec, merged)
+                } finally {
+                    runCatching { merged.delete() }
+                }
+            }
+
+            return publish(spec, tmp)
+        } finally {
+            runCatching { tmp.delete() }
+            runCatching { audioTmp.delete() }
+        }
+    }
+
+    /**
+     * מוריד כתובת אחת אל [dest], עם ריבוי חיבורים אם השרת תומך.
+     *
+     * ## הבדיקה המקדימה היא GET עם Range, לא HEAD
+     * שרתי googlevideo מחזירים 403 לבקשות HEAD. הבדיקה נכשלה תמיד, len נשאר
+     * ‎-1, וההורדה נפלה למסלול חיבור בודד בלי לדעת את הגודל — ואז גם
+     * ההורדה עצמה קיבלה 403. בקשת `Range: bytes=0-0` מוחזרת 206 עם הכותרת
+     * Content-Range, וממנה מקבלים גם את הגודל המלא וגם אישור שהשרת תומך
+     * ב-Range — בבקשה אחת שהשרת באמת עונה לה.
+     */
+    private suspend fun fetch(spec: Spec, url: String, dest: File, task: DownloadTask) {
+        val probe = Request.Builder().url(url)
+            .apply { spec.ua?.let { header("User-Agent", it) } }
+            .header("Range", "bytes=0-0").build()
+        var len = -1L; var ranges = false
+        runCatching {
+            http.newCall(probe).execute().use { r ->
+                // "bytes 0-0/12345678" — האורך המלא הוא מה שאחרי הלוכסן.
+                val contentRange = r.header("Content-Range")
+                if (r.code == 206 && contentRange != null) {
+                    len = contentRange.substringAfterLast('/').toLongOrNull() ?: -1L
+                    ranges = true
+                } else if (r.isSuccessful) {
                     len = r.header("Content-Length")?.toLongOrNull() ?: -1L
                     ranges = r.header("Accept-Ranges")?.contains("bytes", true) == true
                 }
             }
-            if (len > 0 && ranges && spec.connections > 1) multiConn(spec, tmp, len, task)
-            else single(spec, tmp, len, task)
-            publish(spec, tmp)
-        } finally {
-            runCatching { tmp.delete() }
+        }
+        val urlSpec = spec.copy(url = url)
+        if (len > 0 && ranges && spec.connections > 1) multiConn(urlSpec, dest, len, task)
+        else single(urlSpec, dest, len, task)
+
+        // קובץ ריק פירושו הורדה שנכשלה בשקט. עדיף להיכשל בקול מאשר לשמור
+        // במכשיר קובץ שאי אפשר לנגן ולסמן אותו כ"הושלם".
+        if (!dest.exists() || dest.length() == 0L) {
+            throw IllegalStateException("ההורדה הסתיימה בקובץ ריק")
         }
     }
 
@@ -134,7 +301,14 @@ object DownloadEngine {
                         .apply { spec.ua?.let { header("User-Agent", it) } }
                         .header("Range", "bytes=$start-$end").build()
                     http.newCall(req).execute().use { resp ->
-                        val body = resp.body ?: return@use
+                        // 206 = Partial Content, מה שבקשת Range אמורה להחזיר.
+                        // בלי הבדיקה הזו נתח כושל היה מותיר אזור אפסים בקובץ
+                        // שכבר הוקצה מראש ב-setLength — קובץ בגודל הנכון,
+                        // בלי תוכן.
+                        if (!resp.isSuccessful) {
+                            throw IllegalStateException("נתח ${idx + 1} החזיר ${resp.code}")
+                        }
+                        val body = resp.body ?: throw IllegalStateException("נתח ${idx + 1} ריק")
                         RandomAccessFile(tmp, "rw").use { raf ->
                             raf.seek(start)
                             val buf = ByteArray(128 * 1024)
@@ -153,9 +327,16 @@ object DownloadEngine {
     }
 
     private fun single(spec: Spec, tmp: File, len: Long, task: DownloadTask) {
+        // Range פתוח ("מהבייט 0 ועד הסוף"). googlevideo מגיש בקשות כאלה
+        // באופן רגיל, ובלעדיו הוא נוטה להחזיר 403 על אותה כתובת בדיוק.
         val req = Request.Builder().url(spec.url)
-            .apply { spec.ua?.let { header("User-Agent", it) } }.build()
+            .apply { spec.ua?.let { header("User-Agent", it) } }
+            .header("Range", "bytes=0-").build()
         http.newCall(req).execute().use { resp ->
+            // בדיקת סטטוס. בלעדיה תגובת 403 — שקורית כשכתובת הזרם פגה או
+            // נקשרה ל-User-Agent אחר — נכתבה לקובץ כאילו הייתה מדיה, וההורדה
+            // דווחה כ"הושלם". זה בדיוק הקובץ הריק שנשמר במכשיר.
+            if (!resp.isSuccessful) throw IllegalStateException("השרת החזיר ${resp.code}")
             val body = resp.body ?: throw IllegalStateException("גוף ריק")
             var got = 0L
             body.byteStream().use { ins ->
@@ -171,27 +352,44 @@ object DownloadEngine {
         }
     }
 
-    /** שמירה ל"הורדות" הציבוריות — דרך MediaStore ב-Android 10+, אחרת ישירות לתיקייה. */
-    private fun publish(spec: Spec, tmp: File) {
+    /**
+     * שמירה ל"הורדות" הציבוריות — דרך MediaStore ב-Android 10+, אחרת ישירות
+     * לתיקייה. מחזיר את מיקום הקובץ שנוצר.
+     *
+     * הערך המוחזר הוא העיקר: בלעדיו האפליקציה שמרה קובץ ומיד שכחה איפה הוא,
+     * ולכן לא ידעה לנגן את מה שהיא עצמה הורידה.
+     */
+    private fun publish(spec: Spec, tmp: File): String {
         val resolver = spec.context.contentResolver
         val mime = if (spec.isAudio) "audio/mp4" else "video/mp4"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, spec.fileName)
                 put(MediaStore.Downloads.MIME_TYPE, mime)
+                // תיקייה משלנו בזיכרון הראשי, לא ערימה אחת בתוך "הורדות".
+                put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/$FOLDER")
                 put(MediaStore.Downloads.IS_PENDING, 1)
             }
             val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 ?: throw IllegalStateException("MediaStore נכשל")
-            resolver.openOutputStream(uri).use { out -> tmp.inputStream().use { it.copyTo(out!!) } }
+            // openOutputStream מחזיר null כשהמערכת מסרבת לפתוח את היעד.
+            // ‎!!‎ היה הופך את זה לקריסה של האפליקציה במקום להורדה שנכשלה.
+            val out = resolver.openOutputStream(uri)
+                ?: throw IllegalStateException("לא ניתן לכתוב לקובץ היעד")
+            out.use { stream -> tmp.inputStream().use { it.copyTo(stream) } }
             values.clear(); values.put(MediaStore.Downloads.IS_PENDING, 0)
             resolver.update(uri, values, null, null)
+            return uri.toString()
         } else {
-            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val dir = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                FOLDER,
+            )
             if (!dir.exists()) dir.mkdirs()
             var out = File(dir, spec.fileName)
             if (out.exists()) out = File(dir, spec.fileName.substringBeforeLast('.') + "_" + System.currentTimeMillis() + "." + spec.fileName.substringAfterLast('.'))
             tmp.copyTo(out, overwrite = true)
+            return android.net.Uri.fromFile(out).toString()
         }
     }
 }

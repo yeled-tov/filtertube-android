@@ -2,6 +2,7 @@ package com.filtertube.app.data
 
 import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -55,18 +56,85 @@ class LibraryStore(context: Context) {
 
     fun likes(): List<Video> = videos(KEY_LIKES)
 
-    fun isLiked(videoId: String): Boolean = likes().any { it.id == videoId }
+    /**
+     * הלב במסך.
+     *
+     * בודק את שתי הרשימות, כי מאז שלייק באפליקציה נשמר גם ביוטיוב הן אותה
+     * רשימה: סרטון שסומן בלב ביוטיוב עצמה הגיע לכאן דרך הסנכרון, והלב חייב
+     * להיראות מסומן גם עליו — אחרת לחיצה עליו "מסמנת" משהו שכבר מסומן.
+     */
+    fun isLiked(videoId: String): Boolean =
+        likes().any { it.id == videoId } || youtubeLikes().any { it.id == videoId }
 
     fun toggleLike(video: Video): Boolean {
+        // המצב הנוכחי נקבע לפי אותה בדיקה שהלב מצייר לפיה, ולא לפי רשימה
+        // אחת בלבד: סרטון שסומן בלב ביוטיוב נראה מסומן במסך, ולחיצה עליו
+        // הייתה "מסמנת" אותו שוב במקום לבטל.
+        val wasLiked = isLiked(video.id)
         val current = likes().toMutableList()
-        val existed = current.removeAll { it.id == video.id }
-        if (!existed) current.add(0, video)
-        if (!saveVideos(KEY_LIKES, current)) return false
+        current.removeAll { it.id == video.id }
+        if (!wasLiked) current.add(0, video)
+        if (!saveVideos(KEY_LIKES, current)) return wasLiked
         queueCloudBackup()
-        return !existed
+        mirrorLikeToYouTube(video, liked = !wasLiked)
+        return !wasLiked
+    }
+
+    /**
+     * לייק באפליקציה הוא לייק ביוטיוב.
+     *
+     * ## למה
+     * עד עכשיו היו שתי רשימות "אהבתי" נפרדות — אחת של האפליקציה ואחת של
+     * יוטיוב — והן נראו למשתמש כמו אותו דבר פעמיים. מה שסימנת ב-FilterTube
+     * לא הופיע ביוטיוב, ומה שסימנת ביוטיוב לא הופיע כאן. שתי רשימות שאמורות
+     * להיות אותה רשימה הן בלבול, לא תכונה.
+     *
+     * עכשיו הלב מסמן ביוטיוב עצמה, והרשימה המקומית של יוטיוב מתעדכנת מיד
+     * כדי שהמסך לא יחכה לרשת.
+     *
+     * ## כשאין חיבור
+     * בלי עוגיות אין למי לדווח, והלייק נשאר מקומי בלבד — בדיוק כמו קודם.
+     * זה לא נחשב כישלון ולא מציג שגיאה: רוב המשתמשים לא יחברו חשבון.
+     */
+    private fun mirrorLikeToYouTube(video: Video, liked: Boolean) {
+        // הרשימה המקומית של יוטיוב מתעדכנת תמיד, גם בלי חיבור: היא מה
+        // שהמסך מציג, והמתנה לרשת הייתה הופכת את הלב ל"מהבהב".
+        val yt = youtubeLikes().toMutableList()
+        yt.removeAll { it.id == video.id }
+        if (liked) yt.add(0, video)
+        saveVideos(KEY_YT_LIKES, yt)
+
+        val cookies = runCatching { AccountStore(appContext).cookies }.getOrNull().orEmpty()
+        if (cookies.isBlank()) return
+        likeScope.launch {
+            val ok = runCatching { InnerTube.rate(cookies, video.id, liked) }.getOrDefault(false)
+            Diagnostics.log(
+                if (ok) "LIKE ${video.id}: ${if (liked) "סומן" else "בוטל"} גם ביוטיוב ✓"
+                else "LIKE ${video.id}: לא נשמר ביוטיוב (נשאר מקומי)",
+            )
+        }
     }
 
     fun downloads(): List<Video> = videos(KEY_DOWNLOADS)
+
+    /**
+     * רושם את מיקום הקובץ אחרי שההורדה הסתיימה בפועל.
+     *
+     * addDownload נקרא כשההורדה *מתחילה*, כדי שהפריט יופיע מיד בספרייה. באותו
+     * רגע עוד אין קובץ, ולכן המיקום נרשם רק כאן — וזה מה שהופך את הפריט
+     * מ"רשומה ברשימה" למשהו שאפשר באמת לנגן, גם בלי רשת.
+     */
+    fun setDownloadLocalUri(videoId: String, uri: String) {
+        // uri ריק = ניקוי מיקום שכבר לא תקף, וזו פעולה לגיטימית.
+        if (videoId.isBlank()) return
+        val current = downloads()
+        val updated = current.map { if (it.id == videoId) it.copy(localUri = uri) else it }
+        if (updated != current && saveVideos(KEY_DOWNLOADS, updated)) queueCloudBackup()
+    }
+
+    /** הסרטון שהורד, אם יש — כולל מיקום הקובץ המקומי. */
+    fun downloadedVideo(videoId: String): Video? =
+        downloads().firstOrNull { it.id == videoId && it.localUri.isNotBlank() }
 
     fun addDownload(video: Video) {
         val current = downloads().toMutableList()
@@ -124,7 +192,7 @@ class LibraryStore(context: Context) {
                 saveVideos(key, filtered)
             }
         }
-        listOf(KEY_LIKES, KEY_DOWNLOADS, KEY_HISTORY, KEY_LOCAL_HISTORY, KEY_RECS, KEY_NEW_VIDEOS, KEY_YT_LIKES)
+        listOf(KEY_LIKES, KEY_DOWNLOADS, KEY_HISTORY, KEY_LOCAL_HISTORY, KEY_RECS, KEY_NEW_VIDEOS, KEY_YT_LIKES, KEY_MUSIC_LIKES)
             .forEach(::removeFrom)
         val updatedPlaylists = playlists().map { playlist ->
             val filtered = playlist.videos.filterNot { it.id == video.id }
@@ -138,6 +206,19 @@ class LibraryStore(context: Context) {
     }
 
     fun youtubeLikes(): List<Video> = videos(KEY_YT_LIKES)
+
+    /**
+     * לייקים מיוטיוב מיוזיק — מאוחסנים בנפרד מלייקים של יוטיוב הרגיל.
+     *
+     * אלה שני דברים שונים גם אצל גוגל: "אהבתי" ביוטיוב נשמר בפלייליסט LL,
+     * ו"מוזיקה שאהבתי" במיוזיק נשמר ב-LM. ערבוב שלהם היה מכניס שיעורי תורה
+     * לרשימת השירים ושירים לרשימת הסרטונים.
+     */
+    fun musicLikes(): List<Video> = videos(KEY_MUSIC_LIKES)
+
+    fun setMusicLikes(list: List<Video>) {
+        if (saveVideos(KEY_MUSIC_LIKES, list)) queueCloudBackup()
+    }
 
     fun setYoutubeLikes(list: List<Video>) {
         if (saveVideos(KEY_YT_LIKES, list)) queueCloudBackup()
@@ -308,10 +389,16 @@ class LibraryStore(context: Context) {
     }
 
     companion object {
+        /** סנכרון הלייק ליוטיוב רץ ברקע — הלב במסך לא ממתין לרשת. */
+        private val likeScope = kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
+        )
+
         private const val KEY_LIKES = "likes"
         private const val KEY_DOWNLOADS = "downloads"
         private const val KEY_PLAYLISTS = "playlists"
         private const val KEY_YT_LIKES = "youtube_likes"
+        private const val KEY_MUSIC_LIKES = "youtube_music_likes"
         private const val KEY_SUBS = "youtube_subscriptions"
         private const val KEY_HISTORY = "youtube_history"
         private const val KEY_RECS = "youtube_recommendations"

@@ -1,6 +1,8 @@
 package com.filtertube.app.data
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.ServiceList
 
@@ -12,13 +14,13 @@ class NewPipeResolver : StreamResolver {
     override val name: String = "NewPipe"
     private val clientKey: String = "NewPipe"
 
-    override suspend fun resolve(videoId: String): StreamData? = withContext(Dispatchers.IO) {
+    override suspend fun resolve(videoId: String, force: Boolean): StreamData? = withContext(Dispatchers.IO) {
         if (!RemoteConfig.isResolverEnabled(clientKey, default = true)) {
             Diagnostics.log("$name $videoId: מנוע מבוטל ב-RemoteConfig")
             return@withContext null
         }
 
-        if (!ResolverHealthMonitor.isAvailable(clientKey)) {
+        if (!force && !ResolverHealthMonitor.isAvailable(clientKey)) {
             Diagnostics.log("$name $videoId: מנוע ב-cooldown (נכשל לאחרונה)")
             return@withContext null
         }
@@ -36,11 +38,26 @@ class NewPipeResolver : StreamResolver {
 
             val muxed = allVideo.filter { !it.isVideoOnly && it.height > 0 }
             val videoOnly = (allVideo.filter { it.isVideoOnly } + videoOnlyList).filter { it.height > 0 }
-            val audioBest = audioStreams.maxByOrNull { it.bitrate }
+            // m4a לפני webm, ורק אז לפי ביטרייט: MediaMuxer יודע לארוז MP4
+            // עם AAC בלבד, ובלי זה שום איכות וידאו לא ניתנת להורדה.
+            val byBitrate = audioStreams.sortedByDescending { it.bitrate }
+            val audioBest = byBitrate.firstOrNull {
+                it.format?.mimeType.orEmpty().startsWith("audio/mp4")
+            } ?: byBitrate.firstOrNull()
+            // הזרם הקל ביותר — למצב חיסכון בנתונים בהגדרות FilterMusic.
+            val audioLow = byBitrate.lastOrNull()
 
-            val muxedTracks = muxed.map { StreamTrack(it.height, "${it.height}p", it.content, null) }
+            val muxedTracks = muxed.map {
+                StreamTrack(it.height, "${it.height}p", it.content, null, it.format?.mimeType.orEmpty())
+            }
             val dashTracks = if (audioBest != null) {
-                videoOnly.map { StreamTrack(it.height, "${it.height}p", it.content, audioBest.content) }
+                val audioMime = audioBest.format?.mimeType.orEmpty()
+                videoOnly.map {
+                    StreamTrack(
+                        it.height, "${it.height}p", it.content, audioBest.content,
+                        it.format?.mimeType.orEmpty(), audioMime,
+                    )
+                }
             } else emptyList()
 
             val vodTracks = (muxedTracks + dashTracks)
@@ -68,6 +85,7 @@ class NewPipeResolver : StreamResolver {
                 thumbnailUrl = runCatching { extractor.thumbnails?.maxByOrNull { it.height }?.url }.getOrNull(),
                 tracks = tracks,
                 bestAudioUrl = audioBest?.content,
+                lowAudioUrl = audioLow?.content,
                 bestVideoUrl = bestMuxed,
                 related = emptyList(),
                 streamUserAgent = null
@@ -83,6 +101,22 @@ class NewPipeResolver : StreamResolver {
         }.getOrElse { e ->
             val elapsedMs = System.currentTimeMillis() - t0
             val reason = e.message ?: "Unknown error"
+
+            // ── ביטול אינו כישלון ──────────────────────────────────────────
+            // המנועים רצים במרוץ, וברגע שאחד מנצח כל השאר מבוטלים. כשהביטול
+            // תופס את NewPipe באמצע fetchPage, ההפרעה לשקע מגיעה לכאן כחריגת
+            // IO רגילה ("Socket closed", "interrupted") — ונרשמה ככישלון של
+            // המנוע.
+            //
+            // מרגע שמנוע ה-iOS התחיל לנצח ב-230ms מול 1,700ms, זה קרה כמעט
+            // בכל סרטון: שלושה ניצחונות של iOS הכניסו את NewPipe ל-cooldown.
+            // משם התגלגלה ספירלה — כל המנועים בצינון, כישלון תוך 0ms, ושום
+            // סרטון לא מתנגן.
+            if (!isActive || e is CancellationException) {
+                Diagnostics.log("$name $videoId: בוטל — מנוע אחר כבר ניצח (${elapsedMs}ms)")
+                return@getOrElse null
+            }
+
             Diagnostics.log("$name $videoId: $reason FAILED (${elapsedMs}ms)")
 
             // סרטונים מוגבלים גיל/ארגון אינם פגם במנוע החילוץ עצמו

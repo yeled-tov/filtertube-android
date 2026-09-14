@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
  */
 object YouTubeSuggest {
 
-    private val http = OkHttpClient.Builder()
+    private val http = Http.newBuilder()
         .connectTimeout(4, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
         .build()

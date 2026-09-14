@@ -21,7 +21,7 @@ object ManualPremiumRequests {
     private const val LIST_API = "$BASE_API/listPremiumRequests"
     private const val RESOLVE_API = "$BASE_API/resolvePremiumRequest"
 
-    private val http = OkHttpClient.Builder()
+    private val http = Http.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)

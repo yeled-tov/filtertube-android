@@ -16,7 +16,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -29,9 +32,15 @@ import com.filtertube.app.data.SubChannel
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeRepository
 
-/** סרגל עליון אחיד עם כפתור חזרה לכל מסכי הפירוט. */
+/**
+ * סרגל עליון אחיד עם כפתור חזרה לכל מסכי הפירוט.
+ *
+ * [action] — פעולה קבועה בקצה הימני. היא נשארת על המסך גם כשגוללים, וזה
+ * בדיוק ההבדל: "בקשת ערוץ" ישבה קודם כבאנר בתוך רשימה נגללת של 167 ערוצים,
+ * ולכן אף אחד לא ידע שהיא קיימת.
+ */
 @Composable
-fun DetailTopBar(title: String, onBack: () -> Unit) {
+fun DetailTopBar(title: String, onBack: () -> Unit, action: (@Composable () -> Unit)? = null) {
     Column {
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 24.dp, start = 4.dp, end = 16.dp, bottom = 4.dp),
@@ -41,7 +50,8 @@ fun DetailTopBar(title: String, onBack: () -> Unit) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = ThemeState.text)
             }
             Text(title, color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            action?.invoke()
         }
         HorizontalDivider(color = ThemeState.divider)
     }
@@ -64,12 +74,15 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
     val context = LocalContext.current
     val store = remember { LibraryStore(context) }
     var refreshKey by remember { mutableStateOf(0) }
-    // מקור הלייקים: FilterTube או YouTube. קודם אלה היו שתי קוביות נפרדות
-    // בספרייה שנראו כמו אותו דבר פעמיים; עכשיו זו רשימה אחת עם מתג.
-    var ytSource by remember { mutableStateOf(false) }
-    val (title, videos) = remember(type, refreshKey, ytSource) {
+    // ── שני מקורות, ושניהם של יוטיוב ──────────────────────────────────
+    // קודם המתג היה בין "אהבתי ב-FilterTube" ל"אהבתי ביוטיוב", ואלה נראו
+    // כמו אותו דבר פעמיים — ומאז שלייק באפליקציה מסומן גם ביוטיוב עצמה,
+    // הם באמת אותו דבר. המתג עבר להבחנה שכן קיימת: יוטיוב מול יוטיוב
+    // מיוזיק, שתי רשימות נפרדות אצל גוגל עצמה.
+    var musicSource by remember { mutableStateOf(false) }
+    val (title, videos) = remember(type, refreshKey, musicSource) {
         when (type) {
-            "likes" -> "אהבתי" to (if (ytSource) store.youtubeLikes() else store.likes())
+            "likes" -> "אהבתי" to (if (musicSource) store.musicLikes() else store.youtubeLikes())
             "ytlikes" -> "אהבתי ביוטיוב" to store.youtubeLikes()
             "downloads" -> "הורדות" to store.downloads()
             "history" -> "היסטוריה" to store.localHistory()   // היסטוריה מקומית — תמיד עובדת
@@ -80,14 +93,14 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar("$title (${videos.size})", onBack)
         if (type == "likes") {
-            val ftCount = remember(refreshKey) { store.likes().size }
             val ytCount = remember(refreshKey) { store.youtubeLikes().size }
+            val musicCount = remember(refreshKey) { store.musicLikes().size }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                SourceTab("ב-FilterTube ($ftCount)", !ytSource) { ytSource = false }
-                SourceTab("ביוטיוב ($ytCount)", ytSource) { ytSource = true }
+                SourceTab("יוטיוב ($ytCount)", !musicSource) { musicSource = false }
+                SourceTab("יוטיוב מיוזיק ($musicCount)", musicSource) { musicSource = true }
             }
         }
         if (type == "history" && videos.isNotEmpty()) {
@@ -124,43 +137,128 @@ private fun RowScope.SourceTab(label: String, selected: Boolean, onClick: () -> 
     }
 }
 
-/** רשימת כל המנויים של המשתמש מיוטיוב. לחיצה פותחת את סרטוני הערוץ. */
+/**
+ * רשימת כל המנויים של המשתמש מיוטיוב.
+ *
+ * ## מאושרים ולא מאושרים באותה רשימה
+ * קודם הלא-מאושרים נזרקו כבר בסנכרון, והמשתמש ראה רשימה קטועה בלי שום רמז
+ * שחסר בה משהו — "למה חצי מהמנויים שלי נעלמו". עכשיו הם כאן, באפור, ולחיצה
+ * עליהם מציעה לבקש שיתווספו לרשימה המאושרת.
+ *
+ * הרשימה הלבנה לא נחלשת בכלום: ערוץ לא מאושר אינו נפתח, ולכן גם אין דרך
+ * להגיע ממנו לסרטון. האפור הוא הזמנה לבקש, לא דלת.
+ */
 @Composable
 fun SubscriptionsScreen(onOpenChannel: (String, String) -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     val store = remember { LibraryStore(context) }
     val subs = remember { store.subscriptions() }
+    var approved by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var pending by remember { mutableStateOf<SubChannel?>(null) }
+    // ערוצים שכבר נשלחה עליהם בקשה במסך הזה — כדי לא לשלוח פעמיים ברצף.
+    var requested by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    LaunchedEffect(Unit) {
+        approved = runCatching {
+            com.filtertube.app.data.ChannelsRepository.getChannels(context)
+                .mapTo(HashSet()) { it.youtubeChannelId }
+        }.getOrDefault(emptySet())
+    }
+
+    val approvedCount = subs.count { it.channelId in approved }
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar("המנויים שלי (${subs.size})", onBack)
-        if (subs.isEmpty()) EmptyHint("התחבר לחשבון גוגל בספריה כדי למשוך את המנויים שלך")
-        else LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)) {
-            items(subs, key = { it.channelId }) { sub -> SubRow(sub) { onOpenChannel(sub.channelId, sub.title) } }
+        if (subs.isEmpty()) {
+            EmptyHint("התחבר לחשבון גוגל בספריה כדי למשוך את המנויים שלך")
+        } else {
+            if (approvedCount < subs.size) {
+                Text(
+                    "$approvedCount מאושרים · ${subs.size - approvedCount} באפור — " +
+                        "לחיצה עליהם שולחת בקשה להוסיף אותם",
+                    color = ThemeState.subtext2, fontSize = 12.5.sp, lineHeight = 17.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                )
+            }
+            LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 4.dp, bottom = 96.dp)) {
+                items(subs, key = { it.channelId }) { sub ->
+                    SubRow(
+                        sub = sub,
+                        approved = sub.channelId in approved,
+                        requested = sub.channelId in requested,
+                    ) {
+                        if (sub.channelId in approved) onOpenChannel(sub.channelId, sub.title)
+                        else pending = sub
+                    }
+                }
+            }
         }
+    }
+
+    // ── הטופס המלא, לא גרסה מקוצרת ────────────────────────────────────
+    // ניסיתי כאן דיאלוג של שתי אפשרויות ("רגיל" / "דתי לייט"), וזה היה
+    // ויתור: מי שמאשר צריך לדעת מה הערוץ מכיל ולמי הוא מיועד, ובלי זה כל
+    // בקשה חוזרת אליו כשאלה. זה אותו טופס שנפתח מ"בקשת ערוץ", עם השם
+    // והקישור כבר ממולאים מהמנוי עצמו.
+    pending?.let { target ->
+        ChannelRequestDialog(
+            onDismiss = {
+                requested = requested + target.channelId
+                pending = null
+            },
+            prefillName = target.title,
+            prefillUrl = "https://www.youtube.com/channel/${target.channelId}",
+        )
     }
 }
 
 @Composable
-private fun SubRow(sub: SubChannel, onClick: () -> Unit) {
+private fun SubRow(
+    sub: SubChannel,
+    approved: Boolean,
+    requested: Boolean,
+    onClick: () -> Unit,
+) {
+    // האפור הוא המסר: הערוץ קיים אצלך ביוטיוב, אבל הוא לא חלק מהאפליקציה.
+    val alpha = if (approved) 1f else 0.45f
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (sub.thumbnailUrl.isNotEmpty()) {
-            AsyncImage(
-                model = sub.thumbnailUrl,
-                contentDescription = sub.title,
-                modifier = Modifier.size(48.dp).clip(CircleShape).background(ThemeState.divider),
-                contentScale = ContentScale.Crop,
-            )
-        } else {
-            Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(channelColor(sub.title)),
-                contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Person, null, tint = ThemeState.text)
+        Box(modifier = Modifier.alpha(alpha)) {
+            if (sub.thumbnailUrl.isNotEmpty()) {
+                AsyncImage(
+                    model = sub.thumbnailUrl,
+                    contentDescription = sub.title,
+                    modifier = Modifier.size(48.dp).clip(CircleShape).background(ThemeState.divider),
+                    contentScale = ContentScale.Crop,
+                    colorFilter = if (approved) null else ColorFilter.colorMatrix(
+                        ColorMatrix().apply { setToSaturation(0f) },
+                    ),
+                )
+            } else {
+                Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(channelColor(sub.title)),
+                    contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Person, null, tint = ThemeState.text)
+                }
             }
         }
         Spacer(Modifier.width(12.dp))
-        Text(sub.title, color = ThemeState.text, fontSize = 15.sp, fontWeight = FontWeight.Medium,
-            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.weight(1f)) {
+            Text(
+                sub.title,
+                color = if (approved) ThemeState.text else ThemeState.subtext,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            if (!approved) {
+                Text(
+                    if (requested) "הבקשה נשלחה — ממתין לאישור" else "לא מאושר · לחץ כדי לבקש להוסיף",
+                    color = ThemeState.subtext2, fontSize = 11.5.sp, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 

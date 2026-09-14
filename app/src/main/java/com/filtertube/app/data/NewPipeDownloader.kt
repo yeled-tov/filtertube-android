@@ -28,7 +28,7 @@ class NewPipeDownloader private constructor() : Downloader() {
             }
     }
 
-    private val client: OkHttpClient = OkHttpClient.Builder()
+    private val client: OkHttpClient = Http.newBuilder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)

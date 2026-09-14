@@ -1,6 +1,7 @@
 package com.filtertube.app.data
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -11,7 +12,17 @@ import java.util.concurrent.TimeUnit
 
 enum class InnerTubeClientType {
     ANDROID_VR,
-    IOS
+    IOS,
+
+    /**
+     * נגן מוטמע של ממשק הטלוויזיה. הוא לא דורש PO token והוא המנוע שנוטה
+     * להחזיק כשהאחרים מקבלים LOGIN_REQUIRED, ולכן הוא הגיבוי הטוב ביותר
+     * ל-IOS. דורש thirdParty.embedUrl בבקשה.
+     */
+    TVHTML5_EMBED,
+
+    /** יוטיוב לנייד בדפדפן. ההתנהגות הכי קרובה לגלישה רגילה. */
+    MWEB,
 }
 
 /**
@@ -24,6 +35,8 @@ class InnerTubeResolver(
     val clientKey: String = when (clientType) {
         InnerTubeClientType.IOS -> "IOS"
         InnerTubeClientType.ANDROID_VR -> "ANDROID_VR"
+        InnerTubeClientType.TVHTML5_EMBED -> "TVHTML5_EMBED"
+        InnerTubeClientType.MWEB -> "MWEB"
     }
 
     override val name: String = "InnerTube $clientKey"
@@ -42,6 +55,14 @@ class InnerTubeResolver(
         private const val DEF_VR_VER = "1.60.19"
         private const val DEF_VR_UA = "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip"
 
+        private const val DEF_TV_VER = "2.0"
+        private const val DEF_TV_UA =
+            "Mozilla/5.0 (PlayStation; PlayStation 4/12.00) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15"
+
+        private const val DEF_MWEB_VER = "2.20260901.00.00"
+        private const val DEF_MWEB_UA =
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+
         /**
          * visitorData לכל סוג לקוח בנפרד.
          *
@@ -58,7 +79,7 @@ class InnerTubeResolver(
 
         private val jsonMedia = "application/json".toMediaType()
 
-        private val http = OkHttpClient.Builder()
+        private val http = Http.newBuilder()
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(6, TimeUnit.SECONDS)
             .build()
@@ -116,18 +137,36 @@ class InnerTubeResolver(
                     put("gl", "IL")
                 }
             }
+            InnerTubeClientType.TVHTML5_EMBED -> {
+                ua = RemoteConfig.clientUserAgent("tv", DEF_TV_UA)
+                client.apply {
+                    put("clientName", "TVHTML5_SIMPLY_EMBEDDED_PLAYER")
+                    put("clientVersion", RemoteConfig.clientVersion("tv", DEF_TV_VER))
+                    put("hl", "he")
+                    put("gl", "IL")
+                }
+            }
+            InnerTubeClientType.MWEB -> {
+                ua = RemoteConfig.clientUserAgent("mweb", DEF_MWEB_UA)
+                client.apply {
+                    put("clientName", "MWEB")
+                    put("clientVersion", RemoteConfig.clientVersion("mweb", DEF_MWEB_VER))
+                    put("hl", "he")
+                    put("gl", "IL")
+                }
+            }
         }
         visitorDataByClient[clientKey]?.takeIf { it.isNotBlank() }?.let { client.put("visitorData", it) }
         return client to ua
     }
 
-    override suspend fun resolve(videoId: String): StreamData? = withContext(Dispatchers.IO) {
+    override suspend fun resolve(videoId: String, force: Boolean): StreamData? = withContext(Dispatchers.IO) {
         if (!RemoteConfig.isResolverEnabled(clientKey, default = true)) {
             Diagnostics.log("$name $videoId: מנוע מבוטל ב-RemoteConfig")
             return@withContext null
         }
 
-        if (!ResolverHealthMonitor.isAvailable(clientKey)) {
+        if (!force && !ResolverHealthMonitor.isAvailable(clientKey)) {
             Diagnostics.log("$name $videoId: מנוע ב-cooldown (נכשל לאחרונה)")
             return@withContext null
         }
@@ -141,6 +180,19 @@ class InnerTubeResolver(
             put("contentCheckOk", true)
             put("racyCheckOk", true)
             put("context", JSONObject().put("client", clientObj))
+            // נגן מוטמע חייב להצהיר מאיזה דף הוא מוטמע. בלי זה יוטיוב מחזיר
+            // status=ERROR עבור TVHTML5_SIMPLY_EMBEDDED_PLAYER.
+            if (clientType == InnerTubeClientType.TVHTML5_EMBED) {
+                put(
+                    "context",
+                    JSONObject()
+                        .put("client", clientObj)
+                        .put(
+                            "thirdParty",
+                            JSONObject().put("embedUrl", "https://www.youtube.com/watch?v=$videoId"),
+                        ),
+                )
+            }
             // המיקום הנכון הוא serviceIntegrityDimensions ברמה העליונה.
             // כשדה לא מוכר בתוך context.user, הוא גורם ל-HTTP 400 בגלל
             // הכותרת X-Goog-Api-Format-Version: 2.
@@ -174,6 +226,13 @@ class InnerTubeResolver(
         val elapsedMs = System.currentTimeMillis() - t0
 
         if (json == null) {
+            // ביטול אינו כישלון. המנועים במרוץ, ומי שמפסיד מבוטל באמצע הבקשה
+            // — מה שמגיע לכאן כשגיאת רשת רגילה. לספור את זה ככישלון פירושו
+            // להכניס לצינון דווקא מנוע תקין, רק בגלל שמנוע אחר היה מהיר יותר.
+            if (!isActive) {
+                Diagnostics.log("$name $videoId: בוטל — מנוע אחר כבר ניצח (${elapsedMs}ms)")
+                return@withContext null
+            }
             val reason = "HTTP $httpCode"
             Diagnostics.log("$name $videoId: $reason FAILED (${elapsedMs}ms)")
             ResolverHealthMonitor.recordFailure(clientKey, reason)
@@ -190,7 +249,12 @@ class InnerTubeResolver(
         if (status != "OK") {
             val failMsg = "status=$status reason=${reason ?: "none"}"
             Diagnostics.log("$name $videoId: $failMsg FAILED (${elapsedMs}ms)")
-            ResolverHealthMonitor.recordFailure(clientKey, status ?: "NOT_OK")
+            // סרטון חסום הוא תכונה של הסרטון, לא פגם במנוע. עד עכשיו כל
+            // סרטון מוגבל דחף את כל מנועי InnerTube צעד אחד לקראת צינון,
+            // וכמה סרטונים כאלה ברצף השביתו את כולם. NewPipe כבר נהג כך.
+            val blocked = status == "ERROR" || status == "UNPLAYABLE" ||
+                status == "LOGIN_REQUIRED" || status == "AGE_VERIFICATION_REQUIRED"
+            if (!blocked) ResolverHealthMonitor.recordFailure(clientKey, status ?: "NOT_OK")
             return@withContext null
         }
 
@@ -202,9 +266,14 @@ class InnerTubeResolver(
         }
 
         val muxedTracks = mutableListOf<StreamTrack>()
-        val videoOnly = mutableListOf<Pair<Int, String>>()
+        // גובה, כתובת, mimeType — ה-mimeType נדרש כדי לדעת אם אפשר למזג
+        // את הזרם הזה לקובץ MP4 בהורדה.
+        val videoOnly = mutableListOf<Triple<Int, String, String>>()
         var bestAudioUrl: String? = null
+        var bestAudioMime = ""
         var bestAudioBitrate = -1
+        var lowAudioUrl: String? = null
+        var lowAudioBitrate = Int.MAX_VALUE
 
         fun processFormat(f: JSONObject, adaptive: Boolean) {
             val url = f.optString("url")
@@ -213,16 +282,37 @@ class InnerTubeResolver(
             when {
                 mime.startsWith("audio/") -> {
                     val br = f.optInt("bitrate")
-                    if (br > bestAudioBitrate) {
+                    // ── m4a תמיד מנצח webm, לא רק בתיקו ──────────────────
+                    // קודם לכן m4a קיבל בונוס של ביט אחד, וזה לא הספיק:
+                    // יוטיוב מגיש opus/webm בביטרייט גבוה יותר, אז webm ניצח
+                    // כמעט תמיד. MediaMuxer יודע לארוז MP4 עם AAC בלבד, ולכן
+                    // כל איכות וידאו נפסלה בבדיקת ההורדה ונשאר רק אודיו —
+                    // בדיוק התלונה "אי אפשר להוריד וידאו".
+                    //
+                    // ההפרש באיכות שמיעתית זניח; היכולת להוריד וידאו לא.
+                    val mp4 = mime.startsWith("audio/mp4")
+                    val currentIsMp4 = bestAudioMime.startsWith("audio/mp4")
+                    val better = when {
+                        mp4 && !currentIsMp4 -> true
+                        !mp4 && currentIsMp4 -> false
+                        else -> br > bestAudioBitrate
+                    }
+                    if (better) {
                         bestAudioBitrate = br
                         bestAudioUrl = url
+                        bestAudioMime = mime
+                    }
+                    // הזרם הקל ביותר, לאותה משפחת פורמטים — למצב חיסכון בנתונים.
+                    if (mp4 && br in 1 until lowAudioBitrate) {
+                        lowAudioBitrate = br
+                        lowAudioUrl = url
                     }
                 }
                 mime.startsWith("video/") -> {
                     val h = f.optInt("height")
                     if (h > 0) {
-                        if (adaptive) videoOnly.add(h to url)
-                        else muxedTracks.add(StreamTrack(h, "${h}p", url, null))
+                        if (adaptive) videoOnly.add(Triple(h, url, mime))
+                        else muxedTracks.add(StreamTrack(h, "${h}p", url, null, mime))
                     }
                 }
             }
@@ -236,7 +326,9 @@ class InnerTubeResolver(
         }
 
         val au = bestAudioUrl
-        val dashTracks = if (au != null) videoOnly.map { StreamTrack(it.first, "${it.first}p", it.second, au) } else emptyList()
+        val dashTracks = if (au != null) {
+            videoOnly.map { (h, url, mime) -> StreamTrack(h, "${h}p", url, au, mime, bestAudioMime) }
+        } else emptyList()
         val vodTracks = (muxedTracks + dashTracks).distinctBy { it.height }.sortedByDescending { it.height }
 
         val vd = json.optJSONObject("videoDetails")
@@ -260,6 +352,7 @@ class InnerTubeResolver(
             thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
             tracks = tracks,
             bestAudioUrl = if (isLive) null else au,
+            lowAudioUrl = if (isLive) null else lowAudioUrl,
             bestVideoUrl = bestMuxed,
             related = emptyList(),
             streamUserAgent = userAgent

@@ -28,7 +28,7 @@ object ChannelRequests {
     private const val UPSERT_API = "$BASE_API/upsertApprovedChannel"
     private const val REMOVE_API = "$BASE_API/removeApprovedChannel"
 
-    private val http = OkHttpClient.Builder()
+    private val http = Http.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)

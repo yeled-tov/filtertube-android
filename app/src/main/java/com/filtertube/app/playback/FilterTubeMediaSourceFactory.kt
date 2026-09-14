@@ -3,6 +3,7 @@ package com.filtertube.app.playback
 import android.content.Context
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.drm.DrmSessionManagerProvider
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -13,9 +14,21 @@ import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 /**
  * Factory שיודע למזג זרם וידאו-בלבד עם זרם אודיו נפרד (DASH של יוטיוב),
  * שומר על ה-User-Agent של ה-Resolver גם ל-video וגם ל-audio בנפרד.
+ *
+ * ## למה DefaultDataSource ולא DefaultHttpDataSource ישירות
+ * זה ה-Factory של *כל* הניגון באפליקציה, לא רק של זרמי יוטיוב. כשנבנה
+ * DefaultMediaSourceFactory מעל מקור HTTP בלבד, הוא מנסה לפתוח גם
+ * `content://` ו-`file://` דרך HTTP — וכל ניגון מקומי נכשל מיד. זה מה
+ * שהפיל את הניגון של קבצים שהורדו ואת הניגון מהמדיה שבמכשיר, בלי קשר
+ * להרשאות.
+ *
+ * DefaultDataSource פותר לפי הסכימה: content, file ו-asset מקומית, וכל
+ * http/https מועבר ל-Factory שנבנה כאן עם ה-User-Agent הנכון.
  */
 @UnstableApi
 class FilterTubeMediaSourceFactory(context: Context) : MediaSource.Factory {
+
+    private val appContext = context.applicationContext
 
     private val default = factoryFor(DEFAULT_UA)
 
@@ -23,7 +36,7 @@ class FilterTubeMediaSourceFactory(context: Context) : MediaSource.Factory {
         val http = DefaultHttpDataSource.Factory()
             .setUserAgent(userAgent)
             .setAllowCrossProtocolRedirects(true)
-        return DefaultMediaSourceFactory(http)
+        return DefaultMediaSourceFactory(DefaultDataSource.Factory(appContext, http))
     }
 
     override fun getSupportedTypes(): IntArray = default.supportedTypes

@@ -9,7 +9,7 @@ import java.util.concurrent.TimeUnit
  */
 object StreamValidator {
 
-    private val probeClient = OkHttpClient.Builder()
+    private val probeClient = Http.newBuilder()
         .connectTimeout(3, TimeUnit.SECONDS)
         .readTimeout(3, TimeUnit.SECONDS)
         .followRedirects(true)

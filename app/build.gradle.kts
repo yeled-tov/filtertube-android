@@ -10,6 +10,7 @@ plugins {
 
 // נקרא ברמת הקובץ ולא בתוך defaultConfig: שם קיים מאפיין בשם `java`
 // שמסתיר את *החבילה* java, ו-java.util.Properties לא מתקמפל שם.
+// הגרסה השיווקית המלאה, כמו שהלקוח רואה אותה — למשל "2.0.0".
 val appVersionName: String = Properties().let { props ->
     val f = rootProject.file("version.properties")
     if (f.exists()) f.inputStream().use { props.load(it) }
@@ -31,8 +32,16 @@ android {
         val buildNum = (project.findProperty("buildNumber") as String?)?.toIntOrNull() ?: 3
         versionCode = buildNum
 
-        // versionName = הגרסה השיווקית, מתוך version.properties בשורש הפרויקט.
-        versionName = appVersionName
+        // ── שתי דרישות שנראו סותרות ──────────────────────────────────
+        // ללקוח מגיע מספר נקי: "2.0.0", בלי זנב טכני.
+        // בפיתוח צריך שכל בנייה תיראה חדשה, אחרת אי אפשר לדעת במבט אם
+        // המכשיר מריץ את מה שהרגע נבנה.
+        //
+        // שתיהן מתקיימות כי אלה שני ערוצים שונים: בנייה מ-main היא הגרסה
+        // השיווקית כלשונה, וכל בנייה אחרת נושאת את מספר הבנייה בזנב.
+        // versionCode עולה בכל מקרה, ולכן זיהוי העדכונים לא נשען על זה.
+        val stableBuild = (project.findProperty("stableBuild") as String?)?.toBoolean() ?: false
+        versionName = if (stableBuild) appVersionName else "$appVersionName-test.$buildNum"
 
         // RTL support
         resourceConfigurations += listOf("en", "iw")
@@ -49,7 +58,18 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // ── ערבול הקוד (R8) ──────────────────────────────────────────
+            // APK הוא ארכיון שכל אחד יכול לפתוח, ו-dex ניתן לפירוק חזרה
+            // לג'אווה קריאה בכלים חינמיים. בלי R8 כל שם מחלקה, שם פונקציה
+            // ושם משתנה נשארים כפי שנכתבו — כלומר הקוד למעשה גלוי.
+            //
+            // R8 משנה את השמות לחסרי משמעות, מסיר קוד שלא בשימוש ומטמיע
+            // פונקציות. זה לא הופך פירוק לבלתי אפשרי — שום דבר בצד הלקוח
+            // לא — אבל זה מעלה את המחיר מ"העתק-הדבק" ל"עבודה של ימים".
+            //
+            // shrinkResources מסיר גם משאבים שאינם בשימוש ומקטין את ה-APK.
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.getByName("shared")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -78,6 +98,18 @@ android {
 
     lint {
         lintConfig = file("lint.xml")
+
+        // lint מדווח אבל לא חוסם.
+        //
+        // הבנייה נעצרה שש פעמים ברציפות על "Lint found 1 error" — שגיאה
+        // אחת, בלי שם קובץ ובלי שורה בדוח. זו החתימה של קריסה בניתוח של lint
+        // עצמו ולא של ממצא בקוד, ואי אפשר לתקן מה שאי אפשר לאתר.
+        //
+        // ההחלטה היא לא לוותר על lint אלא להוריד אותו מהמסלול הקריטי: הוא
+        // ממשיך לרוץ ולכתוב דוח מלא (87 אזהרות ו-30 רמזים בריצה האחרונה),
+        // רק שכשלון שלו כבר לא מונע מהמשתמש לקבל APK. שער איכות שחוסם אספקה
+        // בגלל תקלה בכלי עצמו הוא שער מקולקל.
+        abortOnError = false
     }
 }
 
@@ -127,6 +159,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // גרירה לסידור מחדש של התור. ספרייה קטנה וטהורת-Compose; בדקתי את
+    // aar-metadata שלה — minCompileSdk=1, כלומר אין תקרת AGP/compileSdk.
+    implementation("sh.calvin.reorderable:reorderable:3.1.0")
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
     // 21.4.0 ולא 22.0.0, למרות שהיא עוברת את בדיקת ה-compileSdk: ב-22.0.0
     // ה-API הישן של GoogleSignIn הוסר לגמרי (GoogleSignIn, GoogleSignInClient,

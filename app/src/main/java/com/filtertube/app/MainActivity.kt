@@ -227,6 +227,8 @@ fun AppRoot() {
     var shortsEnabled by remember { mutableStateOf(settings.shortsEnabled) }
     var filterLevel by remember { mutableStateOf(settings.filterLevel) }
     var userGender by remember { mutableStateOf(settings.userGender) }
+    // בחירת זמרים — נפתחת מהרדיו כשאין עדיין שום אות טעם.
+    var showArtistPicker by remember { mutableStateOf(false) }
     var pendingUpdate by remember { mutableStateOf<com.filtertube.app.data.UpdateChecker.Update?>(null) }
     LaunchedEffect(accountReady) {
         if (!accountReady) return@LaunchedEffect
@@ -254,8 +256,12 @@ fun AppRoot() {
     LaunchedEffect(Unit) {
         // רושמים את הגרסה ביומן כדי שכל דוח אבחון יגיד באיזו בנייה הוא נוצר.
         com.filtertube.app.data.Diagnostics.log(
-            "גרסה ${BuildConfig.VERSION_NAME} (בנייה ${BuildConfig.VERSION_CODE})"
+            "גרסה ${BuildConfig.VERSION_NAME}"
         )
+        // חבילה, טביעת אצבע ומזהה לקוח — בכל דוח אבחון, לא רק אחרי כישלון.
+        // שגיאת התחברות של גוגל נפתרת בהשוואה של שלושת אלה למה שרשום
+        // בפרויקט, ובלעדיהם כל דיון עליה מתחיל מלנחש.
+        com.filtertube.app.data.GoogleAuth.logSignInConfig(context)
         try {
             // לקוחות מקבלים רק גרסאות יציבות; גרסאות טסט רק אם הופעל ערוץ בדיקות.
             val u = com.filtertube.app.data.UpdateChecker.check(includeTestBuilds = settings.testChannel)
@@ -301,12 +307,147 @@ fun AppRoot() {
     val showBottomBar = currentRoute in mainRoutes
 
     fun openVideo(video: Video) {
+        // מסך הנגן של FilterTube מציג וידאו. הדגל נקבע בכל מסלול הפעלה ולא
+        // פעם אחת: המשתמש עובר בין FilterTube ל-FilterMusic באותה הפעלה,
+        // וערך שנשאר מהניגון הקודם היה מכבה וידאו או מדליק אותו בטעות.
+        com.filtertube.app.playback.Playback.setMusicMode(false)
         navController.navigate("player") { launchSingleTop = true }
         scope.launch {
             try {
                 com.filtertube.app.playback.Playback.start(context, controller, video)
             } catch (e: Exception) {
                 android.widget.Toast.makeText(context, "שגיאה בניגון: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                navController.popBackStack("player", inclusive = true)
+            }
+        }
+    }
+
+    /**
+     * ניגון קבצים מהטלפון עצמו — כל הרשימה הנראית נמסרת לנגן כתור.
+     *
+     * לא עובר דרך openVideo: אין כאן מזהה יוטיוב לפתור, אין רשימה לבנה לבדוק,
+     * והמעבר האוטומטי לפריט הבא צריך לעבוד גם כשהמסך סגור.
+     */
+    fun openLocalList(items: List<Video>, index: Int) {
+        com.filtertube.app.playback.Playback.setMusicMode(false)
+        navController.navigate("player") { launchSingleTop = true }
+        scope.launch {
+            try {
+                com.filtertube.app.playback.Playback.startLocalQueue(context, controller, items, index)
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(context, "שגיאה בניגון הקובץ: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                navController.popBackStack("player", inclusive = true)
+            }
+        }
+    }
+
+    /**
+     * רדיו אישי: בונה תחנה שלמה ומנגן אותה, במקום לנגן סרטון בודד ולתת
+     * למנוע ה"קשורים" של יוטיוב להמשיך משם.
+     */
+    /** מנגן תחנה מוכנה. משותף לרדיו האישי ולרדיו-משיר. */
+    fun playStation(station: List<Video>, emptyMessage: String) {
+        com.filtertube.app.playback.Playback.setMusicMode(false)
+        val first = station.firstOrNull()
+        if (first == null) {
+            android.widget.Toast.makeText(context, emptyMessage, android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+        navController.navigate("player") { launchSingleTop = true }
+        scope.launch {
+            try {
+                com.filtertube.app.playback.Playback.start(context, controller, first, station)
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(
+                    context, "שגיאה בניגון: ${e.message}", android.widget.Toast.LENGTH_LONG,
+                ).show()
+                navController.popBackStack("player", inclusive = true)
+            }
+        }
+    }
+
+    /**
+     * מנגן רשימה החל מ-[index], עם ההמשך שלה כתור.
+     *
+     * זה מה ש-FilterMusic משתמש בו: לחיצה על השיר החמישי ברשימה מנגנת אותו
+     * וממשיכה לשישי, כמו בכל אפליקציית מוזיקה. הפריטים שלפניו לא נכנסים
+     * לתור — הם כבר "מאחור".
+     */
+    fun playFromList(items: List<Video>, index: Int) {
+        if (items.isEmpty()) return
+        val start = index.coerceIn(0, items.lastIndex)
+        playStation(items.drop(start), "לא הצלחנו להתחיל את הניגון")
+    }
+
+    /**
+     * ניגון מתוך FilterMusic — נפתח בנגן המוזיקה ולא בנגן הווידאו.
+     *
+     * אותו תור ואותו שירות ניגון; רק המסך שונה. מסך וידאו שנפתח מתוך
+     * אפליקציית מוזיקה היה שובר את התחושה שזה מצב אחר.
+     */
+    fun playFromListInMusic(items: List<Video>, index: Int) {
+        if (items.isEmpty()) return
+        // FilterMusic היא אפליקציית מוזיקה: אין שום סיבה להוריד מסלול וידאו
+        // שאיש לא רואה. זה גם מה שגרם לתקיעות דווקא כאן.
+        com.filtertube.app.playback.Playback.setMusicMode(true)
+        val start = index.coerceIn(0, items.lastIndex)
+        val station = items.drop(start)
+        val first = station.firstOrNull() ?: return
+        navController.navigate("musicplayer") { launchSingleTop = true }
+        scope.launch {
+            try {
+                com.filtertube.app.playback.Playback.start(context, controller, first, station)
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(
+                    context, "שגיאה בניגון: ${e.message}", android.widget.Toast.LENGTH_LONG,
+                ).show()
+                navController.popBackStack("musicplayer", inclusive = true)
+            }
+        }
+    }
+
+    /**
+     * רדיו מהשיר שמתנגן — תור באותו סגנון, לא בהכרח אותו זמר.
+     */
+    fun openRadioFromSong(seed: Video) {
+        scope.launch {
+            android.widget.Toast.makeText(context, "בונה תחנה מ״${seed.title.take(28)}״…", android.widget.Toast.LENGTH_SHORT).show()
+            val station = runCatching { com.filtertube.app.data.PersonalRadio.stationForSeed(context, seed) }
+                .getOrNull().orEmpty()
+            playStation(
+                station,
+                "לא מצאנו מספיק שירים באותו סגנון בערוצים המאושרים",
+            )
+        }
+    }
+
+    fun openRadio() {
+        scope.launch {
+            // התקנה טרייה: אין לייקים, אין היסטוריה, ואין ממה להסיק טעם.
+            // שאלה אחת עדיפה על "רדיו אישי" שהוא בעצם הפיד הכללי.
+            if (com.filtertube.app.data.PersonalRadio.needsArtistPicker(context)) {
+                showArtistPicker = true
+                return@launch
+            }
+            val station = runCatching { com.filtertube.app.data.PersonalRadio.buildStation(context) }
+                .getOrNull().orEmpty()
+            val first = station.firstOrNull()
+            if (first == null) {
+                android.widget.Toast.makeText(
+                    context,
+                    "עוד אין ממה לבנות תחנה — תשמע כמה שירים ותסמן לב, ואז זה יתחיל להכיר אותך",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+                return@launch
+            }
+            com.filtertube.app.playback.Playback.setMusicMode(false)
+            navController.navigate("player") { launchSingleTop = true }
+            try {
+                com.filtertube.app.playback.Playback.start(context, controller, first, station)
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(
+                    context, "שגיאה בניגון: ${e.message}", android.widget.Toast.LENGTH_LONG,
+                ).show()
                 navController.popBackStack("player", inclusive = true)
             }
         }
@@ -375,6 +516,24 @@ fun AppRoot() {
                 durationSec = data.durationSec,
                 viewCount = data.viewCount,
             ),
+        )
+    }
+
+    if (showArtistPicker) {
+        ArtistPickerDialog(
+            onDismiss = { showArtistPicker = false },
+            onSaved = { chosen ->
+                showArtistPicker = false
+                scope.launch {
+                    val station = runCatching {
+                        com.filtertube.app.data.PersonalRadio.buildStation(context)
+                    }.getOrNull().orEmpty()
+                    playStation(
+                        station,
+                        "בחרנו ${chosen.size} זמרים, אבל עוד אין מהם סרטונים בפיד — נסה שוב בעוד רגע",
+                    )
+                }
+            },
         )
     }
 
@@ -466,10 +625,11 @@ fun AppRoot() {
                 HomeScreen(
                     onVideoClick = ::openVideo,
                     onSearch = { navController.navigate("search") },
-                    onAccount = { navController.navigate("ytlogin") },
                     onInbox = { navController.navigate("newvideos") },
-                    onChannels = { navController.navigate("channels") },
+                    onStartRadio = ::openRadio,
+                    onOpenDownloads = { navController.navigate("collection/downloads") },
                     onLive = { navController.navigate("live") },
+                    onOpenMusic = { navController.navigate("music") },
                 )
             }
             composable("shorts") { ShortsScreen(onOpenShort = { navController.navigate("shortsPlayer") }, onSearch = { navController.navigate("search") }) }
@@ -529,11 +689,47 @@ fun AppRoot() {
                 LibraryScreen(
                     onOpenCollection = { type -> navController.navigate("collection/$type") },
                     onOpenSubscriptions = { navController.navigate("subscriptions") },
+                    onOpenChannels = { navController.navigate("channels") },
                     onOpenPlaylist = { name -> navController.navigate("playlist/${Uri.encode(name)}") },
                     onOpenLogin = { navController.navigate("ytlogin") },
+                    onOpenDeviceMedia = { navController.navigate("devicemedia") },
                 )
             }
             composable("ytlogin") { AccountLoginScreen(onDone = { navController.popBackStack() }) }
+            composable("music") {
+                com.filtertube.app.ui.music.FilterMusicScreen(
+                    onExit = { navController.popBackStack() },
+                    onPlay = ::playFromListInMusic,
+                    onOpenSettings = { navController.navigate("musicsettings") },
+                    activeId = playerUi.mediaId,
+                    miniPlayer = {
+                        com.filtertube.app.ui.MiniPlayer(
+                            controller = controller,
+                            ui = playerUi,
+                            onOpen = { navController.navigate("musicplayer") { launchSingleTop = true } },
+                        )
+                    },
+                )
+            }
+            composable("musicplayer") {
+                com.filtertube.app.ui.music.MusicPlayerScreen(
+                    controller = controller,
+                    ui = playerUi,
+                    onCollapse = { navController.popBackStack() },
+                    onOpenSettings = { navController.navigate("musicsettings") },
+                )
+            }
+            composable("musicsettings") {
+                com.filtertube.app.ui.music.MusicSettingsScreen(
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable("devicemedia") {
+                DeviceMediaScreen(
+                    onBack = { navController.popBackStack() },
+                    onPlayList = ::openLocalList,
+                )
+            }
             composable("collection/{type}") { entry ->
                 CollectionScreen(
                     type = entry.arguments?.getString("type").orEmpty(),
@@ -567,6 +763,7 @@ fun AppRoot() {
                     controller = controller,
                     ui = playerUi,
                     onCollapse = { navController.popBackStack() },
+                    onRadioFromSong = ::openRadioFromSong,
                 )
             }
         }

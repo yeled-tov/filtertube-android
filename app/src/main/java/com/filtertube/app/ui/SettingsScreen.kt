@@ -292,15 +292,27 @@ private fun SettingsSectionHeader(title: String) {
         color = ThemeState.accent,
         fontSize = 12.sp,
         fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp),
+        modifier = Modifier.padding(start = 20.dp, end = 16.dp, top = 18.dp, bottom = 6.dp),
     )
 }
 
+/**
+ * שורת הגדרה כקלף.
+ *
+ * קודם השורות היו טקסט על הרקע, בלי שום גבול ביניהן. במסך ארוך זה נקרא
+ * כרשימת מילים ולא כרשימת כפתורים: אין רמז ויזואלי לאן בדיוק אפשר להקיש
+ * ואיפה נגמרת שורה אחת ומתחילה הבאה. הרקע והפינות המעוגלות הם בדיוק הרמז
+ * הזה, וגם מגדירים את שטח ההקשה.
+ */
 @Composable
 private fun SettingsRow(icon: ImageVector, accent: Color, title: String, subtitle: String, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+        modifier = Modifier.fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 3.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(ThemeState.card)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(ThemeState.surface),
@@ -451,14 +463,41 @@ private fun FilterSettingsSheet(
     onChangePassword: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val settings = remember { com.filtertube.app.data.SettingsStore(context) }
     var level by remember { mutableStateOf(filterLevel) }
     var shorts by remember { mutableStateOf(shortsEnabled) }
     var gender by remember { mutableStateOf(userGender) }
+    var audioOnly by remember { mutableStateOf(settings.audioOnlyMode) }
     SettingsSheet("הגדרות סינון", onDismiss) {
         Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 LevelRow(1, "מחמיר", "מוזיקה כאודיו בלבד · ״דתי לייט״ מוסתר", level) { level = 1; onFilterLevelChange(1) }
                 LevelRow(2, "רגיל", "הכל כווידאו · ״דתי לייט״ מוסתר", level) { level = 2; onFilterLevelChange(2) }
                 LevelRow(3, "דתי לייט", "כולל ״דתי לייט״ (אודיו בלבד)", level) { level = 3; onFilterLevelChange(3) }
+
+                HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
+
+                // ── אודיו בלבד ────────────────────────────────────────────
+                // מעל רמות הסינון ולא בתוכן: זו בחירה שחלה על כל רמה, ומי
+                // שמחפש אותה מחפש אותה כאן — ליד ההחלטה מה מותר לראות.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("אודיו בלבד", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            "בכל רמות הסינון. גם ההורדות יהיו אודיו בלבד — " +
+                                "אחרת אפשר היה לצפות בסרטון מהגלריה.",
+                            color = ThemeState.subtext, fontSize = 11.sp, lineHeight = 15.sp,
+                        )
+                    }
+                    Switch(
+                        checked = audioOnly,
+                        onCheckedChange = { audioOnly = it; settings.audioOnlyMode = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White, checkedTrackColor = Color(0xFFFF0000),
+                            uncheckedThumbColor = ThemeState.subtext, uncheckedTrackColor = Color(0xFF333333),
+                        ),
+                    )
+                }
 
                 HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
 
@@ -614,7 +653,7 @@ private fun AboutDialog(onDismiss: () -> Unit) {
                 Text("פלטפורמת וידאו מסוננת — מציגה אך ורק ערוצים מאושרים. כל התוכן מסונן לפי רמת הסינון שנבחרה.",
                     color = ThemeState.subtext2, fontSize = 13.sp, lineHeight = 18.sp)
                 Spacer(Modifier.height(10.dp))
-                Text("גרסה ${BuildConfig.VERSION_NAME} (בנייה ${BuildConfig.VERSION_CODE})",
+                Text("גרסה ${BuildConfig.VERSION_NAME}",
                     color = ThemeState.subtext, fontSize = 13.sp)
                 Spacer(Modifier.height(8.dp))
                 Text("נוצרה על־ידי FilterPhone", color = ThemeState.text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -767,7 +806,7 @@ private fun UpdateSheet(onDismiss: () -> Unit) {
                     Text("יש גרסה חדשה — ${u.displayName}", color = ThemeState.text,
                         fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
-                    Text("הגרסה שלך: ${BuildConfig.VERSION_NAME} (בנייה ${BuildConfig.VERSION_CODE})",
+                    Text("הגרסה שלך: ${BuildConfig.VERSION_NAME}",
                         color = ThemeState.subtext, fontSize = 11.5.sp)
                     Spacer(Modifier.height(10.dp))
                     Text("מה השתנה", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)

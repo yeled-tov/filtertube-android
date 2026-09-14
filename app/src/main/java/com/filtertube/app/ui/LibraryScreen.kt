@@ -15,12 +15,14 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Recommend
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,21 +37,45 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filtertube.app.data.AccountStore
 import com.filtertube.app.data.ChannelsRepository
+import com.filtertube.app.data.Diagnostics
 import com.filtertube.app.data.GoogleAuth
+import com.google.firebase.auth.FirebaseAuth
 import com.filtertube.app.data.InnerTube
+import com.filtertube.app.data.InnerTubeOAuth
 import com.filtertube.app.data.LibraryStore
+import com.filtertube.app.data.SubChannel
+import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeAccountRepository
+import com.filtertube.app.data.YouTubeMusicApi
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.common.api.ApiException
 import kotlinx.coroutines.launch
 
+/**
+ * מריץ שלב סנכרון אחד ומחזיר רשימה ריקה אם הוא נפל.
+ *
+ * קודם כל שלבי הסנכרון ישבו בתוך try אחד: הראשון שנפל ביטל את כל מה
+ * שאחריו, המסך הראה "שגיאה בסנכרון" בלי לומר באיזה שלב, והיומן לא רשם
+ * דבר — ולכן גם שורות OAUTH לא הופיעו בו מעולם. כאן כל מקור נכשל לבד,
+ * ואומר ביומן את שמו ואת סוג התקלה.
+ */
+private suspend fun <T> syncStep(name: String, block: suspend () -> List<T>): List<T> =
+    try {
+        block()
+    } catch (e: Exception) {
+        Diagnostics.log("SYNC גוגל · $name: נכשל — ${e.javaClass.simpleName}: ${e.message}")
+        emptyList()
+    }
+
 @Composable
 fun LibraryScreen(
     onOpenCollection: (String) -> Unit,
     onOpenSubscriptions: () -> Unit,
+    onOpenChannels: () -> Unit,
     onOpenPlaylist: (String) -> Unit,
     onOpenLogin: () -> Unit,
+    onOpenDeviceMedia: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -65,6 +91,12 @@ fun LibraryScreen(
     var history by remember { mutableStateOf(store.history()) }
     var recs by remember { mutableStateOf(store.recommendations()) }
     val localHist = remember(version) { store.localHistory() }   // היסטוריית צפייה מקומית
+    var channelCount by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        channelCount = runCatching {
+            com.filtertube.app.data.ChannelsRepository.getCachedChannelsFast(context).size
+        }.getOrDefault(0)
+    }
     val loggedIn = accountStore.isLoggedIn   // מחושב מחדש בכל composition (מתעדכן בחזרה מהתחברות)
 
     var account by remember { mutableStateOf<GoogleSignInAccount?>(GoogleAuth.lastAccount(context)) }
@@ -84,33 +116,156 @@ fun LibraryScreen(
         scope.launch {
             try {
                 val token = GoogleAuth.accessToken(context, a, googleSession)
+                Diagnostics.log("SYNC גוגל: אסימון התקבל (${token.length} תווים)")
                 // רק תוכן מהערוצים המאושרים — לייק/מנוי שלא ברשימה הלבנה לא נשמר ולא מוצג
                 val approved = ChannelsRepository.getChannels(context).map { it.youtubeChannelId }.toHashSet()
-                val liked = YouTubeAccountRepository.likedVideos(token).filter { it.channelId in approved }
+
+                // ── מיוזיק קודם, מאותה סיבה כמו בסנכרון הדפדפן ────────────
+                // "מוזיקה שאהבתי" היא תת-קבוצה של אותו פלייליסט LL. מי שמושך
+                // את שתיהן ושומר כל אחת במלואה מקבל את השירים גם ב-FilterTube
+                // וגם ב-FilterMusic. כאן המיוזיק קובעת מה שיר, ומה שנשאר
+                // ב"אהבתי" אחרי החיסור הוא הווידאו.
+                //
+                // fillOwners משלים את הערוץ שבאמת העלה: ביוטיוב מיוזיק הקישור
+                // שמתחת לשיר מצביע על האמן, ולכן ההשוואה לרשימה הלבנה נכשלה
+                // על כל שיר.
+                val musicRaw = syncStep("מיוזיק") {
+                    val fromBoth = (
+                        YouTubeMusicApi.likedSongsRaw(token) + InnerTubeOAuth.likedMusic(token)
+                        ).distinctBy { it.id }
+                    // distinctBy לפני ההשלמה ולא אחריה: שני המקורות מחזירים
+                    // את אותם שירים, והשלמת ערוץ היא בקשה לכל פריט.
+                    InnerTube.fillOwners(fromBoth) { it.channelId !in approved }
+                }
+                val musicLiked = musicRaw.filter { it.channelId in approved }
+                Diagnostics.log("SYNC גוגל · מיוזיק: ${musicRaw.size} התקבלו · ${musicLiked.size} מאושרים")
                 if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
-                store.setYoutubeLikes(liked); ytLikes = liked
-                val subList = YouTubeAccountRepository.subscriptions(token).filter { it.channelId in approved }
+                if (musicLiked.isNotEmpty()) store.setMusicLikes(musicLiked)
+                val musicIds = musicRaw.mapTo(HashSet()) { it.id }
+
+                val likedRaw = syncStep("אהבתי") {
+                    YouTubeAccountRepository.likedVideos(token)
+                }
+                val liked = likedRaw.filter { it.id !in musicIds && it.channelId in approved }
+                Diagnostics.log("SYNC גוגל · אהבתי: ${likedRaw.size} התקבלו · ${liked.size} מאושרים")
                 if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
-                store.setSubscriptions(subList); subs = subList
-                status = "סונכרנו ${liked.size} לייקים ו-${subList.size} מנויים (מאושרים בלבד) ✓"
+                if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
+
+                // ── המנויים נשמרים במלואם, כולל הלא-מאושרים ───────────────
+                // קודם הם נזרקו כאן, והמשתמש ראה רשימה קטועה בלי שום רמז
+                // שחסר בה משהו. עכשיו הרשימה מלאה, ומסך המנויים מציג את
+                // הלא-מאושרים באפור ומאפשר לבקש להוסיף אותם.
+                //
+                // זה לא פותח שום פרצה: הרשימה הלבנה נאכפת בכניסה לערוץ
+                // ובניגון, לא בשמירה. ערוץ לא מאושר אינו ניתן לפתיחה.
+                val subList = syncStep("מנויים") {
+                    YouTubeAccountRepository.subscriptions(token)
+                }
+                Diagnostics.log(
+                    "SYNC גוגל · מנויים: ${subList.size} התקבלו · " +
+                        "${subList.count { it.channelId in approved }} מאושרים",
+                )
+                if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
+                if (subList.isNotEmpty()) { store.setSubscriptions(subList); subs = subList }
+
+                // ── המסלול השלישי ─────────────────────────────────────────
+                // אותו אסימון של החשבון שכבר במכשיר, מול השרת הפנימי של
+                // יוטיוב — זה שכן מחזיק היסטוריה. אם הוא נענה, אפשר להביא
+                // הכל בלי שהמשתמש יקליד סיסמה אף פעם.
+                val oauthHistory = syncStep("היסטוריה") {
+                    InnerTubeOAuth.history(token)
+                }.filter { it.channelId in approved }
+                if (oauthHistory.isNotEmpty()) {
+                    store.setHistory(oauthHistory); history = oauthHistory
+                }
+
+                status = "סונכרנו ${liked.size} לייקים · ${musicLiked.size} שירים ממיוזיק · " +
+                    "${subList.size} מנויים · ${oauthHistory.size} בהיסטוריה ✓"
             } catch (e: Exception) {
+                Diagnostics.log("SYNC גוגל: ${e.javaClass.simpleName}: ${e.message}")
                 status = "שגיאה בסנכרון: ${e.message}"
             } finally { syncing = false }
         }
     }
 
-    // סנכרון מלא דרך InnerTube — היסטוריה והמלצות מותאמות
+    /**
+     * סנכרון מלא דרך העוגיות של הדפדפן — **הכול בפעולה אחת**.
+     *
+     * ## למה זה המסלול הראשי ולא גיבוי
+     * ההתחברות עם גוגל תלויה בהגדרת OAuth בצד גוגל (לקוח אנדרואיד עם
+     * טביעת האצבע של האפליקציה). כשההגדרה חסרה, Play Services מחזיר
+     * DEVELOPER_ERROR ואי אפשר לעשות דבר בקוד כדי לעקוף את זה.
+     *
+     * המסלול הזה לא דורש שום הגדרה: הזדהות SAPISIDHASH מהעוגיות שהמשתמש
+     * כבר נתן בהתחברות בדפדפן. הוא מביא היסטוריה, המלצות, לייקים, מנויים
+     * ומוזיקה שאהבת — כלומר את כל מה שההתחברות עם גוגל הייתה אמורה להביא,
+     * ועוד היסטוריה שהיא ממילא לא יכולה.
+     */
     fun syncInnerTube() {
         if (!accountStore.isLoggedIn) return
-        syncing = true; status = "מסנכרן היסטוריה והמלצות..."
+        syncing = true; status = "מסנכרן את החשבון שלך..."
         scope.launch {
             try {
                 val approved = ChannelsRepository.getChannels(context).map { it.youtubeChannelId }.toHashSet()
-                val hist = InnerTube.history(accountStore.cookies).filter { it.channelId.isEmpty() || it.channelId in approved }
+                // ערוץ שלא זוהה נפסל. באפליקציית רשימה לבנה "לא ידוע" אינו
+                // "מותר", ו-InnerTube מחזירה לא מעט פריטים שלא הצליחה לחלץ
+                // להם מזהה ערוץ — כלומר זו הדרך העיקרית שבה תוכן לא מאושר
+                // יכול היה להגיע לספרייה ומשם לנגן.
+                val hist = InnerTube.history(accountStore.cookies).filter { it.channelId in approved }
                 store.setHistory(hist); history = hist
-                val rec = InnerTube.recommendations(accountStore.cookies).filter { it.channelId.isEmpty() || it.channelId in approved }
+                val rec = InnerTube.recommendations(accountStore.cookies).filter { it.channelId in approved }
                 store.setRecommendations(rec); recs = rec
-                status = "סונכרנו ${hist.size} בהיסטוריה ו-${rec.size} המלצות ✓"
+
+                // ── לייקים, מנויים ומוזיקה — אותן עוגיות, אותה פעולה ──────
+                // כל מקור מדווח שלוש מספרים: כמה הגיעו, כמה נפלו כי לא זוהה
+                // להם ערוץ, וכמה נשארו אחרי הרשימה הלבנה. "התחבר והכל נשאר
+                // ריק" יכול לנבוע מכל אחד מהשלושה, ובלי הפירוט אי אפשר לדעת
+                // מאיזה.
+                fun report(name: String, items: List<Video>): List<Video> {
+                    val noChannel = items.count { it.channelId.isBlank() }
+                    val kept = items.filter { it.channelId in approved }
+                    Diagnostics.log(
+                        "SYNC $name: ${items.size} התקבלו · $noChannel בלי מזהה ערוץ · " +
+                            "${kept.size} מאושרים",
+                    )
+                    return kept
+                }
+
+                // ── מוזיקה קודם, ובכוונה ──────────────────────────────────
+                // "מוזיקה שאהבתי" אינה רשימה נפרדת אצל יוטיוב אלא *תת-קבוצה*
+                // של אותו פלייליסט LL: שיר שסימנת במיוזיק מופיע גם ב"אהבתי"
+                // הרגיל. לכן מי שמושך את שתיהן בנפרד מקבל את אותם שירים
+                // פעמיים — וזה בדיוק הערבוב שנראה במכשיר.
+                //
+                // הפתרון: המיוזיק היא הקובעת מה שיר. מה שהיא החזירה הולך
+                // ל-FilterMusic, ומה שנשאר ב"אהבתי" אחרי החיסור הוא הווידאו
+                // האמיתי של FilterTube. החלוקה נעשית לפי הסיווג של יוטיוב
+                // עצמה, ולא לפי ניחוש שלנו.
+                val musicRaw = InnerTube.fillOwners(
+                    InnerTube.likedMusic(accountStore.cookies),
+                ) { it.channelId !in approved }
+                val music = report("מיוזיק", musicRaw)
+                if (music.isNotEmpty()) store.setMusicLikes(music)
+                val musicIds = musicRaw.mapTo(HashSet()) { it.id }
+
+                val likedRaw = InnerTube.fillOwners(
+                    InnerTube.likedVideos(accountStore.cookies),
+                ) { it.channelId.isBlank() }
+                val liked = report("אהבתי", likedRaw.filter { it.id !in musicIds })
+                if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
+
+                val allSubs = InnerTube.subscriptions(accountStore.cookies)
+                val subsFromCookies = allSubs.map { (id, name) -> SubChannel(id, name) }
+                Diagnostics.log(
+                    "SYNC מנויים: ${allSubs.size} התקבלו · " +
+                        "${allSubs.count { it.first in approved }} מאושרים",
+                )
+                if (subsFromCookies.isNotEmpty()) {
+                    store.setSubscriptions(subsFromCookies); subs = subsFromCookies
+                }
+
+                status = "סונכרן ✓ ${hist.size} בהיסטוריה · ${liked.size} לייקים · " +
+                    "${music.size} שירים ממיוזיק · ${subsFromCookies.size} מנויים · ${rec.size} המלצות"
             } catch (e: Exception) {
                 status = "שגיאה בסנכרון מלא: ${e.message}"
             } finally { syncing = false }
@@ -119,7 +274,10 @@ fun LibraryScreen(
 
     // סנכרון אוטומטי כשמתחברים (loggedIn עובר ל-true בחזרה ממסך ההתחברות)
     LaunchedEffect(loggedIn) {
-        if (loggedIn && store.history().isEmpty()) syncInnerTube()
+        // בעבר הסנכרון רץ רק כשההיסטוריה הייתה ריקה, ולכן מי שכבר היה לו
+        // משהו לא קיבל לעולם את הלייקים והמנויים. ההתחברות עצמה היא
+        // האירוע שמצדיק משיכה — לא מצב הספרייה.
+        if (loggedIn) syncInnerTube()
     }
 
     val signInLauncher = rememberLauncherForActivityResult(
@@ -127,6 +285,13 @@ fun LibraryScreen(
     ) { result ->
         try {
             val acct = GoogleSignIn.getSignedInAccountFromIntent(result.data).getResult(ApiException::class.java)
+            // ── התפקיד היחיד של הכרטיס הזה: למשוך נתונים מיוטיוב ─────────
+            // ניסיתי לתלות כאן גם יצירת חשבון דרך גוגל, וזה הפך כפתור עובד
+            // לכפתור שנכשל תמיד: אותה זרימה דרשה idToken, ו-idToken דורש
+            // לקוח OAuth מסוג Android שאינו קיים בפרויקט.
+            //
+            // יצירת חשבון דרך גוגל נמצאת במסך הפתיחה, בזרימה נפרדת. תקלה
+            // בהגדרת OAuth פוגעת רק בה, ולא גוררת איתה תכונה שעובדת.
             if (GoogleAuth.bindToCurrentFirebaseAccount(context, acct) == null) {
                 GoogleAuth.signOut(context)
                 status = "יש להתחבר קודם לחשבון FilterTube"
@@ -162,11 +327,15 @@ fun LibraryScreen(
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            if (account != null) account?.email ?: "מחובר" else "חיבור לחשבון יוטיוב",
+                            if (account != null) account?.email ?: "מחובר" else "חיבור גוגל",
                             color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
-                        Text("מושך את הלייקים והמנויים שלך", color = ThemeState.subtext, fontSize = 12.sp)
+                        Text(
+                            if (account != null) "לייקים ומנויים מיוטיוב"
+                            else "בחירת חשבון בלחיצה — מביא לייקים ומנויים",
+                            color = ThemeState.subtext, fontSize = 12.sp,
+                        )
                     }
                     if (syncing) CircularProgressIndicator(color = Color(0xFFFF0000), strokeWidth = 2.dp,
                         modifier = Modifier.size(20.dp))
@@ -206,9 +375,17 @@ fun LibraryScreen(
                     Icon(Icons.Default.Sync, null, tint = ThemeState.accent, modifier = Modifier.size(26.dp))
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(if (loggedIn) "סנכרון מלא פעיל" else "סנכרון מלא עם יוטיוב",
+                        Text(if (loggedIn) "חיבור דפדפן — פעיל" else "חיבור דפדפן",
                             color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        Text("היסטוריה והמלצות מותאמות אישית", color = ThemeState.subtext, fontSize = 12.sp)
+                        // מסביר למה קיימת התחברות *שנייה*, כי בלי זה זה נראה
+                        // כמו כפילות מיותרת: החיבור עם גוגל מביא לייקים ומנויים
+                        // דרך ה-API הרשמי, אבל היסטוריית צפייה והמלצות פשוט לא
+                        // קיימות שם — הן דורשות התחברות מלאה בדפדפן.
+                        Text(
+                            "התחברות עם מייל וסיסמה בדפדפן. מביא היסטוריה, המלצות, " +
+                                "לייקים, מנויים ומוזיקה שאהבת — כולל מה שחיבור גוגל לא יכול.",
+                            color = ThemeState.subtext, fontSize = 11.5.sp, lineHeight = 15.sp,
+                        )
                     }
                 }
                 Spacer(Modifier.height(10.dp))
@@ -246,8 +423,14 @@ fun LibraryScreen(
                 LibTile("מנויים", subs.size, Icons.Default.Subscriptions, Color(0xFFA855F7)) { onOpenSubscriptions() }
             }
             Spacer(Modifier.height(14.dp))
+            // "ערוצים מאושרים" חי כאן ולא בתפריט צף שמסתתר מאחורי אווטאר במסך
+            // הבית. הספרייה היא "התוכן שלי", ומעקב אחרי ערוץ הוא בדיוק זה —
+            // ממש ליד "מנויים", שהוא אותו רעיון בצד של יוטיוב.
+            LibRow("ערוצים מאושרים", channelCount, Icons.Default.Tv, ThemeState.accent) { onOpenChannels() }
             LibRow("היסטוריית צפייה", localHist.size, Icons.Default.History, Color(0xFFFF6D00)) { onOpenCollection("history") }
             LibRow("מומלצים מיוטיוב", recs.size, Icons.Default.Recommend, Color(0xFF00BFA5)) { onOpenCollection("recs") }
+            // FilterTube יודעת לנגן גם מה שכבר על הטלפון, לא רק מה שהיא הורידה.
+            LibRow("במכשיר שלי", -1, Icons.Default.PhoneAndroid, Color(0xFF3B82F6)) { onOpenDeviceMedia() }
         }
 
         // אלבומים
@@ -305,7 +488,8 @@ private fun LibRow(title: String, count: Int, icon: ImageVector, accent: Color, 
         Spacer(Modifier.width(12.dp))
         Text(title, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f))
-        Text("$count", color = ThemeState.subtext, fontSize = 13.sp)
+        // count שלילי = לשורה אין מונה (כמו "במכשיר שלי", שנספר רק אחרי סריקה).
+        if (count >= 0) Text("$count", color = ThemeState.subtext, fontSize = 13.sp)
     }
 }
 

@@ -9,6 +9,13 @@ import android.net.Uri
 import android.os.Environment
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -29,6 +36,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Favorite
@@ -92,6 +100,8 @@ import com.filtertube.app.data.GoogleAuth
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.StreamData
+import com.filtertube.app.data.bestDownloadableVideo
+import com.filtertube.app.data.downloadableTracks
 import com.filtertube.app.data.StreamTrack
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeAccountRepository
@@ -105,6 +115,7 @@ fun PlayerScreen(
     controller: MediaController?,
     ui: PlayerUiState,
     onCollapse: () -> Unit,
+    onRadioFromSong: (Video) -> Unit = {},
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -191,6 +202,7 @@ fun PlayerScreen(
         OnVideoPlayerScreen(
             controller = controller, ui = ui, activity = activity,
             onCollapse = onCollapse, onFullscreen = { isFullscreen = true },
+            onRadioFromSong = onRadioFromSong,
         )
         return
     }
@@ -302,10 +314,15 @@ fun PlayerScreen(
                     ),
                 )
             }
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-                Text(fmtTime(ui.position), color = ThemeState.subtext2, fontSize = 11.sp)
-                Spacer(Modifier.weight(1f))
-                Text(fmtTime(ui.duration), color = ThemeState.subtext2, fontSize = 11.sp)
+            // גם שורת הזמנים חייבת להיות LTR, לא רק הסרגל: ב-RTL הילד
+            // הראשון מרונדר בימין, ולכן "0:00" הופיע בימין והזמן הכולל
+            // בשמאל — הפוך ממה שכל נגן בעולם עושה.
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                    Text(timeLtr(fmtTime(ui.position)), color = ThemeState.subtext2, fontSize = 11.sp)
+                    Spacer(Modifier.weight(1f))
+                    Text(timeLtr(fmtTime(ui.duration)), color = ThemeState.subtext2, fontSize = 11.sp)
+                }
             }
         }
 
@@ -541,11 +558,15 @@ private fun FullscreenVideo(
                             modifier = Modifier.size(38.dp))
                     }
                 }
+                // ה-align חייב להישאר על ילד ישיר של ה-Box: CompositionLocalProvider
+                // אינו BoxScope, ולכן Modifier.align לא היה נפתר בתוכו.
+                Box(modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter)) {
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(fmtTime(ui.position), color = ThemeState.text, fontSize = 11.sp)
+                    Text(timeLtr(fmtTime(ui.position)), color = ThemeState.text, fontSize = 11.sp)
                     Box(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
                         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                             Slider(
@@ -558,8 +579,10 @@ private fun FullscreenVideo(
                             )
                         }
                     }
-                    Text(fmtTime(ui.duration), color = ThemeState.text, fontSize = 11.sp)
+                    Text(timeLtr(fmtTime(ui.duration)), color = ThemeState.text, fontSize = 11.sp)
                     IconButton(onClick = onExit) { Icon(Icons.Default.FullscreenExit, "צא ממסך מלא", tint = ThemeState.text) }
+                }
+                }
                 }
             }
         }
@@ -723,10 +746,18 @@ private fun PlayerOverflowMenu(
 private fun DownloadDialog(context: Context, data: StreamData, videoId: String, onDismiss: () -> Unit) {
     val video = Video(videoId, data.title, data.uploaderName, data.channelId,
         data.thumbnailUrl ?: "", System.currentTimeMillis())
+    // שתי סיבות נפרדות לחסום וידאו, והמשתמש צריך לדעת איזו מהן חלה עליו:
+    // בחירה שלו (אפשר לכבות בהגדרות) מול מדיניות התוכן (אי אפשר).
+    val audioOnlyMode = remember { com.filtertube.app.data.SettingsStore(context).audioOnlyMode }
+    val policyAudioOnly = remember(data.channelId) {
+        com.filtertube.app.data.DownloadEngine.audioOnlyFor(context, video)
+    }
     // הורדה דרך המנוע המהיר (רב-חיבורי) — מוסיף לתור ב״מנהל הורדות״
-    fun enqueueDl(url: String, isAudio: Boolean) {
+    fun enqueueDl(url: String, isAudio: Boolean, audioUrl: String? = null) {
         LibraryStore(context).addDownload(video)
-        com.filtertube.app.data.DownloadEngine.enqueue(context, video, url, isAudio, data.streamUserAgent)
+        com.filtertube.app.data.DownloadEngine.enqueue(
+            context, video, url, isAudio, data.streamUserAgent, audioUrl,
+        )
         Toast.makeText(context, "נוסף לתור ההורדות ⚡", Toast.LENGTH_SHORT).show()
         onDismiss()
     }
@@ -742,19 +773,46 @@ private fun DownloadDialog(context: Context, data: StreamData, videoId: String, 
                     Text("לא זמין", color = ThemeState.subtext, fontSize = 12.sp)
                 }
                 HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
+                // ── מצב אודיו בלבד ────────────────────────────────────────
+                // כשהמשתמש בחר אודיו בלבד, הורדת וידאו סותרת את הבחירה: הוא
+                // יוכל לצפות בסרטון מגלריית המכשיר. לכן האפשרות לא מוסתרת
+                // בשקט אלא מוסברת — אחרת זה נראה כמו תקלה.
+                if (policyAudioOnly) {
+                    Text("וידאו", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (audioOnlyMode) {
+                            "מצב אודיו בלבד פעיל, ולכן הורדת וידאו חסומה. " +
+                                "אפשר לכבות אותו בהגדרות ← רמת סינון."
+                        } else {
+                            "התוכן הזה מוגדר לאודיו בלבד, ולכן הוא מתנגן ויורד כפס קול בלבד."
+                        },
+                        color = ThemeState.subtext, fontSize = 12.sp, lineHeight = 17.sp,
+                    )
+                    return@Column
+                }
                 Text("וידאו (כולל קול)", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                // מציגים רק זרמים משולבים (muxed) שכוללים קול — בלי איכויות אילמות
-                // ובלי שידור חי (height==0, לא ניתן להורדה).
-                val withSound = data.tracks.filter { it.audioUrl == null && it.height > 0 }
-                if (withSound.isEmpty()) {
+                // כל האיכויות שניתן להוריד עם קול — לא רק הזרמים המשולבים.
+                //
+                // עד עכשיו הוצגו כאן רק זרמים שיוטיוב מגיש כבר עם קול, ומנוע
+                // ה-iOS — המהיר ביותר, זה שמנצח כמעט תמיד — מחזיר אך ורק
+                // DASH. כלומר הרשימה הייתה ריקה והופיע "לא זמין", ובפועל אפשר
+                // היה להוריד רק אודיו. עכשיו זרם DASH יורד יחד עם האודיו שלו
+                // ומתמזג ל-MP4 אחד.
+                val downloadable = data.downloadableTracks()
+                if (downloadable.isEmpty()) {
                     Text("לא זמין להורדה עם קול", color = ThemeState.subtext, fontSize = 12.sp)
                 } else {
-                    withSound.forEach { t ->
-                        DownloadRow(t.label) { enqueueDl(t.videoUrl, false) }
+                    downloadable.forEach { t ->
+                        DownloadRow(if (t.hasSound) t.label else "${t.label}  ·  ממוזג") {
+                            enqueueDl(t.videoUrl, false, t.audioUrl)
+                        }
                     }
-                    Text("כל ההורדות כוללות קול (וידאו עד 720p).",
+                    Text(
+                        "הכל נשמר בתיקייה ${com.filtertube.app.data.DownloadEngine.FOLDER} " +
+                            "בזיכרון הראשי, וניתן לניגון גם מתוך האפליקציה.",
                         color = ThemeState.subtext, fontSize = 11.sp,
-                        modifier = Modifier.padding(top = 6.dp))
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
                 }
             }
         },
@@ -855,6 +913,7 @@ private fun OnVideoPlayerScreen(
     activity: Activity?,
     onCollapse: () -> Unit,
     onFullscreen: () -> Unit,
+    onRadioFromSong: (Video) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -900,12 +959,14 @@ private fun OnVideoPlayerScreen(
     var forcedAudio by remember(ui.mediaId, currentData?.channelId) { mutableStateOf(false) }
     LaunchedEffect(ui.mediaId, currentData?.channelId) {
         val cid = currentData?.channelId
-        forcedAudio = if (cid.isNullOrBlank()) false else {
+        // מצב אודיו גלובלי גובר על הכל ולא תלוי בערוץ — אין טעם לחכות
+        // לרשימת הערוצים כדי לדעת שהמשתמש ביקש אודיו בלבד.
+        forcedAudio = if (sb.audioOnlyMode) true else if (cid.isNullOrBlank()) false else {
             val cat = runCatching {
                 com.filtertube.app.data.ChannelsRepository.getChannels(context)
                     .firstOrNull { it.youtubeChannelId == cid }?.category
             }.getOrNull()
-            Playback.forcedAudio(cat, sb.filterLevel)
+            Playback.forcedAudio(cat, sb.filterLevel, sb.audioOnlyMode)
         }
     }
     fun setAudio(audio: Boolean) = replaceCurrent(if (forcedAudio) true else audio, qualityIndex)
@@ -983,16 +1044,19 @@ private fun OnVideoPlayerScreen(
 
                     // bottom seek
                     Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            Text(fmtTime(ui.position), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.weight(1f))
-                            Text(fmtTime(ui.duration), color = Color(0xB3FFFFFF), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                Text(timeLtr(fmtTime(ui.position)), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.weight(1f))
+                                Text(timeLtr(fmtTime(ui.duration)), color = Color(0xB3FFFFFF), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                         WaveSeekBar(
                             position = ui.position, duration = ui.duration,
                             shape = sb.seekBarShape, thickness = sb.seekBarThickness, glow = sb.seekBarGlow,
                             onSeek = { f -> controller.seekTo((f * ui.duration.coerceAtLeast(0L)).toLong()) },
                             modifier = Modifier.fillMaxWidth(),
+                            animated = ui.isPlaying,
                         )
                         Row(modifier = Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(modifier = Modifier.clip(RoundedCornerShape(50)).clickable {
@@ -1028,8 +1092,31 @@ private fun OnVideoPlayerScreen(
                 com.filtertube.app.data.LibraryBadges.setLiked(ui.mediaId ?: "", liked)
                 syncLikeToYoutube(context, scope, ui.mediaId ?: "", liked)
                 if (liked && sb.autoDownloadLikes && sb.premiumActive && currentData != null) {
-                    com.filtertube.app.data.DownloadEngine.enqueue(context, currentVideo(), currentData.bestVideoUrl, false, currentData.streamUserAgent)
-                    Toast.makeText(context, "מוריד אוטומטית ⚡", Toast.LENGTH_SHORT).show()
+                    // bestVideoUrl לבדו הוא זרם וידאו-בלבד כשאין זרם משולב,
+                    // וההורדה האוטומטית ייצרה קובץ אילם. bestDownloadableVideo
+                    // מחזיר גם את זרם האודיו הנלווה, והמנוע ממזג אותם ל-MP4.
+                    // אותה מדיניות כמו בדיאלוג ההורדה: לא רק ההגדרה הגלובלית
+                    // אלא גם תוכן שמוגדר אודיו-בלבד.
+                    val mustBeAudio = sb.audioOnlyMode ||
+                        com.filtertube.app.data.DownloadEngine.audioOnlyFor(context, currentVideo())
+                    val track = if (mustBeAudio) null else currentData.bestDownloadableVideo()
+                    if (mustBeAudio) {
+                        // מצב אודיו בלבד — מורידים את פס הקול, לא את הסרטון.
+                        com.filtertube.app.data.DownloadEngine.enqueue(
+                            context, currentVideo(),
+                            currentData.bestAudioUrl ?: currentData.bestVideoUrl, true,
+                            currentData.streamUserAgent,
+                        )
+                        Toast.makeText(context, "מוריד אודיו אוטומטית ⚡", Toast.LENGTH_SHORT).show()
+                    } else if (track == null) {
+                        Toast.makeText(context, "אין איכות וידאו שניתן להוריד", Toast.LENGTH_SHORT).show()
+                    } else {
+                        com.filtertube.app.data.DownloadEngine.enqueue(
+                            context, currentVideo(), track.videoUrl, false,
+                            currentData.streamUserAgent, track.audioUrl,
+                        )
+                        Toast.makeText(context, "מוריד אוטומטית ⚡", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "אהבתי", tint = if (liked) ThemeState.accent else ThemeState.text) }
             IconButton(onClick = { showSheet = true }) { Icon(Icons.Default.Tune, "הגדרות נגן", tint = ThemeState.text) }
@@ -1048,6 +1135,14 @@ private fun OnVideoPlayerScreen(
             ActionPill("הורדה", Icons.Default.Download, false, Modifier.weight(1f)) {
                 if (sb.premiumActive) showDownload = true
                 else Toast.makeText(context, "הורדות — פיצ'ר פרימיום. ראה הגדרות → Premium", Toast.LENGTH_LONG).show()
+            }
+            // "רדיו" מהשיר שמתנגן — תור באותו סגנון. הזרע נבנה עם מזהה
+            // הערוץ האמיתי מ-currentData; ל-currentVideo() אין אחד, ובלעדיו
+            // התחנה מאבדת את אות ה"אותה קטגוריה".
+            ActionPill("רדיו", Icons.Default.Radio, false, Modifier.weight(1f)) {
+                val seed = currentVideo().copy(channelId = currentData?.channelId.orEmpty())
+                if (seed.id.isBlank()) Toast.makeText(context, "אין שיר פעיל", Toast.LENGTH_SHORT).show()
+                else onRadioFromSong(seed)
             }
             ActionPill(if (audioMode) "וידאו" else "אודיו", Icons.Default.GraphicEq, audioMode, Modifier.weight(1f)) {
                 if (forcedAudio) Toast.makeText(context, "תוכן זה זמין באודיו בלבד", Toast.LENGTH_SHORT).show()
@@ -1101,6 +1196,18 @@ private fun OnVideoPlayerScreen(
 //  2) פס התקדמות — ישר / גלי / מזוגזג + עובי + זוהר (מראה זהה למוקאפ)
 // ---------------------------------------------------------------------------
 
+/**
+ * מידות הגל בפס ההתקדמות — ב-dp, כמו ב-Material ובנגן של מטרוליסט.
+ *
+ * משרעת קטנה ואורך גל רחב: זה ההבדל בין "פס שנושם" לבין שיניים. הגזירה
+ * הקודמת מגובה הרכיב נתנה משרעת כפולה מזו ואורך גל של שני שליש ממנה.
+ */
+private val WAVE_AMPLITUDE = 4.dp
+private val WAVE_LENGTH = 24.dp
+
+/** זמן מעבר של מחזור גל שלם. איטי מספיק כדי לא למשוך את העין מהתוכן. */
+private const val WAVE_PERIOD_MS = 2000
+
 @Composable
 private fun WaveSeekBar(
     position: Long,
@@ -1112,11 +1219,42 @@ private fun WaveSeekBar(
     modifier: Modifier = Modifier,
     // preview = true מצייר נקודת אמצע קבועה לתצוגה מקדימה בגיליון ההגדרות
     previewFrac: Float? = null,
+    // הגל זז רק כשמשהו באמת מתנגן. בתצוגה המקדימה הוא זז תמיד, אחרת אי אפשר
+    // לראות בהגדרות מה בחרת.
+    animated: Boolean = true,
 ) {
     val frac = previewFrac ?: if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
     val accent = ThemeState.accent
     val accent2 = ThemeState.accent2
     val track = Color(0x47FFFFFF)
+
+    // ── הגל נע ────────────────────────────────────────────────────────────
+    // קודם זה היה גל מצויר וקפוא: הצורה הייתה גלית, אבל שום דבר לא זז, אז
+    // זה נראה כמו קישוט ולא כמו חיווי חי. הפאזה מסתובבת ברציפות, וכיוון
+    // התנועה הוא כיוון ההתקדמות.
+    //
+    // המשרעת נכנסת ויוצאת בהדרגה ולא בבת אחת: קפיצה מגל ליישר ברגע שעוצרים
+    // נראית כמו תקלה. כשעוצרים הפס פשוט מתיישר.
+    val phase = if (shape == 0) {
+        0f
+    } else {
+        val motion = rememberInfiniteTransition(label = "wave")
+        val running by motion.animateFloat(
+            initialValue = 0f,
+            targetValue = 2f * Math.PI.toFloat(),
+            animationSpec = infiniteRepeatable(
+                animation = tween(WAVE_PERIOD_MS, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "phase",
+        )
+        if (animated) running else 0f
+    }
+    val ampScale by animateFloatAsState(
+        targetValue = if (animated && shape != 0) 1f else 0f,
+        animationSpec = tween(400),
+        label = "amp",
+    )
     Canvas(
         modifier = modifier.fillMaxWidth().height(28.dp)
             .pointerInput(duration, previewFrac) {
@@ -1128,16 +1266,30 @@ private fun WaveSeekBar(
     ) {
         val w = size.width
         val midY = size.height / 2f
-        val amp = if (shape == 0) 0f else size.height * 0.22f
-        val waves = 22f
+        // ── מידות הגל ─────────────────────────────────────────────────────
+        // קודם הגל נגזר מגובה הרכיב (22% ממנו) ומספר המחזורים היה קבוע —
+        // עשרים ושניים על פני כל הרוחב. יצא גל צפוף וגבוה שנראה כמו שיניים
+        // ולא כמו חיווי. כאן המידות ב-dp ולא באחוזים, כמו ב-Material ובנגן
+        // של מטרוליסט: אורך גל רחב ומשרעת קטנה — קרוב לישר, רק נושם.
+        val amp = if (shape == 0) 0f else WAVE_AMPLITUDE.toPx() * ampScale
+        val wavelength = WAVE_LENGTH.toPx()
+        val waves = if (wavelength > 0f) w / wavelength else 1f
         val stroke = thickness.dp.toPx().coerceAtLeast(2f)
         val twoPi = 2f * Math.PI.toFloat()
 
         fun yAt(x: Float): Float = when (shape) {
-            1 -> midY + amp * kotlin.math.sin(x / w * waves * twoPi)
+            1 -> midY + amp * kotlin.math.sin(x / w * waves * twoPi - phase)
             2 -> {
                 val period = w / waves
-                val t = if (period > 0f) (x % period) / period else 0f
+                // ההזזה נעשית על ציר ה-x ולא על הזווית: לגל משולש אין סינוס
+                // להזיז, ותזוזה של מחזור שלם היא בדיוק מה שגורם לו "לזחול".
+                val shifted = x - phase / twoPi * period
+                val t = if (period > 0f) {
+                    val r = (shifted % period + period) % period
+                    r / period
+                } else {
+                    0f
+                }
                 val tri = if (t < 0.5f) t * 2f else (1f - t) * 2f
                 midY - amp + tri * 2f * amp
             }
@@ -1150,7 +1302,17 @@ private fun WaveSeekBar(
 
         val progX = w * frac
         val brush = Brush.linearGradient(listOf(accent, accent2), start = Offset(0f, 0f), end = Offset(w, 0f))
-        drawPath(pathTo(w), color = track, style = Stroke(width = stroke, cap = StrokeCap.Round))
+        // ── רק מה שנוגן מתגלגל ────────────────────────────────────────────
+        // כל הפס היה גלי, כולל החלק שעוד לא נוגן, וזה הכפיל את הרעש הוויזואלי
+        // בלי להוסיף מידע. כמו במטרוליסט וב-Material: הגל הוא החלק שכבר עבר,
+        // ומה שנותר הוא קו ישר.
+        drawLine(
+            color = track,
+            start = Offset(progX, midY),
+            end = Offset(w, midY),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
         if (glow) drawPath(pathTo(progX), brush = brush, style = Stroke(width = stroke * 2.8f, cap = StrokeCap.Round), alpha = 0.28f)
         drawPath(pathTo(progX), brush = brush, style = Stroke(width = stroke, cap = StrokeCap.Round))
         if (glow) drawCircle(color = accent, radius = (thickness + 7).dp.toPx(), center = Offset(progX, yAt(progX)), alpha = 0.30f)

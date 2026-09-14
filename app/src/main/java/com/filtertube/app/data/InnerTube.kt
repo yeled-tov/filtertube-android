@@ -3,6 +3,8 @@ package com.filtertube.app.data
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -32,7 +34,7 @@ object InnerTube {
     private const val USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 
-    private val http = OkHttpClient.Builder()
+    private val http = Http.newBuilder()
         .connectTimeout(6, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .build()
@@ -46,10 +48,19 @@ object InnerTube {
     private fun sapisid(cookies: String): String? =
         Regex("(?:^|;\\s*)(?:SAPISID|__Secure-3PAPISID)=([^;]+)").find(cookies)?.groupValues?.get(1)
 
-    private fun authHeader(cookies: String): String? {
+    /**
+     * כותרת ההזדהות של גוגל, חתומה על **מארח היעד**.
+     *
+     * ## הבאג שזה תיקן
+     * החתימה היא sha1 של "חותמת_זמן SAPISID origin", ו-origin חייב להיות
+     * אותו origin שנשלח בכותרת Origin. חתמתי תמיד על www.youtube.com גם
+     * כששלחתי ל-music.youtube.com — והשרת החזיר 400 על כל בקשה למיוזיק.
+     * זה מה שהפיל את משיכת "מוזיקה שאהבתי".
+     */
+    private fun authHeader(cookies: String, origin: String = ORIGIN): String? {
         val sid = sapisid(cookies) ?: return null
         val ts = System.currentTimeMillis() / 1000
-        return "SAPISIDHASH ${ts}_${sha1("$ts $sid $ORIGIN")}"
+        return "SAPISIDHASH ${ts}_${sha1("$ts $sid $origin")}"
     }
 
     private fun context(): JSONObject = JSONObject().apply {
@@ -78,10 +89,20 @@ object InnerTube {
                 .post(body.toString().toRequestBody(jsonMedia))
             runCatching {
                 http.newCall(builder.build()).execute().use { resp ->
-                    if (!resp.isSuccessful) return@use null
+                    if (!resp.isSuccessful) {
+                        // בלי זה כישלון רשת וכישלון פענוח נראים זהים לגמרי:
+                        // שניהם "0 התקבלו". הגוף מקוצץ כי גוגל מחזירה הסבר
+                        // קצר ומועיל בתחילתו.
+                        val why = resp.body?.string().orEmpty().take(160)
+                        Diagnostics.log("INNERTUBE $endpoint: HTTP ${resp.code} · $why")
+                        return@use null
+                    }
                     resp.body?.string()?.let { JSONObject(it) }
                 }
-            }.getOrNull()
+            }.getOrElse {
+                Diagnostics.log("INNERTUBE $endpoint: נכשל — ${it.message}")
+                null
+            }
         }
 
     // ── תכונות ───────────────────────────────────────────────────────────
@@ -96,6 +117,167 @@ object InnerTube {
         val resp = post("browse", cookies, JSONObject().put("browseId", "FEwhat_to_watch")) ?: return emptyList()
         return collectVideos(resp)
     }
+
+    /**
+     * הסרטונים שסומנו ב"אהבתי" ביוטיוב.
+     *
+     * "VLLL" הוא מזהה הדפדוף של פלייליסט ה-Liked videos. הוא זמין דרך אותה
+     * הזדהות בעוגיות שכבר משמשת להיסטוריה, ולכן לא נדרש כאן שום OAuth,
+     * שום מפתח API ושום הגדרה בצד גוגל.
+     */
+    suspend fun likedVideos(cookies: String): List<Video> {
+        val resp = post("browse", cookies, JSONObject().put("browseId", "VLLL"))
+            ?: return emptyList()
+        val items = collectVideos(resp)
+        if (items.isEmpty()) {
+            // תשובה תקינה שממנה לא חולץ כלום היא מקרה אחר לגמרי מבקשה
+            // שנכשלה, ובלי ההבחנה הזו שניהם נראים "0".
+            Diagnostics.log("INNERTUBE אהבתי: התשובה התקבלה אבל לא חולצו ממנה פריטים")
+        }
+        return items
+    }
+
+    /**
+     * הערוצים שהמשתמש מנוי אליהם.
+     *
+     * מוחזרים כזוגות (מזהה, שם). הפענוח מחפש browseId שמתחיל ב-UC בתוך
+     * הצומת של כל פריט — אותה גישה רקורסיבית שמשמשת בשאר הקובץ, ומאותה
+     * סיבה: מבנה התשובה של יוטיוב משתנה, מזהה ערוץ לא.
+     */
+    suspend fun subscriptions(cookies: String): List<Pair<String, String>> {
+        val resp = post("browse", cookies, JSONObject().put("browseId", "FEchannels"))
+            ?: return emptyList()
+        val out = LinkedHashMap<String, String>()
+        // walkAll ולא ה-walk הישן: זה בדיוק מה ששבר את המנויים. ה-walk הישן
+        // הפעיל את הקריאה החוזרת רק על רכיבי *סרטון*, וערוץ אינו סרטון —
+        // ולכן הלולאה הזו מעולם לא רצה אפילו פעם אחת.
+        walkAll(resp) { node ->
+            val id = node.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("browseEndpoint")?.optString("browseId")
+                ?: node.optJSONObject("browseEndpoint")?.optString("browseId")
+            if (id.isNullOrBlank() || !id.startsWith("UC") || out.containsKey(id)) return@walkAll
+            val name = textOf(node.optJSONObject("title"))
+                ?: textOf(node.optJSONObject("displayName"))
+                ?: return@walkAll
+            out[id] = name
+        }
+        return out.entries.map { it.key to it.value }
+    }
+
+    /**
+     * "מוזיקה שאהבתי" מיוטיוב מיוזיק, דרך אותן עוגיות.
+     *
+     * מסלול חלופי ל-YouTubeMusicApi שעובד עם access token. שניהם מגיעים
+     * לאותו פלייליסט; ההבדל הוא בזהות שמציגים — וזה מה שמאפשר למשוך את
+     * המוזיקה גם כשההתחברות עם גוגל לא זמינה.
+     */
+    suspend fun likedMusic(cookies: String): List<Video> = withContext(Dispatchers.IO) {
+        val musicOrigin = "https://music.youtube.com"
+        val auth = authHeader(cookies, musicOrigin) ?: return@withContext emptyList()
+        val body = JSONObject().apply {
+            put("browseId", "FEmusic_liked_videos")
+            put(
+                "context",
+                JSONObject().put(
+                    "client",
+                    JSONObject().apply {
+                        put("clientName", "WEB_REMIX")
+                        put("clientVersion", "1.20240103.01.00")
+                        put("hl", "he")
+                        put("gl", "IL")
+                    },
+                ),
+            )
+        }
+        val request = Request.Builder()
+            .url("https://music.youtube.com/youtubei/v1/browse?prettyPrint=false")
+            .header("Content-Type", "application/json")
+            .header("User-Agent", USER_AGENT)
+            .header("Cookie", cookies)
+            .header("Authorization", auth)
+            .header("X-Goog-AuthUser", "0")
+            .header("Origin", musicOrigin)
+            .header("Referer", "$musicOrigin/")
+            .header("X-Origin", musicOrigin)
+            .post(body.toString().toRequestBody(jsonMedia))
+            .build()
+        runCatching {
+            http.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    val why = resp.body?.string().orEmpty().take(160)
+                    Diagnostics.log("YT MUSIC (עוגיות): HTTP ${resp.code} · $why")
+                    return@use emptyList()
+                }
+                resp.body?.string()?.let { collectVideos(JSONObject(it)) }.orEmpty()
+            }
+        }.getOrElse {
+            Diagnostics.log("YT MUSIC (עוגיות): נכשל — ${it.message}")
+            emptyList()
+        }
+    }
+
+
+    /**
+     * מזהה הערוץ ה**אמיתי** שהעלה את הסרטון, מתוך videoDetails.
+     *
+     * ## למה זה נדרש
+     * ביוטיוב מיוזיק הטקסט שמתחת לשם השיר הוא ה*אמן*, ולא מי שהעלה: הקישור
+     * שם מצביע על ערוץ האמן האוטומטי ("Topic") או על ישות אמן שאין לה בכלל
+     * ערוץ. לכן הסינון מול הרשימה הלבנה נכשל על כל שיר — 25 הגיעו, 0 אושרו:
+     * הערוצים המאושרים הם המעלים, וההשוואה נעשתה מול האמן.
+     *
+     * הקריאה הזאת אינה דורשת הזדהות, ולכן היא גם לא תלויה בעוגיות שפג תוקפן.
+     */
+    suspend fun ownerChannel(videoId: String): Pair<String, String>? = withContext(Dispatchers.IO) {
+        val body = JSONObject().apply {
+            put("videoId", videoId)
+            put("contentCheckOk", true)
+            put("racyCheckOk", true)
+            put("context", JSONObject().put("client", JSONObject().apply {
+                put("clientName", CLIENT_NAME)
+                put("clientVersion", CLIENT_VERSION)
+                put("hl", "he")
+                put("gl", "IL")
+            }))
+        }
+        val req = Request.Builder()
+            .url("${BASE}player?prettyPrint=false")
+            .header("Content-Type", "application/json")
+            .header("User-Agent", USER_AGENT)
+            .post(body.toString().toRequestBody(jsonMedia))
+            .build()
+        runCatching {
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val details = resp.body?.string()
+                    ?.let(::JSONObject)?.optJSONObject("videoDetails") ?: return@use null
+                val cid = details.optString("channelId")
+                if (cid.isBlank()) null else cid to details.optString("author")
+            }
+        }.getOrNull()
+    }
+
+    /**
+     * משלים מזהה ערוץ אמיתי לפריטים ש[needsOwner] מסמן — בזה אחר זה, עד
+     * שישה במקביל, כדי לא להציף את יוטיוב בסנכרון של רשימה ארוכה.
+     *
+     * פריט שלא הצלחנו לזהות חוזר כמו שהוא, וממילא ייפסל בהמשך: "לא ידוע"
+     * אינו "מותר" באפליקציית רשימה לבנה.
+     */
+    suspend fun fillOwners(items: List<Video>, needsOwner: (Video) -> Boolean): List<Video> =
+        coroutineScope {
+            val gate = Semaphore(6)
+            items.map { video ->
+                async {
+                    if (!needsOwner(video)) return@async video
+                    val owner = gate.withPermit { ownerChannel(video.id) } ?: return@async video
+                    video.copy(
+                        channelId = owner.first,
+                        channelName = video.channelName.ifBlank { owner.second },
+                    )
+                }
+            }.map { it.await() }
+        }
 
     /** סימון/ביטול לייק אמיתי דרך InnerTube. */
     suspend fun rate(cookies: String, videoId: String, like: Boolean): Boolean {
@@ -271,38 +453,96 @@ object InnerTube {
     }
 
     // ── פירוש רקורסיבי ───────────────────────────────────────────────────
+    /**
+     * פענוח משותף של תשובת InnerTube.
+     *
+     * חשוף כדי ש-[InnerTubeOAuth] יפענח בדיוק אותו דבר: התשובה זהה, רק
+     * ההזדהות שונה. פענוח כפול היה נשבר בנפרד בכל עדכון של יוטיוב.
+     */
+    fun parseVideos(root: JSONObject): List<Video> = collectVideos(root)
+
+    /**
+     * מחלץ סרטונים מכל תשובה של InnerTube.
+     *
+     * ## למה זה לא מחפש שמות של רכיבים
+     * הגרסה הקודמת חיפשה ארבעה שמות קבועים — videoRenderer, compactVideoRenderer,
+     * gridVideoRenderer, playlistVideoRenderer. זה עבד עד שיוטיוב שינתה פריסות,
+     * ואז שלושה דברים נשברו בבת אחת בלי שאף בקשה נכשלה:
+     *
+     *   "אהבתי"  → עבר ל-lockupViewModel (הפריסה החדשה של פלייליסטים)
+     *   מיוזיק   → משתמש ב-musicResponsiveListItemRenderer מלכתחילה
+     *   מנויים   → ערוצים אינם סרטונים, ולכן ה-walk בכלל לא קרא להם
+     *
+     * היומן אמר "התשובה התקבלה אבל לא חולצו ממנה פריטים" — כלומר ההזדהות
+     * והרשת תקינות לגמרי, רק הקריאה לא ידעה לזהות את הצורה.
+     *
+     * לכן כאן לא בודקים שמות. עוברים על **כל** צומת בתשובה, ומי שאפשר לחלץ
+     * ממנו גם מזהה סרטון וגם כותרת — הוא סרטון. שינוי פריסה עתידי לא ישבור
+     * את זה, כי מזהה סרטון וכותרת הם מה שלא משתנה.
+     */
     private fun collectVideos(root: JSONObject): List<Video> {
         val out = LinkedHashMap<String, Video>()
-        walk(root) { vr ->
-            val id = vr.optString("videoId")
-            if (id.isNullOrEmpty() || out.containsKey(id)) return@walk
-            val title = textOf(vr.optJSONObject("title")) ?: return@walk
-            val channel = textOf(vr.optJSONObject("ownerText"))
-                ?: textOf(vr.optJSONObject("longBylineText"))
-                ?: textOf(vr.optJSONObject("shortBylineText")) ?: ""
-            val channelId = bylineChannelId(vr) ?: ""
-            val thumb = "https://i.ytimg.com/vi/$id/hqdefault.jpg"
-            // The regular player no longer consumes InnerTube related results;
-            // keep this parser conservative for callers that still use it.
-            if (!vr.optString("navigationEndpoint").contains("shorts", ignoreCase = true)) {
-                out[id] = Video(id, title, channel, channelId, thumb, System.currentTimeMillis())
+        walkAll(root) { node ->
+            val id = videoIdIn(node) ?: return@walkAll
+            if (out.containsKey(id)) return@walkAll
+            val title = titleIn(node) ?: return@walkAll
+            // Shorts נשארים בטאב שלהם ולא מתערבבים בספרייה.
+            if (node.optString("navigationEndpoint").contains("shorts", ignoreCase = true)) {
+                return@walkAll
             }
+            out[id] = Video(
+                id = id,
+                title = title,
+                channelName = channelNameIn(node).orEmpty(),
+                channelId = bylineChannelId(node).orEmpty(),
+                thumbnailUrl = "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+                publishedAt = System.currentTimeMillis(),
+            )
         }
         return out.values.toList()
     }
 
-    /** עובר רקורסיבית ומפעיל [onVideo] על כל videoRenderer / compactVideoRenderer / gridVideoRenderer. */
-    private fun walk(node: Any?, onVideo: (JSONObject) -> Unit) {
-        when (node) {
-            is JSONObject -> {
-                for (key in listOf("videoRenderer", "compactVideoRenderer", "gridVideoRenderer", "playlistVideoRenderer")) {
-                    node.optJSONObject(key)?.let(onVideo)
-                }
-                val keys = node.keys()
-                while (keys.hasNext()) walk(node.opt(keys.next()), onVideo)
-            }
-            is JSONArray -> for (i in 0 until node.length()) walk(node.opt(i), onVideo)
-        }
+    /** מזהה הסרטון, בכל אחת מהצורות שיוטיוב משתמשת בהן. */
+    private fun videoIdIn(node: JSONObject): String? {
+        node.optString("videoId").takeIf { it.isNotBlank() }?.let { return it }
+        node.optJSONObject("playlistItemData")?.optString("videoId")
+            ?.takeIf { it.isNotBlank() }?.let { return it }
+        // הפריסה החדשה: contentId עם סוג תוכן מפורש. בלי בדיקת הסוג היינו
+        // אוספים גם פלייליסטים וערוצים כאילו היו סרטונים.
+        val contentId = node.optString("contentId")
+        if (contentId.isNotBlank() &&
+            node.optString("contentType").contains("VIDEO", ignoreCase = true)
+        ) return contentId
+        return null
+    }
+
+    /** הכותרת — טקסט רגיל, פריסה חדשה, או עמודה ראשונה ברשימת מיוזיק. */
+    private fun titleIn(node: JSONObject): String? {
+        textOf(node.optJSONObject("title"))?.let { return it }
+        textOf(node.optJSONObject("headline"))?.let { return it }
+        node.optJSONObject("metadata")
+            ?.optJSONObject("lockupMetadataViewModel")
+            ?.optJSONObject("title")?.optString("content")
+            ?.takeIf { it.isNotBlank() }?.let { return it }
+        flexColumnText(node, 0)?.let { return it }
+        return null
+    }
+
+    private fun channelNameIn(node: JSONObject): String? =
+        textOf(node.optJSONObject("ownerText"))
+            ?: textOf(node.optJSONObject("longBylineText"))
+            ?: textOf(node.optJSONObject("shortBylineText"))
+            ?: flexColumnText(node, 1)
+
+    /** עמודה מתוך musicResponsiveListItemRenderer של יוטיוב מיוזיק. */
+    private fun flexColumnText(node: JSONObject, index: Int): String? {
+        val columns = node.optJSONArray("flexColumns") ?: return null
+        val runs = columns.optJSONObject(index)
+            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+            ?.optJSONObject("text")?.optJSONArray("runs") ?: return null
+        val sb = StringBuilder()
+        for (i in 0 until runs.length()) sb.append(runs.optJSONObject(i)?.optString("text").orEmpty())
+        return sb.toString().takeIf { it.isNotBlank() }
     }
 
     private fun textOf(obj: JSONObject?): String? {
@@ -313,6 +553,18 @@ object InnerTube {
             .takeIf { it.isNotEmpty() }
     }
 
+    /**
+     * מזהה הערוץ של פריט.
+     *
+     * ## למה יש כאן שלב שני
+     * שלושת השדות המוכרים (ownerText וחבריו) קיימים ברשימות רגילות, אבל
+     * **לא** ברשימות פלייליסט: playlistVideoRenderer מציג את שם היוצר
+     * במבנה אחר. התוצאה הייתה שכל הלייקים נמשכו בלי מזהה ערוץ, ואז נפסלו
+     * בסינון לרשימה הלבנה — כלומר ההתחברות "עבדה" ולא הוסיפה כלום.
+     *
+     * הנפילה לחיפוש רקורסיבי בתוך הפריט פותרת את זה בלי להיות תלויה במבנה
+     * מסוים, בדיוק כמו בשאר הקובץ.
+     */
     private fun bylineChannelId(vr: JSONObject): String? {
         for (key in listOf("ownerText", "longBylineText", "shortBylineText")) {
             val runs = vr.optJSONObject(key)?.optJSONArray("runs") ?: continue
@@ -322,6 +574,24 @@ object InnerTube {
                 if (!id.isNullOrEmpty() && id.startsWith("UC")) return id
             }
         }
-        return null
+        var found: String? = null
+        walkAll(vr) { node ->
+            if (found != null) return@walkAll
+            val id = node.optJSONObject("browseEndpoint")?.optString("browseId")
+            if (!id.isNullOrEmpty() && id.startsWith("UC")) found = id
+        }
+        return found
+    }
+
+    /** מעבר רקורסיבי על כל צומת, בלי לחפש מפתח מסוים. */
+    private fun walkAll(node: Any?, visit: (JSONObject) -> Unit) {
+        when (node) {
+            is JSONObject -> {
+                visit(node)
+                val keys = node.keys()
+                while (keys.hasNext()) walkAll(node.opt(keys.next()), visit)
+            }
+            is JSONArray -> for (i in 0 until node.length()) walkAll(node.opt(i), visit)
+        }
     }
 }

@@ -22,7 +22,7 @@ object BugReport {
     private const val API =
         "https://europe-west1-filter-tube-52d8e.cloudfunctions.net/submitBugReport"
 
-    private val http = OkHttpClient.Builder()
+    private val http = Http.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)

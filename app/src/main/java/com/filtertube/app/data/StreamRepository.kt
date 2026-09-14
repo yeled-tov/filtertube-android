@@ -1,6 +1,8 @@
 package com.filtertube.app.data
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -23,7 +25,24 @@ data class StreamTrack(
     val label: String,
     val videoUrl: String,
     val audioUrl: String?,
-)
+    /**
+     * ה-mimeType של זרם הווידאו, למשל "video/mp4; codecs=avc1.640028".
+     *
+     * נדרש להורדה: MediaMuxer של אנדרואיד יודע לארוז MP4 עם H.264 ו-AAC
+     * בלבד. זרמי webm (VP9 + Opus) של יוטיוב לא ניתנים למיזוג בדרך הזו,
+     * ולכן חייבים לדעת מה כל זרם *לפני* שמורידים אותו.
+     */
+    val mimeType: String = "",
+    /** ה-mimeType של זרם האודיו הנלווה, כשמדובר ב-DASH. */
+    val audioMimeType: String = "",
+) {
+    /** האם הזרם הזה כולל כבר קול (muxed) ולא צריך מיזוג. */
+    val hasSound: Boolean get() = audioUrl == null
+
+    /** האם הצמד וידאו+אודיו ניתן למיזוג ל-MP4 ע"י MediaMuxer. */
+    val muxableToMp4: Boolean
+        get() = mimeType.startsWith("video/mp4") && audioMimeType.startsWith("audio/mp4")
+}
 
 /**
  * האיכות שתנוגן כברירת מחדל — **מקור אמת יחיד** לבחירת האיכות.
@@ -36,6 +55,28 @@ data class StreamTrack(
  * ואחת ליומן האבחון — והן נפרדו זו מזו, כך שהיומן דיווח "360p [muxed]"
  * בזמן שהניגון בחר משהו אחר לגמרי.
  */
+/**
+ * האיכויות שאפשר באמת להוריד כקובץ אחד עם קול.
+ *
+ * זרם משולב כבר כולל קול. זרם DASH דורש מיזוג, ו-MediaMuxer יודע לארוז
+ * MP4 עם H.264+AAC בלבד — ולכן זרמי webm נשארים בחוץ. בלי הסינון הזה מסך
+ * ההורדה היה מציע איכויות שההורדה שלהן נכשלת או יוצאת אילמת.
+ */
+fun StreamData.downloadableTracks(): List<StreamTrack> =
+    tracks.filter { it.height > 0 && (it.hasSound || it.muxableToMp4) }
+        .distinctBy { it.height }
+        .sortedByDescending { it.height }
+
+/**
+ * האם יש כאן זרם משולב — וידאו וקול בקובץ אחד.
+ *
+ * זה ההבדל בין ניגון שמתחיל מיד לניגון שדורש מיזוג של שני מקורות בזמן אמת.
+ */
+fun StreamData.hasMuxedTrack(): Boolean = tracks.any { it.height > 0 && it.audioUrl == null }
+
+/** האיכות הגבוהה ביותר שניתנת להורדה עם קול. */
+fun StreamData.bestDownloadableVideo(): StreamTrack? = downloadableTracks().firstOrNull()
+
 fun StreamData.defaultTrackIndex(preferred: Int = 0): Int {
     if (tracks.isEmpty()) return 0
     val idx = if (preferred > 0) {
@@ -58,6 +99,13 @@ data class StreamData(
     val tracks: List<StreamTrack>,
     /** זרם האודיו הטוב ביותר — למצב אודיו בלבד */
     val bestAudioUrl: String?,
+    /**
+     * זרם האודיו החסכוני ביותר, כשיש כזה.
+     *
+     * קיים כדי שהגדרת "איכות שמע" תהיה אמיתית ולא תווית: בלי כתובת שנייה
+     * ביד, כל בחירה של המשתמש הייתה מנגנת בדיוק את אותו זרם.
+     */
+    val lowAudioUrl: String? = null,
     /** זרם וידאו משולב הטוב ביותר — להורדה */
     val bestVideoUrl: String,
     /** סרטונים קשורים — להפעלה אוטומטית (לפני סינון לרשימה הלבנה) */
@@ -66,12 +114,29 @@ data class StreamData(
      * ה-User-Agent שבו *חייבים* לנגן את כתובות הזרם.
      */
     val streamUserAgent: String? = null,
+    /**
+     * שם המנוע שהחזיר את הזרם הזה.
+     *
+     * נדרש להתאוששות: כשהנגן מקבל 403 על כתובת, אין טעם לבקש אותה שוב מאותו
+     * מנוע — הוא יחזיר בדיוק את אותה כתובת. עם השם אפשר לפסול אותו לניסיון
+     * הבא ולקבל כתובת ממקור אחר.
+     */
+    val resolvedBy: String = "",
 )
 
 object StreamRepository {
 
     private const val CACHE_TTL_MS = 5 * 60 * 1000L // 5 דקות TTL (כתובות YouTube חתומות פגות מהר)
     private const val MAX_CACHE_SIZE = 50
+
+    /**
+     * כמה מחכים לזרם משולב לפני שמסתפקים ב-DASH.
+     *
+     * NewPipe — המנוע היחיד שמחזיר זרם משולב — עונה בפועל ב-1.3–1.5 שניות.
+     * 2.5 שניות נותנות לו מרווח נוח בלי להשאיר את המשתמש תקוע אם הוא נופל:
+     * במקרה הגרוע מתחילים DASH ברבע השנייה שכבר עברה ממילא.
+     */
+    private const val MUXED_GRACE_MS = 2_500L
 
     private data class CachedStream(
         val data: StreamData,
@@ -83,6 +148,8 @@ object StreamRepository {
 
     private val resolverMap: Map<String, StreamResolver> = mapOf(
         "IOS" to InnerTubeResolver(InnerTubeClientType.IOS),
+        "TVHTML5_EMBED" to InnerTubeResolver(InnerTubeClientType.TVHTML5_EMBED),
+        "MWEB" to InnerTubeResolver(InnerTubeClientType.MWEB),
         "ANDROID_VR" to InnerTubeResolver(InnerTubeClientType.ANDROID_VR),
         "NewPipe" to NewPipeResolver()
     )
@@ -204,22 +271,49 @@ object StreamRepository {
         }
     }
 
-    private suspend fun resolveInternal(videoId: String): StreamData = coroutineScope {
+    /**
+     * חילוץ טרי, בלי מטמון ובלי איחוד בקשות, תוך פסילת מנוע מסוים.
+     *
+     * זה המסלול של ההתאוששות בנגן. getStream הרגיל היה מחזיר את אותה כתובת
+     * — או מהמטמון, או מבקשה מקבילה שכבר רצה — וזה בדיוק מה שלא רוצים אחרי
+     * ש-403 הוכיח שהכתובת ההיא מתה.
+     */
+    suspend fun resolveFresh(videoId: String, excludeResolver: String?): StreamData {
+        invalidateCache(videoId)
+        val data = resolveInternal(videoId, excludeResolver)
+        putCache(videoId, data)
+        return data
+    }
+
+    private suspend fun resolveInternal(
+        videoId: String,
+        excludeResolver: String? = null,
+    ): StreamData = coroutineScope {
         val t0 = System.currentTimeMillis()
         val priorityKeys = RemoteConfig.resolverPriority()
 
         // סינון זריז: בוחרים רק מנועים זמינים שאינם ב-cooldown
-        val activeResolvers = buildList {
-            for (key in priorityKeys) {
-                if (ResolverHealthMonitor.isAvailable(key) && RemoteConfig.isResolverEnabled(key, true)) {
-                    resolverMap[key]?.let { add(it) }
-                }
-            }
-            // אם כל המנועים המועדפים ב-cooldown, משתמשים ב-NewPipe כגיבוי ישיר
-            if (isEmpty()) {
-                resolverMap["NewPipe"]?.let { add(it) }
-            }
+        val enabled = priorityKeys.filter { RemoteConfig.isResolverEnabled(it, true) }
+        val healthy = enabled.filter { ResolverHealthMonitor.isAvailable(it) }
+
+        // ── מוצא אחרון ────────────────────────────────────────────────────
+        // כשכל המנועים בצינון בו-זמנית, "לא לנסות כלום" היא התוצאה הגרועה
+        // ביותר: המשתמש מקבל "כל המנועים נכשלו" תוך אפס מילישניות, ושום
+        // סרטון לא מתנגן עד שהצינון פג. וכל ניסיון כזה גם מאריך את הצינון,
+        // אז המצב הזה מנציח את עצמו.
+        //
+        // במקרה כזה מריצים בכל זאת, עם force שמדלג על בדיקת הצינון. מנוע
+        // שנכשל לאחרונה עדיין עדיף על שום מנוע.
+        val forced = healthy.isEmpty()
+        if (forced) {
+            Diagnostics.log("StreamRepository $videoId: כל המנועים בצינון — מנסים בכל זאת")
         }
+        val activeResolvers = (if (forced) enabled else healthy)
+            .mapNotNull { resolverMap[it] }
+            .filter { it.name != excludeResolver }
+            // פסילה שמרוקנת את הרשימה גרועה מאי-פסילה: עדיף לנסות שוב את
+            // אותו מנוע מאשר לא לנסות כלום.
+            .ifEmpty { activeFallback() }
 
         // כל המנועים רצים **במקביל**, והראשון שמצליח מנצח.
         //
@@ -229,18 +323,56 @@ object StreamRepository {
         //   IOS נכשל 642ms → VR נכשל 335ms → NewPipe הצליח 1943ms = 2922ms
         // במקביל, הסרטון עולה כזמן המנוע המהיר שהצליח, וכישלון של מנוע אחר
         // כבר לא עולה למשתמש כלום.
+        // ── מי "מנצח" ──────────────────────────────────────────────────────
+        // קודם לכן ניצח מי שענה ראשון, וזו הייתה המדידה הלא נכונה. InnerTube
+        // IOS עונה ב-250ms אבל מחזיר DASH בלבד — וידאו וקול בשני זרמים
+        // נפרדים. NewPipe עונה ב-1400ms ומחזיר זרם משולב (muxed) שכבר כולל
+        // קול. המהיר תמיד ניצח, ולכן:
+        //   • הנגן נאלץ למזג שני מקורות, והצליל יצא אחרי ~10 שניות במקום מיד
+        //   • ההורדה נאלצה להוריד שניים ולמזג — ומכיוון שהאודיו הנבחר היה
+        //     webm, שום איכות וידאו לא עברה את בדיקת ההורדה ונשאר רק אודיו
+        //
+        // "נפתר מהר" זה לא "מתנגן מהר". לכן זרם משולב מנצח מיד, וזרם DASH
+        // נשמר בצד כגיבוי שנכנס לתפקיד רק אם אין משולב תוך זמן סביר.
         val winner = CompletableDeferred<StreamData>()
+        val fallback = AtomicReference<StreamData?>(null)
+
         val attempts = activeResolvers.map { resolver ->
             launch(Dispatchers.IO) {
                 val rT0 = System.currentTimeMillis()
-                val result = runCatching { resolver.resolve(videoId) }.getOrNull()
-                if (result == null) {
-                    Diagnostics.log("StreamRepository $videoId: ${resolver.name} נכשל (${System.currentTimeMillis() - rT0}ms)")
-                } else if (winner.complete(result)) {
-                    Diagnostics.log(
-                        "StreamRepository $videoId: ${resolver.name} ניצח ב-${System.currentTimeMillis() - rT0}ms " +
-                            "(סה\"כ ${System.currentTimeMillis() - t0}ms) · ${trackSummary(result)}"
-                    )
+                // CancellationException נתפס בנפרד ולא נספר ככישלון.
+                //
+                // ברגע שמנוע אחד מנצח, כל השאר מבוטלים — וזה בדיוק התכנון.
+                // אבל runCatching בלע גם את הביטול והחזיר null, כך שהיומן
+                // הציג "NewPipe נכשל (1781ms)" בשורה אחת מתחת ל"NewPipe
+                // SUCCESS (1780ms)". שתי שורות סותרות על אותו חילוץ, וכל
+                // ניסיון לאבחן מהיומן התחיל מלנסות להבין מה מהן נכון.
+                val result = try {
+                    resolver.resolve(videoId, forced)?.copy(resolvedBy = resolver.name)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    Diagnostics.log("StreamRepository $videoId: ${resolver.name} בוטל — מנוע אחר כבר ניצח")
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
+                val ms = System.currentTimeMillis() - rT0
+                when {
+                    result == null ->
+                        Diagnostics.log("StreamRepository $videoId: ${resolver.name} נכשל (${ms}ms)")
+
+                    result.hasMuxedTrack() -> if (winner.complete(result)) {
+                        Diagnostics.log(
+                            "StreamRepository $videoId: ${resolver.name} ניצח ב-${ms}ms " +
+                                "(סה\"כ ${System.currentTimeMillis() - t0}ms) · ${trackSummary(result)}"
+                        )
+                    }
+
+                    else -> if (fallback.compareAndSet(null, result)) {
+                        Diagnostics.log(
+                            "StreamRepository $videoId: ${resolver.name} החזיר DASH ב-${ms}ms — " +
+                                "בגיבוי, ממתינים לזרם משולב · ${trackSummary(result)}"
+                        )
+                    }
                 }
             }
         }
@@ -251,6 +383,9 @@ object StreamRepository {
             // joinAll חוזר גם כשמנוע הצליח — כל הניסיונות פשוט הסתיימו. בלי
             // הבדיקה הזו נרשם "כל המנועים נכשלו" מיד אחרי "NewPipe ניצח".
             if (winner.isCompleted) return@launch
+            // אף מנוע לא החזיר זרם משולב, אבל יש DASH ביד. DASH איטי יותר
+            // להתחלה — הוא לא "כישלון".
+            fallback.get()?.let { winner.complete(it); return@launch }
             Diagnostics.log("StreamRepository $videoId: כל המנועים נכשלו ${System.currentTimeMillis() - t0}ms ✖")
             winner.completeExceptionally(
                 IllegalStateException("לא הצלחנו להפעיל את הסרטון. נסה שוב בעוד רגע."),
@@ -258,7 +393,16 @@ object StreamRepository {
         }
 
         val won = try {
-            winner.await()
+            // ההמתנה לזרם משולב חסומה בזמן: אם המנוע שמחזיר אותו תקוע, עדיף
+            // DASH מאשר מסך "טוען" פתוח.
+            withTimeoutOrNull(MUXED_GRACE_MS) { winner.await() }
+                ?: fallback.get()?.also {
+                    Diagnostics.log(
+                        "StreamRepository $videoId: לא הגיע זרם משולב תוך ${MUXED_GRACE_MS}ms — " +
+                            "מנגנים DASH מ-${it.resolvedBy}"
+                    )
+                }
+                ?: winner.await()
         } finally {
             // ברגע שיש מנצח אין טעם להמשיך לחכות לשאר.
             attempts.forEach { it.cancel() }
@@ -268,6 +412,9 @@ object StreamRepository {
         putCache(videoId, won)
         won
     }
+
+    private fun activeFallback(): List<StreamResolver> =
+        listOfNotNull(resolverMap["NewPipe"])
 
     /**
      * תקציר האיכויות — ברירת המחדל נלקחת מ-[Playback.defaultQuality], שהיא

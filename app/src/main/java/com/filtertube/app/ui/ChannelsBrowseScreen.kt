@@ -62,26 +62,32 @@ fun ChannelsBrowseScreen(onBack: () -> Unit, onOpenChannel: (String, String) -> 
     if (showRequest) ChannelRequestDialog(onDismiss = { showRequest = false })
 
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
-        DetailTopBar("ערוצים — עקוב לקבלת התראות", onBack)
+        // "בקשת ערוץ" עלתה לסרגל העליון וקיבלה כפתור קבוע. קודם היא הייתה
+        // באנר בתוך רשימה נגללת של 167 ערוצים — כלומר צריך היה לנחש שהיא שם.
+        DetailTopBar("ערוצים מאושרים", onBack) {
+            Row(
+                modifier = Modifier.clip(RoundedCornerShape(50))
+                    .background(ThemeState.accent)
+                    .clickable { showRequest = true }
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.AddCircleOutline, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(5.dp))
+                Text("בקש ערוץ", color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+            }
+        }
         if (channels.isEmpty()) {
             CenteredLoading("טוען ערוצים...")
         } else {
             val byCat = channels.groupBy { it.category }
             LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 4.dp, bottom = 96.dp)) {
-                item(key = "request_banner") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp, 12.dp, 16.dp, 4.dp)
-                            .clip(RoundedCornerShape(16.dp)).background(ThemeState.card)
-                            .clickable { showRequest = true }.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Default.AddCircleOutline, null, tint = ThemeState.accent, modifier = Modifier.size(26.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("בקש הוספת ערוץ", color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            Text("חסר לך ערוץ? שלח בקשה לאישור", color = ThemeState.subtext, fontSize = 12.sp)
-                        }
-                    }
+                item(key = "follow_hint") {
+                    Text(
+                        "עקוב אחרי ערוץ כדי לקבל התראה על סרטון חדש",
+                        color = ThemeState.subtext, fontSize = 12.sp,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp),
+                    )
                 }
                 sortedCategories(channels.map { it.category }).forEach { cat ->
                     val list = byCat[cat].orEmpty()

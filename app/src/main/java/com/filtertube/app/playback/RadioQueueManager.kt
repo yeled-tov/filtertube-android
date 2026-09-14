@@ -5,6 +5,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.Diagnostics
+import com.filtertube.app.data.PlaybackPriority
 import com.filtertube.app.data.FeedCache
 import com.filtertube.app.data.InnerTube
 import com.filtertube.app.data.SettingsStore
@@ -61,11 +62,36 @@ object RadioQueueManager {
     /**
      * מפעיל בניית תור רדיו ברקע באופן מידי.
      */
+    /**
+     * [preset] — רשימה שנקבעה מראש ומנוגנת כמו שהיא, לפני שמנוע ה"קשורים"
+     * נכנס לתמונה.
+     *
+     * זה מה שמפריד בין "רדיו אישי" לבין ניגון רגיל. בניגון רגיל התור נבנה
+     * מהסרטונים הקשורים של יוטיוב, וזה נכון — המשתמש בחר סרטון מסוים ורוצה
+     * עוד כמוהו. ברדיו אישי התחנה כבר נבנתה מהלייקים, מההיסטוריה ומהסגנון
+     * ([com.filtertube.app.data.PersonalRadio]), ואסור שמנוע ההמלצות של
+     * יוטיוב ידרוס אותה — בדיוק זה מה שקרה קודם, ולכן הרדיו לא נשמע אישי.
+     */
+    /**
+     * עוצר כל בנייה של תור שרצה כרגע.
+     *
+     * בלי זה, "סגור" במיני-נגן לא באמת סגר: stop() ו-clearMediaItems() ניקו
+     * את הנגן, אבל בניית התור המשיכה ברקע והוסיפה פריטים מיד אחרי — וזה
+     * נראה בדיוק כאילו השיר הבא עלה מעצמו.
+     */
+    fun cancel() {
+        currentQueueJob?.cancel()
+        currentQueueJob = null
+        activeQueueIds.clear()
+        Diagnostics.log("RADIO: בניית התור בוטלה")
+    }
+
     fun startQueue(
         context: Context,
         controller: MediaController?,
         currentVideo: Video,
-        scope: CoroutineScope
+        scope: CoroutineScope,
+        preset: List<Video> = emptyList(),
     ) {
         val c = controller ?: return
         currentQueueJob?.cancel()
@@ -77,8 +103,52 @@ object RadioQueueManager {
             // התור נבנה מיד אחרי play(), כלומר בדיוק כשהנגן ממלא באפר.
             // ממתינים שהניגון יתייצב לפני שמתחילים לחלץ עוד סרטונים.
             com.filtertube.app.data.PlaybackPriority.awaitIdle()
-            refillInternal(context, c, currentVideo)
+            if (preset.isNotEmpty()) {
+                enqueueAll(context, c, preset.filter { it.id != currentVideo.id })
+            } else if (SettingsStore(context).autoRadioQueue) {
+                refillInternal(context, c, currentVideo)
+            } else {
+                Diagnostics.log("RADIO: המשך אוטומטי כבוי בהגדרות — התור לא מתמלא")
+            }
         }
+    }
+
+    /**
+     * מוסיף רשימה נתונה לתור, בסדר שלה, בלי לדרג ובלי לסנן מחדש.
+     *
+     * הסדר נשמר בכוונה: התחנה כבר סודרה ב-PersonalRadio, ופתרון מקבילי היה
+     * מוסיף אותם לפי מי שסיים ראשון. לכן החילוץ מקבילי אבל ההוספה טורית.
+     */
+    private suspend fun enqueueAll(context: Context, c: MediaController, videos: List<Video>) {
+        if (videos.isEmpty()) return
+        val settings = SettingsStore(context)
+        val level = settings.filterLevel
+        val audioOnly = settings.audioOnlyMode
+        val preferredQuality = settings.preferredQuality
+        val catById = ChannelsRepository.getCachedChannelsFast(context)
+            .associate { it.youtubeChannelId to it.category }
+
+        var added = 0
+        for (video in videos.take(QUEUE_MAX)) {
+            // ממתינים לפני *כל* פריט, לא רק בתחילת הבנייה.
+            //
+            // היומן מהמכשיר תפס את זה במדויק:
+            //   23:42:46  RADIO אישי: 13 מתוך 23 סרטוני התחנה נוספו לתור
+            //   23:43:05  ⚠ עצירה 26610ms בשנייה 3
+            //
+            // עצירה של 26 שניות בשנייה השלישית של השיר. שלוש עשרה בקשות
+            // חילוץ בזו אחר זו, פלוס החימום מראש, הציפו את הרשת בדיוק כשהנגן
+            // ניסה למלא באפר. ההמתנה הייתה פעם אחת בלבד בתחילת הבנייה, ואחריה
+            // שום דבר לא עצר את המבול.
+            PlaybackPriority.awaitIdle()
+            val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull() ?: continue
+            activeQueueIds.add(video.id)
+            val audio = Playback.forcedAudio(catById[data.channelId] ?: catById[video.channelId], level, audioOnly)
+            val item = Playback.buildItem(data, video.id, audio, Playback.defaultQuality(data, preferredQuality))
+            withContext(Dispatchers.Main) { c.addMediaItem(c.mediaItemCount, item) }
+            added++
+        }
+        Diagnostics.log("RADIO אישי: $added מתוך ${videos.size} סרטוני התחנה נוספו לתור")
     }
 
     /**
@@ -110,6 +180,7 @@ object RadioQueueManager {
         refillMutex.withLock {
             val settings = SettingsStore(context)
             val level = settings.filterLevel
+            val audioOnly = settings.audioOnlyMode
             val preferredQuality = settings.preferredQuality
 
             val channels = ChannelsRepository.getCachedChannelsFast(context)
@@ -119,7 +190,10 @@ object RadioQueueManager {
 
             // 1. טעינת related סרטונים מ-InnerTube ברקע
             val relatedRaw = runCatching { InnerTube.related(currentVideo.id) }.getOrNull().orEmpty()
-                .filter { it.channelId.isEmpty() || it.channelId in allowedIds }
+                // ערוץ לא מזוהה נפסל — ראה ההסבר ב-LibraryScreen. כאן זה
+                // קריטי במיוחד: תור הרדיו מנגן אוטומטית, בלי שהמשתמש בוחר
+                // כל פריט בנפרד.
+                .filter { it.channelId in allowedIds }
             val relatedIds = relatedRaw.map { it.id }.toHashSet()
 
             // 2. טעינת feed מקומי
@@ -167,7 +241,7 @@ object RadioQueueManager {
                             val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull() ?: return@withPermit
 
                             activeQueueIds.add(video.id)
-                            val audio = Playback.forcedAudio(catById[data.channelId] ?: catById[video.channelId], level)
+                            val audio = Playback.forcedAudio(catById[data.channelId] ?: catById[video.channelId], level, audioOnly)
                             val item = Playback.buildItem(data, video.id, audio, Playback.defaultQuality(data, preferredQuality))
 
                             withContext(Dispatchers.Main) {

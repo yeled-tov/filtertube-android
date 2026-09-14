@@ -1,6 +1,7 @@
 package com.filtertube.app.data
 
 import android.util.Xml
+import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -26,7 +27,7 @@ import java.util.concurrent.TimeUnit
 
 object YouTubeRepository {
 
-    private val httpClient = OkHttpClient.Builder()
+    private val httpClient = Http.newBuilder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
@@ -72,7 +73,7 @@ object YouTubeRepository {
      * נכשלו. וזו גם הסיבה שהחיפוש נהיה איטי — האינדקס המקומי התרוקן,
      * ולכן כל חיפוש נאלץ ליפול ל-NewPipe במקום לענות מיד.
      */
-    private const val FEED_CONCURRENCY = 8
+    private const val FEED_CONCURRENCY = 6
 
     /** מעל זה אין טעם להמשיך לשאוב עמודי חיפוש — המסך ממילא לא מציג יותר. */
     private const val ENOUGH_RESULTS = 40
@@ -98,8 +99,37 @@ object YouTubeRepository {
         // נרשם ליומן האבחון ולא רק ל-Logcat: כשערוצים נופלים בשקט זה נראה
         // כמו "הפיד קטן משום מה" בלי שום רמז למה.
         if (answered < targets.size) {
-            Diagnostics.log("FEED: $answered מתוך ${targets.size} ערוצים החזירו סרטונים")
+            val codes = feedFailures.entries.sortedByDescending { it.value }
+                .joinToString(", ") { "HTTP ${it.key}×${it.value}" }
+                .ifBlank { "ללא תגובת שרת (רשת)" }
+            Diagnostics.log(
+                "FEED: $answered מתוך ${targets.size} ערוצים החזירו סרטונים · $codes",
+            )
+            // ── מתי 404 באמת אומר "הערוץ לא קיים" ────────────────────────
+            // כשהרשת עצמה נופלת, יוטיוב מחזירה 404 להמון ערוצים בבת אחת —
+            // וביומן הופיעה רשימה של 159 "ערוצים מחוקים" שכולם תקינים
+            // לחלוטין. דיווח כזה גרוע מכלום: הוא שולח למחוק ערוצים טובים.
+            //
+            // 404 נחשב אמין רק כשרוב הערוצים כן ענו, כלומר הרשת עובדת
+            // והכישלון ייחודי לערוץ עצמו.
+            val networkHealthy = answered > targets.size / 2
+            if (deadChannels.isNotEmpty() && networkHealthy) {
+                Diagnostics.log(
+                    // עם המזהה, לא רק עם השם: כדי לתקן ערוץ צריך לדעת *איזה*
+                    // מזהה שגוי, והשם לבדו שולח לחפש אותו מחדש ידנית.
+                    "FEED: ערוצים עם מזהה שגוי או שנמחקו — " +
+                        deadChannels.joinToString(", ") { "$it (${deadIds[it] ?: "?"})" },
+                )
+            } else if (deadChannels.isNotEmpty()) {
+                Diagnostics.log(
+                    "FEED: ${deadChannels.size} שגיאות 404 בזמן שהרשת לא יציבה — " +
+                        "לא מדווחות כערוצים מחוקים",
+                )
+            }
         }
+        feedFailures.clear()
+        deadChannels.clear()
+        deadIds.clear()
         videos
     }
 
@@ -109,15 +139,66 @@ object YouTubeRepository {
             .filterNot { it.isShort }
             .sortedByDescending { it.publishedAt }
 
+    /**
+     * User-Agent של דפדפן אמיתי.
+     *
+     * קודם לכן נשלח "FilterTube/1.0". יוטיוב מגישה את ה-RSS בלי מפתח ובלי
+     * הזדהות, אבל היא כן בוחנת את ה-User-Agent — ומחרוזת שאינה דפדפן היא
+     * הדבר הראשון שנחנק תחת עומס. היומן מהמכשיר הראה 2 ערוצים מתוך 168
+     * שהחזירו תוכן, וזו לא "רשת איטית": זו דחייה.
+     */
+    private const val FEED_UA =
+        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
+            "Chrome/130.0.0.0 Mobile Safari/537.36"
+
+    /**
+     * סרטוני ערוץ בודד מה-RSS, עם ניסיון שני ועם דיווח על *סיבת* הכישלון.
+     *
+     * הכישלון היה שקט לחלוטין: `if (!isSuccessful) emptyList()` בלי לרשום
+     * כלום. כך "הפיד קטן" נראה זהה ל"יוטיוב מחזירה 429", ואי אפשר היה
+     * להבדיל בין השניים בלי לנחש.
+     */
     private suspend fun fetchChannelFeed(channel: Channel): List<Video> = withContext(Dispatchers.IO) {
         val url = "https://www.youtube.com/feeds/videos.xml?channel_id=${channel.youtubeChannelId}"
-        val request = Request.Builder().url(url).header("User-Agent", "FilterTube/1.0").build()
-        httpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return@use emptyList()
-            val xml = response.body?.string() ?: return@use emptyList()
-            parseChannelXml(xml, channel)
+        repeat(2) { attempt ->
+            val request = Request.Builder().url(url).header("User-Agent", FEED_UA).build()
+            val result = runCatching {
+                httpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        feedFailures.merge(response.code, 1, Int::plus)
+                        // 404 = הערוץ לא קיים יותר, או שהמזהה ברשימה שגוי.
+                        // זה לא ייפתר מעצמו ולא שווה ניסיון שני — שמים את
+                        // השם ביומן כדי שיהיה מה לתקן ברשימה.
+                        if (response.code == 404) {
+                            deadChannels.add(channel.name)
+                            deadIds[channel.name] = channel.youtubeChannelId
+                        }
+                        null
+                    } else {
+                        response.body?.string()?.let { parseChannelXml(it, channel) }
+                    }
+                }
+            }.getOrNull()
+            if (result != null) return@withContext result
+            // ניסיון שני על 404 הוא בזבוז: ערוץ שלא קיים לא יתחיל להתקיים.
+            if (channel.name in deadChannels) return@withContext emptyList()
+            // 429 ו-5xx חולפים. השהיה קצרה וגדלה מספיקה כדי לצאת מהחלון
+            // שבו יוטיוב חונקת, בלי להאריך את הרענון בצורה מורגשת.
+            if (attempt == 0) kotlinx.coroutines.delay(400L + Random.nextLong(300L))
         }
+        emptyList()
     }
+
+    /** קודי השגיאה שחזרו ברענון האחרון — נרשמים ליומן בסיכום. */
+    private val feedFailures = java.util.concurrent.ConcurrentHashMap<Int, Int>()
+
+    /** ערוצים שהחזירו 404 — מזהה שגוי או ערוץ שנמחק. */
+    /** שם הערוץ → המזהה שנכשל, כדי שהדיווח יגיד מה בדיוק צריך לתקן. */
+    private val deadIds = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    private val deadChannels = java.util.Collections.newSetFromMap(
+        java.util.concurrent.ConcurrentHashMap<String, Boolean>(),
+    )
 
     private fun parseChannelXml(xml: String, channel: Channel): List<Video> {
         val videos = mutableListOf<Video>()
