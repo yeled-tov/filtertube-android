@@ -18,6 +18,23 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!--
+          מחווה "חזרה חזויה" מכובה במפורש.
+
+          דוח הקריסה מהמכשיר:
+            IndexOutOfBoundsException: Index -1 out of bounds for length 1
+              at androidx.navigation.compose.NavHost...
+              at androidx.activity.compose.OnBackInstance$job$1 (PredictiveBackHandler)
+
+          זו תקלה בתוך navigation-compose עצמה: כשמחליקים חזרה ביעד האחרון
+          שנותר בערימה, היא מנסה לקרוא את הפריט שלפניו ומקבלת אינדקס ‎-1‎.
+          אין לנו דרך לתפוס את זה מבחוץ — הקריסה קורית בתוך הספרייה, בקורוטינה
+          שלה.
+
+          כיבוי המחווה מחזיר את התנהגות ה"חזור" הרגילה, שעובדת. אין כאן ויתור
+          על תכונה שהמשתמש מרוויח ממנה: האנימציה החזויה שווה הרבה פחות
+          מאפליקציה שלא קורסת.
+    -->
     <application
         android:name=".FilterTubeApp"
         android:allowBackup="false"
@@ -28,6 +45,7 @@
         android:theme="@style/Theme.FilterTube"
         android:supportsRtl="true"
         android:usesCleartextTraffic="false"
+        android:enableOnBackInvokedCallback="false"
         tools:targetApi="31">
 
         <activity
