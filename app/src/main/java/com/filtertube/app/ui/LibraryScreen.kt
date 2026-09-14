@@ -137,8 +137,11 @@ fun LibraryScreen(
                     // את אותם שירים, והשלמת ערוץ היא בקשה לכל פריט.
                     InnerTube.fillOwners(fromBoth) { it.channelId !in approved }
                 }
-                val musicLiked = musicRaw.filter { it.channelId in approved }
-                Diagnostics.log("SYNC גוגל · מיוזיק: ${musicRaw.size} התקבלו · ${musicLiked.size} מאושרים")
+                val musicLiked = musicRaw
+                Diagnostics.log(
+                    "SYNC גוגל · מיוזיק: ${musicRaw.size} התקבלו · " +
+                        "${musicRaw.count { it.channelId in approved }} מאושרים",
+                )
                 if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
                 if (musicLiked.isNotEmpty()) store.setMusicLikes(musicLiked)
                 val musicIds = musicRaw.mapTo(HashSet()) { it.id }
@@ -146,8 +149,11 @@ fun LibraryScreen(
                 val likedRaw = syncStep("אהבתי") {
                     YouTubeAccountRepository.likedVideos(token)
                 }
-                val liked = likedRaw.filter { it.id !in musicIds && it.channelId in approved }
-                Diagnostics.log("SYNC גוגל · אהבתי: ${likedRaw.size} התקבלו · ${liked.size} מאושרים")
+                val liked = likedRaw.filter { it.id !in musicIds }
+                Diagnostics.log(
+                    "SYNC גוגל · אהבתי: ${likedRaw.size} התקבלו · " +
+                        "${liked.count { it.channelId in approved }} מאושרים",
+                )
                 if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
                 if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
 
@@ -244,14 +250,20 @@ fun LibraryScreen(
                 val musicRaw = InnerTube.fillOwners(
                     InnerTube.likedMusic(accountStore.cookies),
                 ) { it.channelId !in approved }
-                val music = report("מיוזיק", musicRaw)
-                if (music.isNotEmpty()) store.setMusicLikes(music)
+                // ── נשמר הכל, כולל מערוצים שלא אושרו ──────────────────────
+                // כמו במנויים: רשימה קטועה בלי שום רמז שחסר בה משהו היא
+                // בלבול. מסך "אהבתי" מציג את הלא-מאושרים באפור ומאפשר לבקש
+                // להוסיף את הערוץ שלהם. הרשימה הלבנה נאכפת בלחיצה — פריט
+                // אפור לא מתנגן.
+                report("מיוזיק", musicRaw)
+                if (musicRaw.isNotEmpty()) store.setMusicLikes(musicRaw)
                 val musicIds = musicRaw.mapTo(HashSet()) { it.id }
 
                 val likedRaw = InnerTube.fillOwners(
                     InnerTube.likedVideos(accountStore.cookies),
                 ) { it.channelId.isBlank() }
-                val liked = report("אהבתי", likedRaw.filter { it.id !in musicIds })
+                val liked = likedRaw.filter { it.id !in musicIds }
+                report("אהבתי", liked)
                 if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
 
                 val allSubs = InnerTube.subscriptions(accountStore.cookies)

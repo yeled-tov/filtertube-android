@@ -55,6 +55,10 @@ import kotlinx.coroutines.launch
  */
 private val MUSIC_CATEGORIES = setOf("music", "dati_light", "events")
 
+/** "בחירה מהירה" — תשעה שירים בעמוד, שלוש שורות על שלוש עמודות. */
+private const val SPEED_DIAL_ROWS = 3
+private const val SPEED_DIAL_COLUMNS = 3
+
 private enum class MusicChip(val label: String) {
     ALL("הכל"),
     LIKED("אהבתי"),
@@ -328,22 +332,56 @@ private fun MusicHome(
         if (quickPicks.isNotEmpty()) {
             item { NavigationTitle("בחירה מהירה") }
             item {
-                // ארבע שורות בדיוק, גובה קבוע של 4 שורות רשימה, וגלילה
-                // אופקית שנעצרת על עמוד שלם — בדיוק כמו במקור.
-                LazyHorizontalGrid(
-                    state = gridState,
-                    rows = GridCells.Fixed(4),
-                    flingBehavior = rememberSnapFlingBehavior(gridState),
-                    modifier = Modifier.fillMaxWidth().height(MusicDim.listItemHeight * 4),
-                ) {
-                    items(quickPicks, key = { "qp_${it.id}" }) { song ->
-                        Box(Modifier.fillParentMaxWidth(0.92f)) {
-                            SongListItem(
-                                video = song,
-                                active = song.id == activeId,
-                                playing = song.id == activeId,
-                                onClick = { onPlay(quickPicks, quickPicks.indexOf(song)) },
-                            )
+                // ── שלוש על שלוש, עמוד אחרי עמוד ──────────────────────────
+                // קודם זו הייתה רשת של שורות רשימה: תמונה קטנה בצד וטקסט
+                // לידה. הכריכה היא מה שמזהה שיר במבט, ולכן כאן היא הפריט
+                // עצמו — ריבוע עם הכותרת מתחתיו — תשעה שירים בעמוד, וגלילה
+                // שנעצרת על עמוד שלם.
+                val perPage = SPEED_DIAL_ROWS * SPEED_DIAL_COLUMNS
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val gap = 10.dp
+                    val side = MusicDim.screenPadding
+                    val tile = (maxWidth - side * 2 - gap * (SPEED_DIAL_COLUMNS - 1)) / SPEED_DIAL_COLUMNS
+                    // גובה התא: הכריכה הריבועית ועוד שתי שורות טקסט.
+                    val cellHeight = tile + 44.dp
+                    Column {
+                        LazyHorizontalGrid(
+                            state = gridState,
+                            rows = GridCells.Fixed(SPEED_DIAL_ROWS),
+                            flingBehavior = rememberSnapFlingBehavior(gridState),
+                            contentPadding = PaddingValues(horizontal = side),
+                            horizontalArrangement = Arrangement.spacedBy(gap),
+                            verticalArrangement = Arrangement.spacedBy(gap),
+                            modifier = Modifier.fillMaxWidth()
+                                .height(cellHeight * SPEED_DIAL_ROWS + gap * (SPEED_DIAL_ROWS - 1)),
+                        ) {
+                            items(quickPicks, key = { "qp_${it.id}" }) { song ->
+                                Box(Modifier.width(tile)) {
+                                    MusicCell(song, active = song.id == activeId) {
+                                        onPlay(quickPicks, quickPicks.indexOf(song))
+                                    }
+                                }
+                            }
+                        }
+                        // נקודות העמודים — בלי הן אין שום רמז שיש עוד עמוד.
+                        val pages = (quickPicks.size + perPage - 1) / perPage
+                        if (pages > 1) {
+                            val current = gridState.firstVisibleItemIndex / perPage
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                repeat(pages) { page ->
+                                    Box(
+                                        modifier = Modifier.padding(horizontal = 3.dp).size(6.dp)
+                                            .clip(RoundedCornerShape(50))
+                                            .background(
+                                                if (page == current) ThemeState.text
+                                                else ThemeState.subtext2.copy(alpha = 0.35f),
+                                            ),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
