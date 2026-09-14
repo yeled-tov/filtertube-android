@@ -17,7 +17,7 @@ import com.filtertube.app.data.StreamData
 import com.filtertube.app.data.defaultTrackIndex
 import com.filtertube.app.data.StreamRepository
 import com.filtertube.app.data.Video
-import com.filtertube.app.data.audioOnlyCategories
+import com.filtertube.app.data.isAudioOnlyContent
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -141,8 +141,7 @@ object Playback {
      *  • מוזיקה ברמת הסינון המחמירה
      */
     fun forcedAudio(category: String?, level: Int, audioOnlyMode: Boolean = false): Boolean =
-        musicMode || audioOnlyMode || category in audioOnlyCategories ||
-            (level == 1 && category == "music")
+        musicMode || isAudioOnlyContent(category, level, audioOnlyMode)
 
     /** גרסה שקוראת את ההעדפה בעצמה — לנתיבים שאין להם SettingsStore ביד. */
     fun forcedAudio(context: Context, category: String?): Boolean {

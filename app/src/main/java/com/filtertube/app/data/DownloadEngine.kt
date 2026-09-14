@@ -67,6 +67,21 @@ object DownloadEngine {
      * [audioUrl] — זרם אודיו נפרד, כשמורידים וידאו בפורמט DASH. כשהוא לא
      * null, שני הזרמים יורדים וממוזגים לקובץ MP4 אחד.
      */
+    /**
+     * האם הערוץ של [video] מוגבל לאודיו לפי מדיניות התוכן.
+     *
+     * הקטגוריה נלקחת מהמטמון המקומי ולא מהרשת: הורדה לא אמורה לחכות לרשת
+     * כדי לדעת מה מותר, ואם המטמון ריק נשארת ההגדרה הגלובלית של המשתמש.
+     */
+    fun audioOnlyFor(context: Context, video: Video): Boolean {
+        val settings = SettingsStore(context.applicationContext)
+        val category = runCatching {
+            ChannelsRepository.getCachedChannelsFast(context.applicationContext)
+                .firstOrNull { it.youtubeChannelId == video.channelId }?.category
+        }.getOrNull()
+        return isAudioOnlyContent(category, settings.filterLevel, settings.audioOnlyMode)
+    }
+
     @Synchronized
     fun enqueue(
         context: Context,
@@ -79,6 +94,34 @@ object DownloadEngine {
         val ctx = context.applicationContext
         val settings = SettingsStore(ctx)
         maxConcurrent = settings.concurrentDownloads
+
+        // ── השער האחרון ───────────────────────────────────────────────────
+        // כאן, ולא רק אצל הקוראים: יש חמישה מסלולים שמגיעים להורדה (דיאלוג
+        // ההורדה, הורדה אוטומטית בלייק, לחיצה ארוכה בבית, הורדה מרוכזת
+        // מהספרייה, ו-FilterMusic), וכל אחד מהם בדק לבד רק את ההגדרה
+        // הגלובלית. "דתי לייט" התנגן כאודיו אבל ירד כווידאו — כלומר ההגבלה
+        // הייתה תקפה עד הרגע שלוחצים "הורד".
+        //
+        // מי שמבקש וידאו מתוכן שמוגבל לאודיו מקבל את פס הקול. אם אין זרם
+        // אודיו נפרד — ההורדה נעצרת, כי קובץ וידאו לא ייווצר כאן בשום מצב.
+        @Suppress("NAME_SHADOWING")
+        var isAudio = isAudio
+        @Suppress("NAME_SHADOWING")
+        var url = url
+        @Suppress("NAME_SHADOWING")
+        var audioUrl = audioUrl
+        if (!isAudio && audioOnlyFor(ctx, video)) {
+            val sound = audioUrl
+            if (sound.isNullOrBlank()) {
+                Diagnostics.log("DOWNLOAD ${video.id}: תוכן אודיו-בלבד ואין זרם קול נפרד — ההורדה בוטלה")
+                return
+            }
+            Diagnostics.log("DOWNLOAD ${video.id}: תוכן אודיו-בלבד — יורד כפס קול")
+            isAudio = true
+            url = sound
+            audioUrl = null
+        }
+
         val task = DownloadTask(video, isAudio)
         active.add(0, task)
         while (active.size > 60) active.removeAt(active.lastIndex)
@@ -104,14 +147,17 @@ object DownloadEngine {
      * ולצפות בו מגלריית המכשיר.
      */
     suspend fun enqueueByVideo(context: Context, video: Video, isAudio: Boolean): Boolean {
-        @Suppress("NAME_SHADOWING")
-        val isAudio = isAudio || SettingsStore(context).audioOnlyMode
         val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull() ?: return false
         val v = video.copy(
             title = data.title.ifBlank { video.title },
             channelName = data.uploaderName.ifBlank { video.channelName },
             thumbnailUrl = data.thumbnailUrl ?: video.thumbnailUrl,
+            // מזהה הערוץ מהזרם ולא מהרשומה: פריט שהגיע מהיסטוריה או מחיפוש
+            // יכול להגיע בלי מזהה, ובלי מזהה אין קטגוריה ואין מדיניות.
+            channelId = video.channelId.ifBlank { data.channelId },
         )
+        @Suppress("NAME_SHADOWING")
+        val isAudio = isAudio || audioOnlyFor(context, v)
         if (isAudio) {
             enqueue(context, v, data.bestAudioUrl ?: data.bestVideoUrl, true, data.streamUserAgent)
             return true

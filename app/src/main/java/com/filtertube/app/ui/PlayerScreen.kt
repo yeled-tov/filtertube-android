@@ -746,7 +746,12 @@ private fun PlayerOverflowMenu(
 private fun DownloadDialog(context: Context, data: StreamData, videoId: String, onDismiss: () -> Unit) {
     val video = Video(videoId, data.title, data.uploaderName, data.channelId,
         data.thumbnailUrl ?: "", System.currentTimeMillis())
+    // שתי סיבות נפרדות לחסום וידאו, והמשתמש צריך לדעת איזו מהן חלה עליו:
+    // בחירה שלו (אפשר לכבות בהגדרות) מול מדיניות התוכן (אי אפשר).
     val audioOnlyMode = remember { com.filtertube.app.data.SettingsStore(context).audioOnlyMode }
+    val policyAudioOnly = remember(data.channelId) {
+        com.filtertube.app.data.DownloadEngine.audioOnlyFor(context, video)
+    }
     // הורדה דרך המנוע המהיר (רב-חיבורי) — מוסיף לתור ב״מנהל הורדות״
     fun enqueueDl(url: String, isAudio: Boolean, audioUrl: String? = null) {
         LibraryStore(context).addDownload(video)
@@ -772,11 +777,15 @@ private fun DownloadDialog(context: Context, data: StreamData, videoId: String, 
                 // כשהמשתמש בחר אודיו בלבד, הורדת וידאו סותרת את הבחירה: הוא
                 // יוכל לצפות בסרטון מגלריית המכשיר. לכן האפשרות לא מוסתרת
                 // בשקט אלא מוסברת — אחרת זה נראה כמו תקלה.
-                if (audioOnlyMode) {
+                if (policyAudioOnly) {
                     Text("וידאו", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     Text(
-                        "מצב אודיו בלבד פעיל, ולכן הורדת וידאו חסומה. " +
-                            "אפשר לכבות אותו בהגדרות ← רמת סינון.",
+                        if (audioOnlyMode) {
+                            "מצב אודיו בלבד פעיל, ולכן הורדת וידאו חסומה. " +
+                                "אפשר לכבות אותו בהגדרות ← רמת סינון."
+                        } else {
+                            "התוכן הזה מוגדר לאודיו בלבד, ולכן הוא מתנגן ויורד כפס קול בלבד."
+                        },
                         color = ThemeState.subtext, fontSize = 12.sp, lineHeight = 17.sp,
                     )
                     return@Column
@@ -1086,8 +1095,12 @@ private fun OnVideoPlayerScreen(
                     // bestVideoUrl לבדו הוא זרם וידאו-בלבד כשאין זרם משולב,
                     // וההורדה האוטומטית ייצרה קובץ אילם. bestDownloadableVideo
                     // מחזיר גם את זרם האודיו הנלווה, והמנוע ממזג אותם ל-MP4.
-                    val track = if (sb.audioOnlyMode) null else currentData.bestDownloadableVideo()
-                    if (sb.audioOnlyMode) {
+                    // אותה מדיניות כמו בדיאלוג ההורדה: לא רק ההגדרה הגלובלית
+                    // אלא גם תוכן שמוגדר אודיו-בלבד.
+                    val mustBeAudio = sb.audioOnlyMode ||
+                        com.filtertube.app.data.DownloadEngine.audioOnlyFor(context, currentVideo())
+                    val track = if (mustBeAudio) null else currentData.bestDownloadableVideo()
+                    if (mustBeAudio) {
                         // מצב אודיו בלבד — מורידים את פס הקול, לא את הסרטון.
                         com.filtertube.app.data.DownloadEngine.enqueue(
                             context, currentVideo(),
