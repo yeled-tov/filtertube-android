@@ -2,6 +2,7 @@ package com.filtertube.app.data
 
 import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -55,15 +56,63 @@ class LibraryStore(context: Context) {
 
     fun likes(): List<Video> = videos(KEY_LIKES)
 
-    fun isLiked(videoId: String): Boolean = likes().any { it.id == videoId }
+    /**
+     * הלב במסך.
+     *
+     * בודק את שתי הרשימות, כי מאז שלייק באפליקציה נשמר גם ביוטיוב הן אותה
+     * רשימה: סרטון שסומן בלב ביוטיוב עצמה הגיע לכאן דרך הסנכרון, והלב חייב
+     * להיראות מסומן גם עליו — אחרת לחיצה עליו "מסמנת" משהו שכבר מסומן.
+     */
+    fun isLiked(videoId: String): Boolean =
+        likes().any { it.id == videoId } || youtubeLikes().any { it.id == videoId }
 
     fun toggleLike(video: Video): Boolean {
+        // המצב הנוכחי נקבע לפי אותה בדיקה שהלב מצייר לפיה, ולא לפי רשימה
+        // אחת בלבד: סרטון שסומן בלב ביוטיוב נראה מסומן במסך, ולחיצה עליו
+        // הייתה "מסמנת" אותו שוב במקום לבטל.
+        val wasLiked = isLiked(video.id)
         val current = likes().toMutableList()
-        val existed = current.removeAll { it.id == video.id }
-        if (!existed) current.add(0, video)
-        if (!saveVideos(KEY_LIKES, current)) return false
+        current.removeAll { it.id == video.id }
+        if (!wasLiked) current.add(0, video)
+        if (!saveVideos(KEY_LIKES, current)) return wasLiked
         queueCloudBackup()
-        return !existed
+        mirrorLikeToYouTube(video, liked = !wasLiked)
+        return !wasLiked
+    }
+
+    /**
+     * לייק באפליקציה הוא לייק ביוטיוב.
+     *
+     * ## למה
+     * עד עכשיו היו שתי רשימות "אהבתי" נפרדות — אחת של האפליקציה ואחת של
+     * יוטיוב — והן נראו למשתמש כמו אותו דבר פעמיים. מה שסימנת ב-FilterTube
+     * לא הופיע ביוטיוב, ומה שסימנת ביוטיוב לא הופיע כאן. שתי רשימות שאמורות
+     * להיות אותה רשימה הן בלבול, לא תכונה.
+     *
+     * עכשיו הלב מסמן ביוטיוב עצמה, והרשימה המקומית של יוטיוב מתעדכנת מיד
+     * כדי שהמסך לא יחכה לרשת.
+     *
+     * ## כשאין חיבור
+     * בלי עוגיות אין למי לדווח, והלייק נשאר מקומי בלבד — בדיוק כמו קודם.
+     * זה לא נחשב כישלון ולא מציג שגיאה: רוב המשתמשים לא יחברו חשבון.
+     */
+    private fun mirrorLikeToYouTube(video: Video, liked: Boolean) {
+        // הרשימה המקומית של יוטיוב מתעדכנת תמיד, גם בלי חיבור: היא מה
+        // שהמסך מציג, והמתנה לרשת הייתה הופכת את הלב ל"מהבהב".
+        val yt = youtubeLikes().toMutableList()
+        yt.removeAll { it.id == video.id }
+        if (liked) yt.add(0, video)
+        saveVideos(KEY_YT_LIKES, yt)
+
+        val cookies = runCatching { AccountStore(appContext).cookies }.getOrNull().orEmpty()
+        if (cookies.isBlank()) return
+        likeScope.launch {
+            val ok = runCatching { InnerTube.rate(cookies, video.id, liked) }.getOrDefault(false)
+            Diagnostics.log(
+                if (ok) "LIKE ${video.id}: ${if (liked) "סומן" else "בוטל"} גם ביוטיוב ✓"
+                else "LIKE ${video.id}: לא נשמר ביוטיוב (נשאר מקומי)",
+            )
+        }
     }
 
     fun downloads(): List<Video> = videos(KEY_DOWNLOADS)
@@ -340,6 +389,11 @@ class LibraryStore(context: Context) {
     }
 
     companion object {
+        /** סנכרון הלייק ליוטיוב רץ ברקע — הלב במסך לא ממתין לרשת. */
+        private val likeScope = kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
+        )
+
         private const val KEY_LIKES = "likes"
         private const val KEY_DOWNLOADS = "downloads"
         private const val KEY_PLAYLISTS = "playlists"

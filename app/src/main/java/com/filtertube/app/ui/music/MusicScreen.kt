@@ -124,8 +124,16 @@ fun FilterMusicScreen(
         // שלושה מקורות, ובמכוון לא כולל את הלייקים של יוטיוב הרגיל:
         // מוזיקה שאהבת ביוטיוב מיוזיק, ולייקים מקומיים שניתנו בתוך
         // FilterMusic עצמה. לייק על שיעור תורה נשאר ב-FilterTube.
+        // ── שלושה מקורות, ובכוונה ─────────────────────────────────────
+        // חסר כאן youtubeLikes, ולכן "אהבתי" ב-FilterMusic היה כמעט תמיד
+        // ריק: רוב הלייקים של המשתמש יושבים שם, לא ב"מוזיקה שאהבתי"
+        // הנפרדת של מיוזיק (שממנה לרוב אף שיר לא עובר את הרשימה הלבנה).
+        //
+        // musicOnly הוא מה שמפריד: שיעור תורה שסומן בלב לא ייכנס לכאן גם
+        // אם הוא ברשימת הלייקים, כי הערוץ שלו אינו ערוץ מוזיקה.
         likes = (
             runCatching { store.musicLikes() }.getOrNull().orEmpty() +
+                runCatching { store.youtubeLikes() }.getOrNull().orEmpty() +
                 runCatching { store.likes() }.getOrNull().orEmpty()
             ).musicOnly()
         history = runCatching { store.localHistory() }.getOrNull().orEmpty().musicOnly()
@@ -174,7 +182,7 @@ fun FilterMusicScreen(
                 )
                 tab == MusicTab.SEARCH -> MusicSearch(feed + likes + history, activeId, onPlay)
                 tab == MusicTab.LIBRARY -> MusicLibrary(likes, history, activeId, onPlay)
-                else -> MusicDownloads(downloads, online, activeId, onPlay)
+                else -> MusicDownloads(downloads, likes, online, activeId, onPlay)
             }
         }
 
@@ -494,6 +502,8 @@ private fun MusicLibrary(
 @Composable
 private fun MusicDownloads(
     downloads: List<Video>,
+    /** מה שמוצג כ"אהבתי" במסך — אותה רשימה שכפתור ההורדה המרוכזת פועל עליה. */
+    likes: List<Video>,
     online: Boolean?,
     activeId: String?,
     onPlay: (List<Video>, Int) -> Unit,
@@ -552,7 +562,9 @@ private fun MusicDownloads(
         ) {
             BigAction("הורד את מה שאהבת (אודיו)", Icons.Default.Download, Modifier.weight(1f)) {
                 scope.launch {
-                    val liked = runCatching { LibraryStore(context).likes() }.getOrNull().orEmpty()
+                    // בדיוק מה שמוצג במסך, ולא store.likes() — אחרת הכפתור
+                    // מוריד רשימה אחרת מזו שהמשתמש רואה מולו.
+                    val liked = likes
                     if (liked.isEmpty()) {
                         android.widget.Toast.makeText(context, "אין שירים ב״אהבתי״", android.widget.Toast.LENGTH_SHORT).show()
                     } else {

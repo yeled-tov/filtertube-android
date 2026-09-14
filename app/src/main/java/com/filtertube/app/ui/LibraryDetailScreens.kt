@@ -31,7 +31,6 @@ import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SubChannel
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeRepository
-import kotlinx.coroutines.launch
 
 /**
  * סרגל עליון אחיד עם כפתור חזרה לכל מסכי הפירוט.
@@ -75,12 +74,15 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
     val context = LocalContext.current
     val store = remember { LibraryStore(context) }
     var refreshKey by remember { mutableStateOf(0) }
-    // מקור הלייקים: FilterTube או YouTube. קודם אלה היו שתי קוביות נפרדות
-    // בספרייה שנראו כמו אותו דבר פעמיים; עכשיו זו רשימה אחת עם מתג.
-    var ytSource by remember { mutableStateOf(false) }
-    val (title, videos) = remember(type, refreshKey, ytSource) {
+    // ── שני מקורות, ושניהם של יוטיוב ──────────────────────────────────
+    // קודם המתג היה בין "אהבתי ב-FilterTube" ל"אהבתי ביוטיוב", ואלה נראו
+    // כמו אותו דבר פעמיים — ומאז שלייק באפליקציה מסומן גם ביוטיוב עצמה,
+    // הם באמת אותו דבר. המתג עבר להבחנה שכן קיימת: יוטיוב מול יוטיוב
+    // מיוזיק, שתי רשימות נפרדות אצל גוגל עצמה.
+    var musicSource by remember { mutableStateOf(false) }
+    val (title, videos) = remember(type, refreshKey, musicSource) {
         when (type) {
-            "likes" -> "אהבתי" to (if (ytSource) store.youtubeLikes() else store.likes())
+            "likes" -> "אהבתי" to (if (musicSource) store.musicLikes() else store.youtubeLikes())
             "ytlikes" -> "אהבתי ביוטיוב" to store.youtubeLikes()
             "downloads" -> "הורדות" to store.downloads()
             "history" -> "היסטוריה" to store.localHistory()   // היסטוריה מקומית — תמיד עובדת
@@ -91,14 +93,14 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar("$title (${videos.size})", onBack)
         if (type == "likes") {
-            val ftCount = remember(refreshKey) { store.likes().size }
             val ytCount = remember(refreshKey) { store.youtubeLikes().size }
+            val musicCount = remember(refreshKey) { store.musicLikes().size }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                SourceTab("ב-FilterTube ($ftCount)", !ytSource) { ytSource = false }
-                SourceTab("ביוטיוב ($ytCount)", ytSource) { ytSource = true }
+                SourceTab("יוטיוב ($ytCount)", !musicSource) { musicSource = false }
+                SourceTab("יוטיוב מיוזיק ($musicCount)", musicSource) { musicSource = true }
             }
         }
         if (type == "history" && videos.isNotEmpty()) {
@@ -192,94 +194,19 @@ fun SubscriptionsScreen(onOpenChannel: (String, String) -> Unit, onBack: () -> U
         }
     }
 
+    // ── הטופס המלא, לא גרסה מקוצרת ────────────────────────────────────
+    // ניסיתי כאן דיאלוג של שתי אפשרויות ("רגיל" / "דתי לייט"), וזה היה
+    // ויתור: מי שמאשר צריך לדעת מה הערוץ מכיל ולמי הוא מיועד, ובלי זה כל
+    // בקשה חוזרת אליו כשאלה. זה אותו טופס שנפתח מ"בקשת ערוץ", עם השם
+    // והקישור כבר ממולאים מהמנוי עצמו.
     pending?.let { target ->
-        RequestChannelDialog(
-            channel = target,
-            onDismiss = { pending = null },
-            onSent = { requested = requested + target.channelId; pending = null },
-        )
-    }
-}
-
-/**
- * בקשה להוסיף ערוץ לרשימה המאושרת, עם בחירת השיוך.
- *
- * שתי אפשרויות ולא רשימת קטגוריות מלאה: ההבחנה היחידה שבאמת משנה בצד
- * הלקוח היא "דתי לייט" — כי היא מגבילה לאודיו ומוצגת רק ברמה 3. את
- * הקטגוריה המדויקת קובע מי שמאשר, ולא מי שמבקש.
- */
-@Composable
-private fun RequestChannelDialog(
-    channel: SubChannel,
-    onDismiss: () -> Unit,
-    onSent: () -> Unit,
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var datiLight by remember { mutableStateOf(false) }
-    var sending by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = { if (!sending) onDismiss() },
-        title = { Text("בקשה להוסיף ערוץ") },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(channel.title, color = ThemeState.text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(10.dp))
-                Text("לאיזה סוג תוכן הערוץ שייך?", color = ThemeState.subtext, fontSize = 13.sp)
-                Spacer(Modifier.height(8.dp))
-                RequestChoice("תוכן רגיל", !datiLight) { datiLight = false }
-                Spacer(Modifier.height(6.dp))
-                RequestChoice("דתי לייט (אודיו בלבד)", datiLight) { datiLight = true }
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "הבקשה נשלחת לאישור. הערוץ לא ייפתח עד שיאושר.",
-                    color = ThemeState.subtext2, fontSize = 11.5.sp, lineHeight = 16.sp,
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = !sending,
-                onClick = {
-                    sending = true
-                    scope.launch {
-                        val result = com.filtertube.app.data.ChannelRequests.submitDetailed(
-                            name = channel.title,
-                            url = "https://www.youtube.com/channel/${channel.channelId}",
-                            category = if (datiLight) "dati_light" else "general",
-                            gender = "",
-                            description = "נשלח ממסך המנויים",
-                        )
-                        sending = false
-                        android.widget.Toast.makeText(
-                            context, result.message, android.widget.Toast.LENGTH_LONG,
-                        ).show()
-                        if (result.ok) onSent() else onDismiss()
-                    }
-                },
-            ) { Text(if (sending) "שולח…" else "שלח בקשה") }
-        },
-        dismissButton = { TextButton(enabled = !sending, onClick = onDismiss) { Text("ביטול") } },
-        containerColor = ThemeState.card,
-    )
-}
-
-@Composable
-private fun RequestChoice(label: String, selected: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-            .background(if (selected) ThemeState.accent.copy(alpha = 0.18f) else ThemeState.bg2)
-            .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RadioButton(selected = selected, onClick = onClick)
-        Spacer(Modifier.width(4.dp))
-        Text(
-            label,
-            color = if (selected) ThemeState.text else ThemeState.subtext,
-            fontSize = 14.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+        ChannelRequestDialog(
+            onDismiss = {
+                requested = requested + target.channelId
+                pending = null
+            },
+            prefillName = target.title,
+            prefillUrl = "https://www.youtube.com/channel/${target.channelId}",
         )
     }
 }
