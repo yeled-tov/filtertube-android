@@ -8,7 +8,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
@@ -471,20 +473,37 @@ private fun MusicLibrary(
         EmptyState("הספרייה תתמלא ממה שתשמע ותסמן בלב.")
         return
     }
-    LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+    // ── כוורת ולא רשימה ───────────────────────────────────────────────────
+    // שורה ברוחב מלא לכל שיר בזבזה את רוב המסך על אוויר, והכריכה — הדבר
+    // היחיד שבאמת מזהה שיר במבט — הייתה 48dp בצד. ברשת נכנסים פי כמה שירים
+    // באותה גלילה, והכריכה היא הגיבור.
+    //
+    // Adaptive ולא Fixed(2): באותו קוד מסך צר מקבל שתי עמודות ומסך רחב
+    // שלוש או ארבע, בלי מספר קסם שנכון רק למכשיר אחד.
+    val rows = history.take(60)
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(MusicDim.cellMinWidth),
+        contentPadding = PaddingValues(
+            start = MusicDim.screenPadding, end = MusicDim.screenPadding, bottom = 24.dp,
+        ),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
         if (likes.isNotEmpty()) {
-            item { NavigationTitle("אהבתי", label = "${likes.size} שירים") }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                NavigationTitle("אהבתי", label = "${likes.size} שירים")
+            }
             items(likes, key = { "like_${it.id}" }) { song ->
-                SongListItem(song, active = song.id == activeId, playing = song.id == activeId) {
+                MusicCell(song, active = song.id == activeId) {
                     onPlay(likes, likes.indexOf(song))
                 }
             }
         }
-        if (history.isNotEmpty()) {
-            item { NavigationTitle("הושמע לאחרונה") }
-            items(history.take(60), key = { "hist_${it.id}" }) { song ->
-                SongListItem(song, active = song.id == activeId, playing = song.id == activeId) {
-                    onPlay(history, history.indexOf(song))
+        if (rows.isNotEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }) { NavigationTitle("הושמע לאחרונה") }
+            items(rows, key = { "hist_${it.id}" }) { song ->
+                MusicCell(song, active = song.id == activeId) {
+                    onPlay(rows, rows.indexOf(song))
                 }
             }
         }

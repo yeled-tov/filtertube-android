@@ -40,6 +40,14 @@ object MusicDim {
     val listItemHeight = 64.dp
     val listThumbnail = 48.dp
     val gridThumbnail = 128.dp
+
+    /**
+     * רוחב מינימלי של קובייה בכוורת.
+     *
+     * במסך של 360dp זה נותן שתי עמודות, ובמסך רחב שלוש או ארבע — בלי מספר
+     * עמודות קבוע שנכון רק למכשיר אחד.
+     */
+    val cellMinWidth = 140.dp
     val albumThumbnail = 144.dp
     val artistCircle = 96.dp
     val navBarHeight = 80.dp
@@ -144,6 +152,43 @@ fun MusicGridItem(video: Video, size: Dp = MusicDim.gridThumbnail, onClick: () -
         )
         Text(
             video.channelName, color = ThemeState.subtext, fontSize = 11.5.sp,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * קובייה בכוורת — רוחב מלא של התא ברשת, כריכה ריבועית.
+ *
+ * שונה מ-[MusicGridItem] בכך שהיא לא קובעת רוחב קבוע: ברשת הרוחב נקבע
+ * ע"י התא, וכריכה ברוחב קשיח הייתה או גולשת ממנו או משאירה חורים.
+ */
+@Composable
+fun MusicCell(video: Video, active: Boolean, onClick: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        BoxWithConstraints {
+            SongArt(video, maxWidth)
+            if (active) {
+                Box(
+                    modifier = Modifier.size(maxWidth)
+                        .clip(RoundedCornerShape(MusicDim.thumbnailCorner))
+                        .background(Color(0x66000000)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Default.Equalizer, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            video.title,
+            color = if (active) ThemeState.accent else ThemeState.text,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.Medium, maxLines = 2,
+            overflow = TextOverflow.Ellipsis, lineHeight = 16.sp,
+        )
+        Text(
+            video.channelName, color = ThemeState.subtext, fontSize = 11.sp,
             maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
     }
