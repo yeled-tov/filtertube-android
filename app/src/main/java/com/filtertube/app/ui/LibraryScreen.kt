@@ -246,13 +246,13 @@ fun LibraryScreen(
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            if (account != null) account?.email ?: "מחובר" else "התחברות עם גוגל",
+                            if (account != null) account?.email ?: "מחובר" else "חיבור גוגל",
                             color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            if (account != null) "חשבון FilterTube · לייקים ומנויים מיוטיוב"
-                            else "לחיצה אחת: חשבון FilterTube + הלייקים והמנויים שלך",
+                            if (account != null) "לייקים ומנויים מיוטיוב"
+                            else "בחירת חשבון בלחיצה — מביא לייקים ומנויים",
                             color = ThemeState.subtext, fontSize = 12.sp,
                         )
                     }
@@ -294,15 +294,15 @@ fun LibraryScreen(
                     Icon(Icons.Default.Sync, null, tint = ThemeState.accent, modifier = Modifier.size(26.dp))
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(if (loggedIn) "היסטוריה והמלצות — פעיל" else "היסטוריה והמלצות (לא חובה)",
+                        Text(if (loggedIn) "חיבור דפדפן — פעיל" else "חיבור דפדפן",
                             color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         // מסביר למה קיימת התחברות *שנייה*, כי בלי זה זה נראה
                         // כמו כפילות מיותרת: החיבור עם גוגל מביא לייקים ומנויים
                         // דרך ה-API הרשמי, אבל היסטוריית צפייה והמלצות פשוט לא
                         // קיימות שם — הן דורשות התחברות מלאה בדפדפן.
                         Text(
-                            "רק אם רוצים גם היסטוריית צפייה והמלצות אישיות — " +
-                                "אלה לא זמינים דרך החיבור עם גוגל",
+                            "התחברות עם מייל וסיסמה בדפדפן. מביא היסטוריה, המלצות, " +
+                                "לייקים, מנויים ומוזיקה שאהבת — כולל מה שחיבור גוגל לא יכול.",
                             color = ThemeState.subtext, fontSize = 11.5.sp, lineHeight = 15.sp,
                         )
                     }

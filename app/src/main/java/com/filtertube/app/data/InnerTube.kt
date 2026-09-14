@@ -46,10 +46,19 @@ object InnerTube {
     private fun sapisid(cookies: String): String? =
         Regex("(?:^|;\\s*)(?:SAPISID|__Secure-3PAPISID)=([^;]+)").find(cookies)?.groupValues?.get(1)
 
-    private fun authHeader(cookies: String): String? {
+    /**
+     * כותרת ההזדהות של גוגל, חתומה על **מארח היעד**.
+     *
+     * ## הבאג שזה תיקן
+     * החתימה היא sha1 של "חותמת_זמן SAPISID origin", ו-origin חייב להיות
+     * אותו origin שנשלח בכותרת Origin. חתמתי תמיד על www.youtube.com גם
+     * כששלחתי ל-music.youtube.com — והשרת החזיר 400 על כל בקשה למיוזיק.
+     * זה מה שהפיל את משיכת "מוזיקה שאהבתי".
+     */
+    private fun authHeader(cookies: String, origin: String = ORIGIN): String? {
         val sid = sapisid(cookies) ?: return null
         val ts = System.currentTimeMillis() / 1000
-        return "SAPISIDHASH ${ts}_${sha1("$ts $sid $ORIGIN")}"
+        return "SAPISIDHASH ${ts}_${sha1("$ts $sid $origin")}"
     }
 
     private fun context(): JSONObject = JSONObject().apply {
@@ -78,10 +87,20 @@ object InnerTube {
                 .post(body.toString().toRequestBody(jsonMedia))
             runCatching {
                 http.newCall(builder.build()).execute().use { resp ->
-                    if (!resp.isSuccessful) return@use null
+                    if (!resp.isSuccessful) {
+                        // בלי זה כישלון רשת וכישלון פענוח נראים זהים לגמרי:
+                        // שניהם "0 התקבלו". הגוף מקוצץ כי גוגל מחזירה הסבר
+                        // קצר ומועיל בתחילתו.
+                        val why = resp.body?.string().orEmpty().take(160)
+                        Diagnostics.log("INNERTUBE $endpoint: HTTP ${resp.code} · $why")
+                        return@use null
+                    }
                     resp.body?.string()?.let { JSONObject(it) }
                 }
-            }.getOrNull()
+            }.getOrElse {
+                Diagnostics.log("INNERTUBE $endpoint: נכשל — ${it.message}")
+                null
+            }
         }
 
     // ── תכונות ───────────────────────────────────────────────────────────
@@ -105,8 +124,15 @@ object InnerTube {
      * שום מפתח API ושום הגדרה בצד גוגל.
      */
     suspend fun likedVideos(cookies: String): List<Video> {
-        val resp = post("browse", cookies, JSONObject().put("browseId", "VLLL")) ?: return emptyList()
-        return collectVideos(resp)
+        val resp = post("browse", cookies, JSONObject().put("browseId", "VLLL"))
+            ?: return emptyList()
+        val items = collectVideos(resp)
+        if (items.isEmpty()) {
+            // תשובה תקינה שממנה לא חולץ כלום היא מקרה אחר לגמרי מבקשה
+            // שנכשלה, ובלי ההבחנה הזו שניהם נראים "0".
+            Diagnostics.log("INNERTUBE אהבתי: התשובה התקבלה אבל לא חולצו ממנה פריטים")
+        }
+        return items
     }
 
     /**
@@ -141,7 +167,8 @@ object InnerTube {
      * המוזיקה גם כשההתחברות עם גוגל לא זמינה.
      */
     suspend fun likedMusic(cookies: String): List<Video> = withContext(Dispatchers.IO) {
-        val auth = authHeader(cookies) ?: return@withContext emptyList()
+        val musicOrigin = "https://music.youtube.com"
+        val auth = authHeader(cookies, musicOrigin) ?: return@withContext emptyList()
         val body = JSONObject().apply {
             put("browseId", "FEmusic_liked_videos")
             put(
@@ -164,14 +191,16 @@ object InnerTube {
             .header("Cookie", cookies)
             .header("Authorization", auth)
             .header("X-Goog-AuthUser", "0")
-            .header("Origin", "https://music.youtube.com")
-            .header("X-Origin", "https://music.youtube.com")
+            .header("Origin", musicOrigin)
+            .header("Referer", "$musicOrigin/")
+            .header("X-Origin", musicOrigin)
             .post(body.toString().toRequestBody(jsonMedia))
             .build()
         runCatching {
             http.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) {
-                    Diagnostics.log("YT MUSIC (עוגיות): השרת החזיר ${resp.code}")
+                    val why = resp.body?.string().orEmpty().take(160)
+                    Diagnostics.log("YT MUSIC (עוגיות): HTTP ${resp.code} · $why")
                     return@use emptyList()
                 }
                 resp.body?.string()?.let { collectVideos(JSONObject(it)) }.orEmpty()
