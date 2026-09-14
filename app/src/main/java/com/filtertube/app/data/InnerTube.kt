@@ -146,14 +146,17 @@ object InnerTube {
         val resp = post("browse", cookies, JSONObject().put("browseId", "FEchannels"))
             ?: return emptyList()
         val out = LinkedHashMap<String, String>()
-        walk(resp) { node ->
+        // walkAll ולא ה-walk הישן: זה בדיוק מה ששבר את המנויים. ה-walk הישן
+        // הפעיל את הקריאה החוזרת רק על רכיבי *סרטון*, וערוץ אינו סרטון —
+        // ולכן הלולאה הזו מעולם לא רצה אפילו פעם אחת.
+        walkAll(resp) { node ->
             val id = node.optJSONObject("navigationEndpoint")
                 ?.optJSONObject("browseEndpoint")?.optString("browseId")
                 ?: node.optJSONObject("browseEndpoint")?.optString("browseId")
-            if (id.isNullOrBlank() || !id.startsWith("UC") || out.containsKey(id)) return@walk
+            if (id.isNullOrBlank() || !id.startsWith("UC") || out.containsKey(id)) return@walkAll
             val name = textOf(node.optJSONObject("title"))
                 ?: textOf(node.optJSONObject("displayName"))
-                ?: return@walk
+                ?: return@walkAll
             out[id] = name
         }
         return out.entries.map { it.key to it.value }
@@ -393,38 +396,88 @@ object InnerTube {
      */
     fun parseVideos(root: JSONObject): List<Video> = collectVideos(root)
 
+    /**
+     * מחלץ סרטונים מכל תשובה של InnerTube.
+     *
+     * ## למה זה לא מחפש שמות של רכיבים
+     * הגרסה הקודמת חיפשה ארבעה שמות קבועים — videoRenderer, compactVideoRenderer,
+     * gridVideoRenderer, playlistVideoRenderer. זה עבד עד שיוטיוב שינתה פריסות,
+     * ואז שלושה דברים נשברו בבת אחת בלי שאף בקשה נכשלה:
+     *
+     *   "אהבתי"  → עבר ל-lockupViewModel (הפריסה החדשה של פלייליסטים)
+     *   מיוזיק   → משתמש ב-musicResponsiveListItemRenderer מלכתחילה
+     *   מנויים   → ערוצים אינם סרטונים, ולכן ה-walk בכלל לא קרא להם
+     *
+     * היומן אמר "התשובה התקבלה אבל לא חולצו ממנה פריטים" — כלומר ההזדהות
+     * והרשת תקינות לגמרי, רק הקריאה לא ידעה לזהות את הצורה.
+     *
+     * לכן כאן לא בודקים שמות. עוברים על **כל** צומת בתשובה, ומי שאפשר לחלץ
+     * ממנו גם מזהה סרטון וגם כותרת — הוא סרטון. שינוי פריסה עתידי לא ישבור
+     * את זה, כי מזהה סרטון וכותרת הם מה שלא משתנה.
+     */
     private fun collectVideos(root: JSONObject): List<Video> {
         val out = LinkedHashMap<String, Video>()
-        walk(root) { vr ->
-            val id = vr.optString("videoId")
-            if (id.isNullOrEmpty() || out.containsKey(id)) return@walk
-            val title = textOf(vr.optJSONObject("title")) ?: return@walk
-            val channel = textOf(vr.optJSONObject("ownerText"))
-                ?: textOf(vr.optJSONObject("longBylineText"))
-                ?: textOf(vr.optJSONObject("shortBylineText")) ?: ""
-            val channelId = bylineChannelId(vr) ?: ""
-            val thumb = "https://i.ytimg.com/vi/$id/hqdefault.jpg"
-            // The regular player no longer consumes InnerTube related results;
-            // keep this parser conservative for callers that still use it.
-            if (!vr.optString("navigationEndpoint").contains("shorts", ignoreCase = true)) {
-                out[id] = Video(id, title, channel, channelId, thumb, System.currentTimeMillis())
+        walkAll(root) { node ->
+            val id = videoIdIn(node) ?: return@walkAll
+            if (out.containsKey(id)) return@walkAll
+            val title = titleIn(node) ?: return@walkAll
+            // Shorts נשארים בטאב שלהם ולא מתערבבים בספרייה.
+            if (node.optString("navigationEndpoint").contains("shorts", ignoreCase = true)) {
+                return@walkAll
             }
+            out[id] = Video(
+                id = id,
+                title = title,
+                channelName = channelNameIn(node).orEmpty(),
+                channelId = bylineChannelId(node).orEmpty(),
+                thumbnailUrl = "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+                publishedAt = System.currentTimeMillis(),
+            )
         }
         return out.values.toList()
     }
 
-    /** עובר רקורסיבית ומפעיל [onVideo] על כל videoRenderer / compactVideoRenderer / gridVideoRenderer. */
-    private fun walk(node: Any?, onVideo: (JSONObject) -> Unit) {
-        when (node) {
-            is JSONObject -> {
-                for (key in listOf("videoRenderer", "compactVideoRenderer", "gridVideoRenderer", "playlistVideoRenderer")) {
-                    node.optJSONObject(key)?.let(onVideo)
-                }
-                val keys = node.keys()
-                while (keys.hasNext()) walk(node.opt(keys.next()), onVideo)
-            }
-            is JSONArray -> for (i in 0 until node.length()) walk(node.opt(i), onVideo)
-        }
+    /** מזהה הסרטון, בכל אחת מהצורות שיוטיוב משתמשת בהן. */
+    private fun videoIdIn(node: JSONObject): String? {
+        node.optString("videoId").takeIf { it.isNotBlank() }?.let { return it }
+        node.optJSONObject("playlistItemData")?.optString("videoId")
+            ?.takeIf { it.isNotBlank() }?.let { return it }
+        // הפריסה החדשה: contentId עם סוג תוכן מפורש. בלי בדיקת הסוג היינו
+        // אוספים גם פלייליסטים וערוצים כאילו היו סרטונים.
+        val contentId = node.optString("contentId")
+        if (contentId.isNotBlank() &&
+            node.optString("contentType").contains("VIDEO", ignoreCase = true)
+        ) return contentId
+        return null
+    }
+
+    /** הכותרת — טקסט רגיל, פריסה חדשה, או עמודה ראשונה ברשימת מיוזיק. */
+    private fun titleIn(node: JSONObject): String? {
+        textOf(node.optJSONObject("title"))?.let { return it }
+        textOf(node.optJSONObject("headline"))?.let { return it }
+        node.optJSONObject("metadata")
+            ?.optJSONObject("lockupMetadataViewModel")
+            ?.optJSONObject("title")?.optString("content")
+            ?.takeIf { it.isNotBlank() }?.let { return it }
+        flexColumnText(node, 0)?.let { return it }
+        return null
+    }
+
+    private fun channelNameIn(node: JSONObject): String? =
+        textOf(node.optJSONObject("ownerText"))
+            ?: textOf(node.optJSONObject("longBylineText"))
+            ?: textOf(node.optJSONObject("shortBylineText"))
+            ?: flexColumnText(node, 1)
+
+    /** עמודה מתוך musicResponsiveListItemRenderer של יוטיוב מיוזיק. */
+    private fun flexColumnText(node: JSONObject, index: Int): String? {
+        val columns = node.optJSONArray("flexColumns") ?: return null
+        val runs = columns.optJSONObject(index)
+            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+            ?.optJSONObject("text")?.optJSONArray("runs") ?: return null
+        val sb = StringBuilder()
+        for (i in 0 until runs.length()) sb.append(runs.optJSONObject(i)?.optString("text").orEmpty())
+        return sb.toString().takeIf { it.isNotBlank() }
     }
 
     private fun textOf(obj: JSONObject?): String? {
