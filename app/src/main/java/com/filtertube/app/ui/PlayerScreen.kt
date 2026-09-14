@@ -9,6 +9,13 @@ import android.net.Uri
 import android.os.Environment
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -1040,6 +1047,7 @@ private fun OnVideoPlayerScreen(
                             shape = sb.seekBarShape, thickness = sb.seekBarThickness, glow = sb.seekBarGlow,
                             onSeek = { f -> controller.seekTo((f * ui.duration.coerceAtLeast(0L)).toLong()) },
                             modifier = Modifier.fillMaxWidth(),
+                            animated = ui.isPlaying,
                         )
                         Row(modifier = Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(modifier = Modifier.clip(RoundedCornerShape(50)).clickable {
@@ -1186,11 +1194,42 @@ private fun WaveSeekBar(
     modifier: Modifier = Modifier,
     // preview = true מצייר נקודת אמצע קבועה לתצוגה מקדימה בגיליון ההגדרות
     previewFrac: Float? = null,
+    // הגל זז רק כשמשהו באמת מתנגן. בתצוגה המקדימה הוא זז תמיד, אחרת אי אפשר
+    // לראות בהגדרות מה בחרת.
+    animated: Boolean = true,
 ) {
     val frac = previewFrac ?: if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
     val accent = ThemeState.accent
     val accent2 = ThemeState.accent2
     val track = Color(0x47FFFFFF)
+
+    // ── הגל נע ────────────────────────────────────────────────────────────
+    // קודם זה היה גל מצויר וקפוא: הצורה הייתה גלית, אבל שום דבר לא זז, אז
+    // זה נראה כמו קישוט ולא כמו חיווי חי. הפאזה מסתובבת ברציפות, וכיוון
+    // התנועה הוא כיוון ההתקדמות.
+    //
+    // המשרעת נכנסת ויוצאת בהדרגה ולא בבת אחת: קפיצה מגל ליישר ברגע שעוצרים
+    // נראית כמו תקלה. כשעוצרים הפס פשוט מתיישר.
+    val phase = if (shape == 0) {
+        0f
+    } else {
+        val motion = rememberInfiniteTransition(label = "wave")
+        val running by motion.animateFloat(
+            initialValue = 0f,
+            targetValue = 2f * Math.PI.toFloat(),
+            animationSpec = infiniteRepeatable(
+                animation = tween(1500, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "phase",
+        )
+        if (animated) running else 0f
+    }
+    val ampScale by animateFloatAsState(
+        targetValue = if (animated && shape != 0) 1f else 0f,
+        animationSpec = tween(400),
+        label = "amp",
+    )
     Canvas(
         modifier = modifier.fillMaxWidth().height(28.dp)
             .pointerInput(duration, previewFrac) {
@@ -1202,16 +1241,24 @@ private fun WaveSeekBar(
     ) {
         val w = size.width
         val midY = size.height / 2f
-        val amp = if (shape == 0) 0f else size.height * 0.22f
+        val amp = if (shape == 0) 0f else size.height * 0.22f * ampScale
         val waves = 22f
         val stroke = thickness.dp.toPx().coerceAtLeast(2f)
         val twoPi = 2f * Math.PI.toFloat()
 
         fun yAt(x: Float): Float = when (shape) {
-            1 -> midY + amp * kotlin.math.sin(x / w * waves * twoPi)
+            1 -> midY + amp * kotlin.math.sin(x / w * waves * twoPi - phase)
             2 -> {
                 val period = w / waves
-                val t = if (period > 0f) (x % period) / period else 0f
+                // ההזזה נעשית על ציר ה-x ולא על הזווית: לגל משולש אין סינוס
+                // להזיז, ותזוזה של מחזור שלם היא בדיוק מה שגורם לו "לזחול".
+                val shifted = x - phase / twoPi * period
+                val t = if (period > 0f) {
+                    val r = (shifted % period + period) % period
+                    r / period
+                } else {
+                    0f
+                }
                 val tri = if (t < 0.5f) t * 2f else (1f - t) * 2f
                 midY - amp + tri * 2f * amp
             }

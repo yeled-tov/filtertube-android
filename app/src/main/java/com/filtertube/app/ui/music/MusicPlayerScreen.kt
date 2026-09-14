@@ -80,8 +80,22 @@ fun MusicPlayerScreen(
         )
     }
 
+    // ── למה BoxWithConstraints ────────────────────────────────────────────
+    // הכריכה נמדדה לפי *רוחב* המסך בלבד, והריבוע שיצא מזה היה גדול ממה
+    // שנשאר אחרי הכותרת, פס ההתקדמות והבקרים. במסך קצר ה-Column פשוט גלש:
+    // כפתור הנגינה ורצועת "הבא בתור" נדחפו אל מתחת לקצה ונחתכו — בדיוק
+    // התלונה "לא רואים כפתור עצירה, לא רואים את התור, התמונה תופסת הכול".
+    //
+    // עכשיו הגובה הפנוי ידוע, והכריכה מקבלת את מה שנשאר ולא יותר.
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
+    val compact = maxHeight < 680.dp
+    val sidePad = if (compact) 18.dp else MusicDim.playerPadding
+    val gapL = if (compact) 14.dp else 28.dp
+    val gapM = if (compact) 6.dp else 12.dp
+    val gapS = if (compact) 4.dp else 10.dp
+
     Column(
-        modifier = Modifier.fillMaxSize().background(ThemeState.bg)
+        modifier = Modifier.fillMaxSize()
             .statusBarsPadding().navigationBarsPadding(),
     ) {
         Row(
@@ -97,23 +111,23 @@ fun MusicPlayerScreen(
             }
         }
 
-        Spacer(Modifier.weight(1f))
-
         // ── הכריכה ────────────────────────────────────────────────────────
+        // weight(1f) ולא גובה קבוע: היא לוקחת את *השארית* אחרי שכל השאר
+        // קיבל את גובהו, ו-min בין הרוחב לגובה שומר אותה ריבועית בלי לגלוש.
         Box(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = MusicDim.playerPadding),
+            modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = sidePad),
             contentAlignment = Alignment.Center,
         ) {
             BoxWithConstraints {
-                SongArt(current, maxWidth, corner = 12.dp)
+                SongArt(current, minOf(maxWidth, maxHeight), corner = 12.dp)
             }
         }
 
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(gapL))
 
         // ── כותרת ואמן ────────────────────────────────────────────────────
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = MusicDim.playerPadding),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = sidePad),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
@@ -140,7 +154,7 @@ fun MusicPlayerScreen(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(gapM))
 
         // ── סרגל ההתקדמות ─────────────────────────────────────────────────
         // זמן תמיד זורם משמאל לימין, גם בממשק עברי: 0:00 בשמאל, ההתקדמות
@@ -148,7 +162,7 @@ fun MusicPlayerScreen(
         CompositionLocalProvider(
             androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Ltr,
         ) {
-        Column(modifier = Modifier.padding(horizontal = MusicDim.playerPadding)) {
+        Column(modifier = Modifier.padding(horizontal = sidePad)) {
             Slider(
                 value = position.coerceIn(0L, duration).toFloat(),
                 onValueChange = { scrubbing = true; scrubValue = it },
@@ -171,11 +185,11 @@ fun MusicPlayerScreen(
         }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(gapS))
 
         // ── הבקרים ────────────────────────────────────────────────────────
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = MusicDim.playerPadding),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = sidePad),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -236,14 +250,14 @@ fun MusicPlayerScreen(
             }
         }
 
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(gapS))
 
         // ── רצועת התור ────────────────────────────────────────────────────
         Row(
             modifier = Modifier.fillMaxWidth()
                 .clickable { showQueue = true }
                 .background(ThemeState.surface)
-                .padding(horizontal = 20.dp, vertical = 14.dp),
+                .padding(horizontal = 20.dp, vertical = if (compact) 10.dp else 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
@@ -251,6 +265,8 @@ fun MusicPlayerScreen(
             Spacer(Modifier.width(8.dp))
             Text("הבא בתור", color = ThemeState.text, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
         }
+    }
+
     }
 
     if (showQueue && controller != null) {

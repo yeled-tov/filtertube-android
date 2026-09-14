@@ -288,6 +288,13 @@ class PlaybackService : MediaSessionService() {
         player.addListener(object : androidx.media3.common.Player.Listener {
             private var stallStart = 0L
             override fun onPlaybackStateChanged(playbackState: Int) {
+                // עבודות הרקע נעצרות כל עוד הנגן ממלא באפר. בלי זה הן יצאו
+                // לדרך בשנייה השתים-עשרה של השיר — בדיוק כשהבאפר התרוקן —
+                // והשיר נתקע עד שכל תור הרדיו סיים להיטען.
+                com.filtertube.app.data.PlaybackPriority.setBuffering(
+                    playbackState == androidx.media3.common.Player.STATE_BUFFERING &&
+                        player.playWhenReady,
+                )
                 when (playbackState) {
                     androidx.media3.common.Player.STATE_BUFFERING ->
                         if (player.currentPosition > 1500 && player.playWhenReady && stallStart == 0L) {

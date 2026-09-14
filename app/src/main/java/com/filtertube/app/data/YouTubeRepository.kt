@@ -115,7 +115,10 @@ object YouTubeRepository {
             val networkHealthy = answered > targets.size / 2
             if (deadChannels.isNotEmpty() && networkHealthy) {
                 Diagnostics.log(
-                    "FEED: ערוצים עם מזהה שגוי או שנמחקו — ${deadChannels.joinToString(", ")}",
+                    // עם המזהה, לא רק עם השם: כדי לתקן ערוץ צריך לדעת *איזה*
+                    // מזהה שגוי, והשם לבדו שולח לחפש אותו מחדש ידנית.
+                    "FEED: ערוצים עם מזהה שגוי או שנמחקו — " +
+                        deadChannels.joinToString(", ") { "$it (${deadIds[it] ?: "?"})" },
                 )
             } else if (deadChannels.isNotEmpty()) {
                 Diagnostics.log(
@@ -126,6 +129,7 @@ object YouTubeRepository {
         }
         feedFailures.clear()
         deadChannels.clear()
+        deadIds.clear()
         videos
     }
 
@@ -165,7 +169,10 @@ object YouTubeRepository {
                         // 404 = הערוץ לא קיים יותר, או שהמזהה ברשימה שגוי.
                         // זה לא ייפתר מעצמו ולא שווה ניסיון שני — שמים את
                         // השם ביומן כדי שיהיה מה לתקן ברשימה.
-                        if (response.code == 404) deadChannels.add(channel.name)
+                        if (response.code == 404) {
+                            deadChannels.add(channel.name)
+                            deadIds[channel.name] = channel.youtubeChannelId
+                        }
                         null
                     } else {
                         response.body?.string()?.let { parseChannelXml(it, channel) }
@@ -186,6 +193,9 @@ object YouTubeRepository {
     private val feedFailures = java.util.concurrent.ConcurrentHashMap<Int, Int>()
 
     /** ערוצים שהחזירו 404 — מזהה שגוי או ערוץ שנמחק. */
+    /** שם הערוץ → המזהה שנכשל, כדי שהדיווח יגיד מה בדיוק צריך לתקן. */
+    private val deadIds = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     private val deadChannels = java.util.Collections.newSetFromMap(
         java.util.concurrent.ConcurrentHashMap<String, Boolean>(),
     )

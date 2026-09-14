@@ -366,8 +366,13 @@ object StreamRepository {
                 }
                 val ms = System.currentTimeMillis() - rT0
                 when {
+                    // מנוע מוצא-אחרון שלא החזיר כלום הוא ברוב המקרים מנוע
+                    // שדילג על עצמו (אין חשבון מחובר), והוא רשם שורה כזאת
+                    // לכל סרטון. כישלון אמיתי שלו נרשם ממילא אצלו עצמו.
                     result == null ->
-                        Diagnostics.log("StreamRepository $videoId: ${resolver.name} נכשל (${ms}ms)")
+                        if (!resolver.isLastResort) {
+                            Diagnostics.log("StreamRepository $videoId: ${resolver.name} נכשל (${ms}ms)")
+                        }
 
                     resolver.isLastResort -> if (lastResort.compareAndSet(null, result)) {
                         Diagnostics.log(
