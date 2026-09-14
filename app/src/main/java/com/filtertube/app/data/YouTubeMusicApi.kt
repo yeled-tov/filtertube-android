@@ -25,9 +25,10 @@ import java.util.concurrent.TimeUnit
  * קיים, נקודת קצה אחרת.
  *
  * ## הסינון
- * התוצאה מסוננת לערוצים מאושרים. גם רשימה אישית של המשתמש עוברת דרך
- * הרשימה הלבנה — אחרת היה כאן פתח לעקוף את כל האפליקציה דרך "אהבתי
- * במיוזיק".
+ * הרשימה הזו נמסרת גולמית, והקורא מסנן אותה מול הרשימה הלבנה. הסיבה היא
+ * שמזהה הערוץ שמיוזיק מחזירה הוא של האמן ולא של המעלה, וצריך להשלים אותו
+ * לפני ההשוואה. גם רשימה אישית של המשתמש עוברת דרך הרשימה הלבנה — אחרת
+ * היה כאן פתח לעקוף את כל האפליקציה דרך "אהבתי במיוזיק".
  */
 object YouTubeMusicApi {
 
@@ -47,11 +48,17 @@ object YouTubeMusicApi {
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
 
     /**
-     * השירים שהמשתמש סימן ב״אהבתי״ ביוטיוב מיוזיק, מסוננים לערוצים מאושרים.
+     * השירים שהמשתמש סימן ב״אהבתי״ ביוטיוב מיוזיק — **בלי** הרשימה הלבנה.
      *
      * לא זורק: כישלון כאן פירושו רשימה ריקה, לא מסך שבור.
+     *
+     * מזהה הערוץ שיוטיוב מיוזיק מחזירה לכל שיר הוא של ה*אמן*, ולא של מי
+     * שהעלה — ולכן סינון מיידי כאן פסל כל שיר לפני שהייתה הזדמנות לברר מיהו
+     * המעלה האמיתי. הקורא מקבל את הרשימה הגולמית, משלים את הערוץ (ראה
+     * InnerTube.fillOwners) ורק אז מסנן. הסינון עצמו לא ויתר עליו: הרשימה
+     * הזו לעולם לא נשמרת כמות שהיא.
      */
-    suspend fun likedSongs(accessToken: String, approvedChannelIds: Set<String>): List<Video> =
+    suspend fun likedSongsRaw(accessToken: String): List<Video> =
         withContext(Dispatchers.IO) {
             val body = JSONObject().apply {
                 put("browseId", LIKED_MUSIC)
@@ -93,15 +100,10 @@ object YouTubeMusicApi {
                 null
             } ?: return@withContext emptyList()
 
-            val all = runCatching { parseSongs(JSONObject(raw)) }.getOrElse {
+            runCatching { parseSongs(JSONObject(raw)) }.getOrElse {
                 Diagnostics.log("YT MUSIC: פענוח נכשל — ${it.message}")
                 emptyList()
             }
-            val approved = all.filter { it.channelId in approvedChannelIds }
-            Diagnostics.log(
-                "YT MUSIC: ${all.size} שירים ב״אהבתי״, ${approved.size} מערוצים מאושרים",
-            )
-            approved
         }
 
     // ── פענוח ─────────────────────────────────────────────────────────────

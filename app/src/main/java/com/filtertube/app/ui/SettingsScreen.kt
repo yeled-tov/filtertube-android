@@ -653,7 +653,7 @@ private fun AboutDialog(onDismiss: () -> Unit) {
                 Text("פלטפורמת וידאו מסוננת — מציגה אך ורק ערוצים מאושרים. כל התוכן מסונן לפי רמת הסינון שנבחרה.",
                     color = ThemeState.subtext2, fontSize = 13.sp, lineHeight = 18.sp)
                 Spacer(Modifier.height(10.dp))
-                Text("גרסה ${BuildConfig.VERSION_NAME} (בנייה ${BuildConfig.VERSION_CODE})",
+                Text("גרסה ${BuildConfig.VERSION_NAME}",
                     color = ThemeState.subtext, fontSize = 13.sp)
                 Spacer(Modifier.height(8.dp))
                 Text("נוצרה על־ידי FilterPhone", color = ThemeState.text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -806,7 +806,7 @@ private fun UpdateSheet(onDismiss: () -> Unit) {
                     Text("יש גרסה חדשה — ${u.displayName}", color = ThemeState.text,
                         fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
-                    Text("הגרסה שלך: ${BuildConfig.VERSION_NAME} (בנייה ${BuildConfig.VERSION_CODE})",
+                    Text("הגרסה שלך: ${BuildConfig.VERSION_NAME}",
                         color = ThemeState.subtext, fontSize = 11.5.sp)
                     Spacer(Modifier.height(10.dp))
                     Text("מה השתנה", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)

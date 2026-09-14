@@ -10,10 +10,13 @@ plugins {
 
 // נקרא ברמת הקובץ ולא בתוך defaultConfig: שם קיים מאפיין בשם `java`
 // שמסתיר את *החבילה* java, ו-java.util.Properties לא מתקמפל שם.
-val appVersionName: String = Properties().let { props ->
+// בסיס הגרסה: שתי הספרות הראשונות בלבד (למשל "1.2"). הספרה השלישית
+// נקבעת אוטומטית ממספר הבנייה, ראה versionName ב-defaultConfig.
+val appVersionBase: String = Properties().let { props ->
     val f = rootProject.file("version.properties")
     if (f.exists()) f.inputStream().use { props.load(it) }
-    props.getProperty("versionName")?.trim()?.takeIf { it.isNotEmpty() } ?: "1.0.0"
+    val raw = props.getProperty("versionName")?.trim()?.takeIf { it.isNotEmpty() } ?: "1.0"
+    raw.split(".").filter { it.isNotBlank() }.take(2).joinToString(".").ifEmpty { "1.0" }
 }
 
 android {
@@ -31,8 +34,13 @@ android {
         val buildNum = (project.findProperty("buildNumber") as String?)?.toIntOrNull() ?: 3
         versionCode = buildNum
 
-        // versionName = הגרסה השיווקית, מתוך version.properties בשורש הפרויקט.
-        versionName = appVersionName
+        // versionName = בסיס הגרסה + מספר הבנייה, למשל "1.2.200".
+        //
+        // קודם כאן ישבה גרסה שיווקית קבועה ("1.2.0"), ולידה הוצג מספר בנייה
+        // נפרד. זה הפך כל בנייה חדשה לגרסה שנראית *זהה* לקודמת: אי אפשר היה
+        // להגיד במבט אם המכשיר מריץ את מה שהרגע נבנה. עכשיו מספר הגרסה
+        // עצמו עולה בכל בנייה, והשניים כבר לא סותרים זה את זה.
+        versionName = "$appVersionBase.$buildNum"
 
         // RTL support
         resourceConfigurations += listOf("en", "iw")

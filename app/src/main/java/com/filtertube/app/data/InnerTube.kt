@@ -3,6 +3,8 @@ package com.filtertube.app.data
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -213,6 +215,69 @@ object InnerTube {
             emptyList()
         }
     }
+
+
+    /**
+     * מזהה הערוץ ה**אמיתי** שהעלה את הסרטון, מתוך videoDetails.
+     *
+     * ## למה זה נדרש
+     * ביוטיוב מיוזיק הטקסט שמתחת לשם השיר הוא ה*אמן*, ולא מי שהעלה: הקישור
+     * שם מצביע על ערוץ האמן האוטומטי ("Topic") או על ישות אמן שאין לה בכלל
+     * ערוץ. לכן הסינון מול הרשימה הלבנה נכשל על כל שיר — 25 הגיעו, 0 אושרו:
+     * הערוצים המאושרים הם המעלים, וההשוואה נעשתה מול האמן.
+     *
+     * הקריאה הזאת אינה דורשת הזדהות, ולכן היא גם לא תלויה בעוגיות שפג תוקפן.
+     */
+    suspend fun ownerChannel(videoId: String): Pair<String, String>? = withContext(Dispatchers.IO) {
+        val body = JSONObject().apply {
+            put("videoId", videoId)
+            put("contentCheckOk", true)
+            put("racyCheckOk", true)
+            put("context", JSONObject().put("client", JSONObject().apply {
+                put("clientName", CLIENT_NAME)
+                put("clientVersion", CLIENT_VERSION)
+                put("hl", "he")
+                put("gl", "IL")
+            }))
+        }
+        val req = Request.Builder()
+            .url("${BASE}player?prettyPrint=false")
+            .header("Content-Type", "application/json")
+            .header("User-Agent", USER_AGENT)
+            .post(body.toString().toRequestBody(jsonMedia))
+            .build()
+        runCatching {
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val details = resp.body?.string()
+                    ?.let(::JSONObject)?.optJSONObject("videoDetails") ?: return@use null
+                val cid = details.optString("channelId")
+                if (cid.isBlank()) null else cid to details.optString("author")
+            }
+        }.getOrNull()
+    }
+
+    /**
+     * משלים מזהה ערוץ אמיתי לפריטים ש[needsOwner] מסמן — בזה אחר זה, עד
+     * שישה במקביל, כדי לא להציף את יוטיוב בסנכרון של רשימה ארוכה.
+     *
+     * פריט שלא הצלחנו לזהות חוזר כמו שהוא, וממילא ייפסל בהמשך: "לא ידוע"
+     * אינו "מותר" באפליקציית רשימה לבנה.
+     */
+    suspend fun fillOwners(items: List<Video>, needsOwner: (Video) -> Boolean): List<Video> =
+        coroutineScope {
+            val gate = Semaphore(6)
+            items.map { video ->
+                async {
+                    if (!needsOwner(video)) return@async video
+                    val owner = gate.withPermit { ownerChannel(video.id) } ?: return@async video
+                    video.copy(
+                        channelId = owner.first,
+                        channelName = video.channelName.ifBlank { owner.second },
+                    )
+                }
+            }.map { it.await() }
+        }
 
     /** סימון/ביטול לייק אמיתי דרך InnerTube. */
     suspend fun rate(cookies: String, videoId: String, like: Boolean): Boolean {

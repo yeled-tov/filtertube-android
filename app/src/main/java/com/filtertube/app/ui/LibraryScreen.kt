@@ -52,6 +52,22 @@ import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.common.api.ApiException
 import kotlinx.coroutines.launch
 
+/**
+ * מריץ שלב סנכרון אחד ומחזיר רשימה ריקה אם הוא נפל.
+ *
+ * קודם כל שלבי הסנכרון ישבו בתוך try אחד: הראשון שנפל ביטל את כל מה
+ * שאחריו, המסך הראה "שגיאה בסנכרון" בלי לומר באיזה שלב, והיומן לא רשם
+ * דבר — ולכן גם שורות OAUTH לא הופיעו בו מעולם. כאן כל מקור נכשל לבד,
+ * ואומר ביומן את שמו ואת סוג התקלה.
+ */
+private suspend fun <T> syncStep(name: String, block: suspend () -> List<T>): List<T> =
+    try {
+        block()
+    } catch (e: Exception) {
+        Diagnostics.log("SYNC גוגל · $name: נכשל — ${e.javaClass.simpleName}: ${e.message}")
+        emptyList()
+    }
+
 @Composable
 fun LibraryScreen(
     onOpenCollection: (String) -> Unit,
@@ -100,44 +116,63 @@ fun LibraryScreen(
         scope.launch {
             try {
                 val token = GoogleAuth.accessToken(context, a, googleSession)
+                Diagnostics.log("SYNC גוגל: אסימון התקבל (${token.length} תווים)")
                 // רק תוכן מהערוצים המאושרים — לייק/מנוי שלא ברשימה הלבנה לא נשמר ולא מוצג
                 val approved = ChannelsRepository.getChannels(context).map { it.youtubeChannelId }.toHashSet()
-                val liked = YouTubeAccountRepository.likedVideos(token).filter { it.channelId in approved }
-                if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
-                store.setYoutubeLikes(liked); ytLikes = liked
-                val subList = YouTubeAccountRepository.subscriptions(token).filter { it.channelId in approved }
-                if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
-                store.setSubscriptions(subList); subs = subList
 
-                // ── יוטיוב מיוזיק, באותו חיבור ────────────────────────────
-                // "מוזיקה שאהבתי" היא פלייליסט אחר מ"אהבתי" של יוטיוב, ולכן
-                // היא נשמרת בנפרד: שירים ל-FilterMusic, סרטונים ל-FilterTube.
-                // ערבוב ביניהם היה מכניס שיעורי תורה לרשימת השירים.
-                val musicLiked = YouTubeMusicApi.likedSongs(token, approved)
+                // ── מיוזיק קודם, מאותה סיבה כמו בסנכרון הדפדפן ────────────
+                // "מוזיקה שאהבתי" היא תת-קבוצה של אותו פלייליסט LL. מי שמושך
+                // את שתיהן ושומר כל אחת במלואה מקבל את השירים גם ב-FilterTube
+                // וגם ב-FilterMusic. כאן המיוזיק קובעת מה שיר, ומה שנשאר
+                // ב"אהבתי" אחרי החיסור הוא הווידאו.
+                //
+                // fillOwners משלים את הערוץ שבאמת העלה: ביוטיוב מיוזיק הקישור
+                // שמתחת לשיר מצביע על האמן, ולכן ההשוואה לרשימה הלבנה נכשלה
+                // על כל שיר.
+                val musicRaw = syncStep("מיוזיק") {
+                    val fromBoth = (
+                        YouTubeMusicApi.likedSongsRaw(token) + InnerTubeOAuth.likedMusic(token)
+                        ).distinctBy { it.id }
+                    // distinctBy לפני ההשלמה ולא אחריה: שני המקורות מחזירים
+                    // את אותם שירים, והשלמת ערוץ היא בקשה לכל פריט.
+                    InnerTube.fillOwners(fromBoth) { it.channelId !in approved }
+                }
+                val musicLiked = musicRaw.filter { it.channelId in approved }
+                Diagnostics.log("SYNC גוגל · מיוזיק: ${musicRaw.size} התקבלו · ${musicLiked.size} מאושרים")
                 if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
-                store.setMusicLikes(musicLiked)
+                if (musicLiked.isNotEmpty()) store.setMusicLikes(musicLiked)
+                val musicIds = musicRaw.mapTo(HashSet()) { it.id }
+
+                val likedRaw = syncStep("אהבתי") {
+                    YouTubeAccountRepository.likedVideos(token)
+                }
+                val liked = likedRaw.filter { it.id !in musicIds && it.channelId in approved }
+                Diagnostics.log("SYNC גוגל · אהבתי: ${likedRaw.size} התקבלו · ${liked.size} מאושרים")
+                if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
+                if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
+
+                val subList = syncStep("מנויים") {
+                    YouTubeAccountRepository.subscriptions(token)
+                }.filter { it.channelId in approved }
+                Diagnostics.log("SYNC גוגל · מנויים: ${subList.size} מאושרים")
+                if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
+                if (subList.isNotEmpty()) { store.setSubscriptions(subList); subs = subList }
 
                 // ── המסלול השלישי ─────────────────────────────────────────
                 // אותו אסימון של החשבון שכבר במכשיר, מול השרת הפנימי של
-                // יוטיוב — זה שכן מחזיק היסטוריה ומוזיקה. אם הוא נענה, אפשר
-                // להביא הכל בלי שהמשתמש יקליד סיסמה אף פעם.
-                //
-                // כל כישלון כאן הוא שקוף: מה שכבר נמשך ב-API הרשמי נשמר,
-                // והיומן אומר בדיוק מה גוגל ענתה.
-                val oauthMusic = InnerTubeOAuth.likedMusic(token)
-                    .filter { it.channelId in approved }
-                if (oauthMusic.size > musicLiked.size) store.setMusicLikes(oauthMusic)
-
-                val oauthHistory = InnerTubeOAuth.history(token)
-                    .filter { it.channelId in approved }
+                // יוטיוב — זה שכן מחזיק היסטוריה. אם הוא נענה, אפשר להביא
+                // הכל בלי שהמשתמש יקליד סיסמה אף פעם.
+                val oauthHistory = syncStep("היסטוריה") {
+                    InnerTubeOAuth.history(token)
+                }.filter { it.channelId in approved }
                 if (oauthHistory.isNotEmpty()) {
                     store.setHistory(oauthHistory); history = oauthHistory
                 }
 
-                val music = maxOf(musicLiked.size, oauthMusic.size)
-                status = "סונכרנו ${liked.size} לייקים · $music שירים ממיוזיק · " +
+                status = "סונכרנו ${liked.size} לייקים · ${musicLiked.size} שירים ממיוזיק · " +
                     "${subList.size} מנויים · ${oauthHistory.size} בהיסטוריה ✓"
             } catch (e: Exception) {
+                Diagnostics.log("SYNC גוגל: ${e.javaClass.simpleName}: ${e.message}")
                 status = "שגיאה בסנכרון: ${e.message}"
             } finally { syncing = false }
         }
@@ -186,11 +221,28 @@ fun LibraryScreen(
                     return kept
                 }
 
-                val liked = report("אהבתי", InnerTube.likedVideos(accountStore.cookies))
-                if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
-
-                val music = report("מיוזיק", InnerTube.likedMusic(accountStore.cookies))
+                // ── מוזיקה קודם, ובכוונה ──────────────────────────────────
+                // "מוזיקה שאהבתי" אינה רשימה נפרדת אצל יוטיוב אלא *תת-קבוצה*
+                // של אותו פלייליסט LL: שיר שסימנת במיוזיק מופיע גם ב"אהבתי"
+                // הרגיל. לכן מי שמושך את שתיהן בנפרד מקבל את אותם שירים
+                // פעמיים — וזה בדיוק הערבוב שנראה במכשיר.
+                //
+                // הפתרון: המיוזיק היא הקובעת מה שיר. מה שהיא החזירה הולך
+                // ל-FilterMusic, ומה שנשאר ב"אהבתי" אחרי החיסור הוא הווידאו
+                // האמיתי של FilterTube. החלוקה נעשית לפי הסיווג של יוטיוב
+                // עצמה, ולא לפי ניחוש שלנו.
+                val musicRaw = InnerTube.fillOwners(
+                    InnerTube.likedMusic(accountStore.cookies),
+                ) { it.channelId !in approved }
+                val music = report("מיוזיק", musicRaw)
                 if (music.isNotEmpty()) store.setMusicLikes(music)
+                val musicIds = musicRaw.mapTo(HashSet()) { it.id }
+
+                val likedRaw = InnerTube.fillOwners(
+                    InnerTube.likedVideos(accountStore.cookies),
+                ) { it.channelId.isBlank() }
+                val liked = report("אהבתי", likedRaw.filter { it.id !in musicIds })
+                if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
 
                 val allSubs = InnerTube.subscriptions(accountStore.cookies)
                 val subsFromCookies = allSubs.filter { it.first in approved }

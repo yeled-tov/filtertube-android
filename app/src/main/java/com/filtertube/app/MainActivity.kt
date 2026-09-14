@@ -256,7 +256,7 @@ fun AppRoot() {
     LaunchedEffect(Unit) {
         // רושמים את הגרסה ביומן כדי שכל דוח אבחון יגיד באיזו בנייה הוא נוצר.
         com.filtertube.app.data.Diagnostics.log(
-            "גרסה ${BuildConfig.VERSION_NAME} (בנייה ${BuildConfig.VERSION_CODE})"
+            "גרסה ${BuildConfig.VERSION_NAME}"
         )
         // חבילה, טביעת אצבע ומזהה לקוח — בכל דוח אבחון, לא רק אחרי כישלון.
         // שגיאת התחברות של גוגל נפתרת בהשוואה של שלושת אלה למה שרשום
