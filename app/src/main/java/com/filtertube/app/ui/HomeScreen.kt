@@ -486,33 +486,35 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
             )
-            // ברק עדין מלמעלה לעומק
+            // ── צל תחתון בלבד ─────────────────────────────────────
+            // קודם ישב כאן גם ברק לבן בשקיפות 6% מלמעלה. על תמונה ממוזערת
+            // הוא לא הוסיף עומק — הוא רק הלבין את שליש התמונה העליון. הצל
+            // התחתון, לעומתו, עושה עבודה אמיתית: הוא מה שמאפשר לקרוא את
+            // משך הסרטון גם מעל תמונה בהירה.
             Box(
                 modifier = Modifier.matchParentSize().background(
-                    Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.06f), Color.Transparent, Color.Black.copy(alpha = 0.12f))),
+                    Brush.verticalGradient(
+                        0.65f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = 0.45f),
+                    ),
                 ),
             )
-            // באדג' "מאושר" (כל הסרטונים מערוצים מאושרים)
-            Row(
-                modifier = Modifier.align(Alignment.TopEnd).padding(9.dp)
-                    .clip(RoundedCornerShape(20.dp)).background(Color.Black.copy(alpha = 0.5f))
-                    .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(20.dp))
-                    .padding(horizontal = 8.dp, vertical = 3.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Rounded.Check, null, tint = Color(0xFF7CF2C0), modifier = Modifier.size(11.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("מאושר", color = Color(0xFF7CF2C0), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
+            // ── למה אין כאן באדג' "מאושר" ─────────────────────────
+            // הוא הופיע על כל סרטון בלי יוצא מן הכלל, כי *כל* הסרטונים
+            // מגיעים מערוצים מאושרים — זו כל האפליקציה. תווית שנכונה תמיד
+            // אינה מידע: היא לא מבדילה בין שני סרטונים ולכן העין לומדת
+            // להתעלם ממנה, ובינתיים היא גוזלת פינה בכל תמונה. ההבטחה הזו
+            // שייכת למקום אחד באפליקציה, לא לכל כרטיס בנפרד.
+
             // משך זמן הסרטון בפינה הימנית התחתונה
             val formattedDur = video.formattedDuration()
             if (formattedDur.isNotBlank()) {
                 Box(
                     modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)
-                        .clip(RoundedCornerShape(4.dp)).background(Color.Black.copy(alpha = 0.75f))
+                        .clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(alpha = 0.7f))
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                 ) {
-                    Text(formattedDur, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(formattedDur, color = Color.White, style = MaterialTheme.typography.labelSmall)
                 }
             }
             // סימון "נצפה" — פס התקדמות מלא בתחתית התמונה, כמו ביוטיוב
@@ -522,6 +524,7 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                         .background(ThemeState.accent),
                 )
             }
+
             // סימון "אהבתי"
             if (liked) {
                 Box(
@@ -559,8 +562,11 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
             }
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(video.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = ThemeState.text,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 18.sp)
+                Text(
+                    video.title, color = ThemeState.text,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                )
                 Spacer(Modifier.height(3.dp))
                 val subParts = mutableListOf(video.channelName)
                 val viewsStr = video.formattedViewCount()
@@ -568,8 +574,11 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                 val timeStr = video.timeAgoHe()
                 // "תאריך לא זמין" רק מרעיש — עדיף להשמיט את החלק הזה
                 if (timeStr.isNotBlank() && timeStr != "תאריך לא זמין") subParts.add(timeStr)
-                Text(subParts.joinToString(" · "), fontSize = 12.sp, color = ThemeState.subtext,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    subParts.joinToString(" · "), color = ThemeState.subtext,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
                 val watchedStr = video.watchedAgoHe()
                 if (watched && watchedStr.isNotBlank()) {
                     Spacer(Modifier.height(2.dp))
