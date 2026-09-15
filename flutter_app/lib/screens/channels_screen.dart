@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models.dart';
+import '../library.dart';
 import '../theme.dart';
 import '../youtube_api.dart';
 import '../channels_repo.dart';
@@ -17,14 +18,21 @@ const Map<String, String> kCategoryLabels = {
 };
 
 /// רשימת הערוצים המאושרים — לחיצה פותחת את סרטוני הערוץ.
-class ChannelsScreen extends StatelessWidget {
+class ChannelsScreen extends StatefulWidget {
   final YoutubeApi api;
   final ChannelsRepo channels;
 
   const ChannelsScreen({super.key, required this.api, required this.channels});
 
   @override
+  State<ChannelsScreen> createState() => _ChannelsScreenState();
+}
+
+class _ChannelsScreenState extends State<ChannelsScreen> {
+  @override
   Widget build(BuildContext context) {
+    final api = widget.api;
+    final channels = widget.channels;
     final list = channels.channels;
     return Scaffold(
       appBar: AppBar(
@@ -55,8 +63,25 @@ class ChannelsScreen extends StatelessWidget {
                       style: const TextStyle(color: AppTheme.text)),
                   subtitle: Text(kCategoryLabels[c.category] ?? c.category,
                       style: const TextStyle(color: AppTheme.subtext, fontSize: 12)),
-                  trailing:
-                      const Icon(Icons.chevron_left, color: AppTheme.subtext),
+                  // מעקב מסמן ערוץ לספרייה. הוא אינו משנה דבר בסינון —
+                  // הרשימה הלבנה נשארת מה שהיא — אלא רק מקצר את הדרך אליו.
+                  trailing: IconButton(
+                    icon: Icon(
+                      appLibrary.isSubscribed(c.id)
+                          ? Icons.check_circle
+                          : Icons.add_circle_outline,
+                      color: appLibrary.isSubscribed(c.id)
+                          ? AppTheme.accent
+                          : AppTheme.subtext,
+                    ),
+                    tooltip: appLibrary.isSubscribed(c.id)
+                        ? 'הפסק לעקוב'
+                        : 'עקוב',
+                    onPressed: () async {
+                      await appLibrary.toggleSubscription(c.id);
+                      if (context.mounted) setState(() {});
+                    },
+                  ),
                   onTap: () => Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => ChannelVideosScreen(
                         channel: c, api: api, channels: channels),

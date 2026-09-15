@@ -16,7 +16,46 @@ class Video {
     required this.thumbnail,
     this.publishedAt,
   });
+
+  /// שמירה מקומית. התמונה לא נשמרת — היא נגזרת מהמזהה ותמיד זמינה, ואילו
+  /// כתובת שנשמרה פעם אחת מתיישנת כשיוטיוב מחליפה דומיין תמונות.
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'channelTitle': channelTitle,
+        'channelId': channelId,
+        'publishedAt': publishedAt?.toIso8601String(),
+      };
+
+  factory Video.fromJson(Map<String, dynamic> j) => Video(
+        id: (j['id'] as String?) ?? '',
+        title: (j['title'] as String?) ?? '',
+        channelTitle: (j['channelTitle'] as String?) ?? '',
+        channelId: (j['channelId'] as String?) ?? '',
+        thumbnail: 'https://i.ytimg.com/vi/${j['id']}/hqdefault.jpg',
+        publishedAt: DateTime.tryParse((j['publishedAt'] as String?) ?? ''),
+      );
 }
+
+/// שמות הקטגוריות בעברית — מקור אחד לכל מסך שמציג קטגוריה.
+const Map<String, String> categoryLabels = {
+  'torah': 'תורה',
+  'torah_study': 'שיעורי תורה',
+  'music': 'מוזיקה',
+  'dati_light': 'דתי לייט',
+  'kids': 'ילדים',
+  'diy': 'עשה זאת בעצמך',
+  'cooking': 'אפייה ובישול',
+  'beauty': 'יופי',
+  'fashion': 'אופנה',
+  'home': 'בית',
+  'education': 'חינוך',
+  'events': 'אירועים והופעות',
+  'news': 'חדשות',
+  'general': 'כללי',
+};
+
+String categoryLabel(String id) => categoryLabels[id] ?? id;
 
 class Channel {
   final String id; // youtube_channel_id

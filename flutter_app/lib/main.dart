@@ -10,6 +10,8 @@ import 'screens/home_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/channels_screen.dart';
 import 'screens/player_screen.dart';
+import 'screens/library_screen.dart';
+import 'library.dart';
 
 /// מפתח ניווט גלובלי — לפתיחת קישורים חיצוניים מחוץ לעץ הווידג'טים.
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -65,6 +67,7 @@ class _RootState extends State<_Root> {
 
   Future<void> _init() async {
     await appSettings.load();
+    await appLibrary.load();
     await _channels.load(level: appSettings.filterLevel);
   }
 
@@ -138,6 +141,7 @@ class _RootState extends State<_Root> {
               onFilterLevelChanged: _onLevelChanged),
           ChannelsScreen(api: _api, channels: _channels),
           SearchScreen(api: _api, channels: _channels),
+          LibraryScreen(api: _api, channels: _channels),
         ];
         return Scaffold(
           extendBody: true,
@@ -162,6 +166,7 @@ class _FloatingNav extends StatelessWidget {
     (Icons.home_rounded, 'בית'),
     (Icons.subscriptions_rounded, 'ערוצים'),
     (Icons.search_rounded, 'חיפוש'),
+    (Icons.library_books_rounded, 'ספרייה'),
   ];
 
   @override

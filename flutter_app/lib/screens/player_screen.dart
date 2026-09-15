@@ -7,6 +7,7 @@ import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 import '../models.dart';
 import '../theme.dart';
 import '../settings.dart';
+import '../library.dart';
 import '../youtube_api.dart';
 import '../channels_repo.dart';
 import '../widgets/video_card.dart';
@@ -58,6 +59,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       ),
     );
     _controller.loadVideoById(videoId: _current.id);
+    // גם הסרטון הראשון נספר, לא רק המעברים בתוך הנגן.
+    appLibrary.recordWatch(_current);
     _sub = _controller.listen((value) {
       if (value.playerState == PlayerState.ended &&
           !_advancing &&
@@ -89,6 +92,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
     _controller.loadVideoById(videoId: v.id);
     _loadUpNext();
+    appLibrary.recordWatch(v);
+  }
+
+  /// הלב. נשמר מקומית בלבד — באפליקציית החנות אין חשבון ואין שרת.
+  Widget _likeButton() {
+    final liked = appLibrary.isLiked(_current.id);
+    return IconButton(
+      tooltip: liked ? 'הסר מאהבתי' : 'אהבתי',
+      icon: Icon(
+        liked ? Icons.favorite : Icons.favorite_border,
+        color: liked ? const Color(0xFFFF3B5C) : AppTheme.text,
+        size: 24,
+      ),
+      onPressed: () async {
+        await appLibrary.toggleLike(_current);
+        if (mounted) setState(() {});
+      },
+    );
   }
 
   void _copyLink() {
@@ -486,6 +507,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               _btn(Icons.skip_next,
                   _upNext.isNotEmpty ? () => _playVideo(_upNext.first) : null),
               _btn(Icons.forward_10, () => _seekRelative(10)),
+              _likeButton(),
               _btn(Icons.fullscreen, () => _controller.enterFullScreen()),
             ],
           ),

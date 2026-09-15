@@ -33,6 +33,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _accountCard(),
           _sectionTitle('סינון תוכן'),
           ..._levels.map((l) => _levelTile(l.$1, l.$2, l.$3, s.filterLevel)),
+          _card(
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+              leading: Icon(s.isLocked ? Icons.lock : Icons.lock_open,
+                  color: s.isLocked ? AppTheme.accent : AppTheme.subtext),
+              title: Text(s.isLocked ? 'רמת הסינון נעולה' : 'נעילת רמת הסינון',
+                  style: const TextStyle(color: AppTheme.text)),
+              subtitle: Text(
+                  s.isLocked
+                      ? 'שינוי הרמה דורש את הקוד'
+                      : 'קוד שימנע שינוי של רמת הסינון',
+                  style:
+                      const TextStyle(color: AppTheme.subtext, fontSize: 12)),
+              trailing: const Icon(Icons.chevron_left, color: AppTheme.subtext),
+              onTap: _manageLock,
+            ),
+          ),
           _sectionTitle('תצוגה'),
           _card(
             child: SwitchListTile(
@@ -110,10 +127,72 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: child,
       );
 
+  /// ── הנעילה ────────────────────────────────────────────────────────────
+  /// מבקש את הקוד ומחזיר אם הוא נכון. כשאין נעילה — מאשר מיד.
+  Future<bool> _passesLock() async {
+    if (!appSettings.isLocked) return true;
+    final code = await _askCode('הקלד את קוד הנעילה');
+    if (code == null) return false;
+    if (appSettings.codeMatches(code)) return true;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('קוד שגוי')),
+      );
+    }
+    return false;
+  }
+
+  Future<String?> _askCode(String title) async {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.card,
+        title: Text(title, style: const TextStyle(color: AppTheme.text)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          obscureText: true,
+          keyboardType: TextInputType.number,
+          style: const TextStyle(color: AppTheme.text),
+          decoration: const InputDecoration(hintText: 'קוד'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('ביטול',
+                  style: TextStyle(color: AppTheme.subtext))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, controller.text),
+              child: const Text('אישור',
+                  style: TextStyle(color: AppTheme.accent))),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _manageLock() async {
+    if (appSettings.isLocked) {
+      // ביטול הנעילה דורש את הקוד בדיוק כמו שינוי הרמה. אחרת הנעילה שווה
+      // כלום: אפשר פשוט לכבות אותה ואז לשנות הכל.
+      if (!await _passesLock()) return;
+      await appSettings.setLockCode('');
+      if (mounted) setState(() {});
+      return;
+    }
+    final code = await _askCode('בחר קוד נעילה');
+    if (code == null || code.trim().isEmpty) return;
+    await appSettings.setLockCode(code);
+    if (mounted) setState(() {});
+  }
+
   Widget _levelTile(int level, String title, String sub, int current) {
     final selected = current == level;
     return GestureDetector(
-      onTap: () {
+      onTap: () async {
+        if (level == current) return;
+        if (!await _passesLock()) return;
+        if (!mounted) return;
         setState(() {});
         widget.onFilterLevelChanged(level);
       },
