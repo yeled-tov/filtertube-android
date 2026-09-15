@@ -16,6 +16,12 @@ name: פריסת שרת
 
 on:
   workflow_dispatch:
+    inputs:
+      only:
+        description: 'מה לפרוס (ברירת מחדל: הכול)'
+        required: false
+        default: 'functions,firestore:rules,firestore:indexes'
+        type: string
   push:
     branches: [main]
     paths:
@@ -58,13 +64,18 @@ jobs:
       - name: פריסה
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/service-account.json
+          ONLY: ${{ inputs.only }}
         run: |
           npm install -g firebase-tools@15
           # גם כללי האבטחה ולא רק הפונקציות: הכללים שבמאגר הם מקור האמת,
           # ואם הם לא פורסמו, מסד הנתונים חוסם את כל בקשות הלקוח — סנכרון
           # הפרופיל והספרייה מפסיק לעבוד בלי שום שגיאה גלויה באפליקציה.
+          # ── למה אפשר לבחור מה לפרוס ────────────────────────────────
+          # פריסת כללי אבטחה ופריסת פונקציות דורשות הרשאות שונות לגמרי.
+          # כשאחת מהן חסומה, פריסה "הכול או כלום" מחזיקה בן ערובה גם את
+          # החלק שמוכן — וכללי אבטחה שגויים הם תקלה פעילה אצל המשתמשים.
           firebase deploy \
-            --only functions,firestore:rules,firestore:indexes \
+            --only "${ONLY:-functions,firestore:rules,firestore:indexes}" \
             --project filter-tube-52d8e \
             --non-interactive \
             --force
