@@ -49,6 +49,8 @@ fun AdminScreen(onBack: () -> Unit) {
     var premiumLoading by remember { mutableStateOf(false) }
     var historyLoading by remember { mutableStateOf(false) }
     var dashboard by remember { mutableStateOf<AdminDashboard.Snapshot?>(null) }
+    var clientQuery by remember { mutableStateOf("") }
+    var clientFilter by remember { mutableStateOf("all") }
     var dashboardLoading by remember { mutableStateOf(false) }
 
     var newChannelInput by remember { mutableStateOf("") }
@@ -299,7 +301,7 @@ fun AdminScreen(onBack: () -> Unit) {
 
                 dashboard?.let { snapshot ->
                     Spacer(Modifier.height(16.dp))
-                    Text("דשבורד לקוחות", color = Color(0xFF90CAF9), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("ניהול לקוחות", color = Color(0xFF90CAF9), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
                     val s = snapshot.summary
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -308,38 +310,90 @@ fun AdminScreen(onBack: () -> Unit) {
                         DashboardStat("Premium", s.premiumAccounts, Modifier.weight(1f))
                         DashboardStat("ניסיון", s.trialAccounts, Modifier.weight(1f))
                     }
+                    Spacer(Modifier.height(6.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        DashboardStat("מושבתים", s.disabledAccounts, Modifier.weight(1f))
+                        DashboardStat("בקשות ממתינות", s.pendingRequests, Modifier.weight(1f))
+                        DashboardStat("רמה 1", s.level1, Modifier.weight(1f))
+                        DashboardStat("רמה 2", s.level2, Modifier.weight(1f))
+                        DashboardStat("רמה 3", s.level3, Modifier.weight(1f))
+                    }
+
+                    // ── סינון וחיפוש ──────────────────────────────────────
+                    // עם עשרות לקוחות רשימה אחת ארוכה אינה ניהול: השאלה
+                    // המעשית היא תמיד "מי בפרימיום", "מי מושבת", "איפה
+                    // הלקוח הזה" — ולכן אלה המסננים.
                     Spacer(Modifier.height(10.dp))
-                    Text("לקוחות (${snapshot.clients.size})", color = ThemeState.subtext2, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    snapshot.clients.forEach { client ->
-                        Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(client.email.ifBlank { client.uid }, color = ThemeState.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    OutlinedTextField(
+                        value = clientQuery,
+                        onValueChange = { clientQuery = it },
+                        label = { Text("חיפוש לפי מייל או שם") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        listOf(
+                            "all" to "הכול",
+                            "premium" to "פרימיום",
+                            "trial" to "ניסיון",
+                            "none" to "ללא מנוי",
+                            "disabled" to "מושבתים",
+                            "requests" to "עם בקשות",
+                        ).forEach { (key, label) ->
+                            val selected = clientFilter == key
+                            Box(
+                                modifier = Modifier.padding(end = 6.dp).clip(RoundedCornerShape(50))
+                                    .background(if (selected) ThemeState.accent else ThemeState.card)
+                                    .clickable { clientFilter = key }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                            ) {
                                 Text(
-                                    when {
-                                        client.premium -> "Premium"
-                                        client.trialActive -> "ניסיון"
-                                        else -> "ללא מנוי"
-                                    },
-                                    color = if (client.premium) Color(0xFF81C784) else ThemeState.subtext,
-                                    fontSize = 11.sp,
-                                )
-                            }
-                            Text(
-                                "${if (client.verified) "✓ מאומת" else "לא מאומת"} · ${if (client.lastSignInAt.isBlank()) "טרם התחבר" else "מחובר בעבר"}",
-                                color = ThemeState.subtext2, fontSize = 10.sp,
-                            )
-                            if (client.premium || client.trialActive) {
-                                Text(
-                                    "מסלול: ${when (client.plan) { "year" -> "שנתי"; "month" -> "חודשי"; else -> if (client.trialActive) "ניסיון" else "לא ידוע" }}",
-                                    color = ThemeState.subtext, fontSize = 10.sp,
-                                )
-                                Text(
-                                    "התחלה: ${formatDashboardDate(client.subscriptionStartedAt)} · סיום: ${formatDashboardDate(if (client.premium) client.subscriptionEndsAt else client.subscriptionEndsAt)}",
-                                    color = ThemeState.subtext, fontSize = 10.sp,
+                                    label,
+                                    color = if (selected) Color.White else ThemeState.subtext2,
+                                    fontSize = 12.sp,
                                 )
                             }
                         }
-                        HorizontalDivider(color = ThemeState.card)
+                    }
+
+                    val visible = snapshot.clients.filter { client ->
+                        val q = clientQuery.trim()
+                        val matchesQuery = q.isBlank()
+                            || client.email.contains(q, ignoreCase = true)
+                            || client.displayName.contains(q, ignoreCase = true)
+                        val matchesFilter = when (clientFilter) {
+                            "premium" -> client.premium
+                            "trial" -> client.trialActive
+                            "none" -> !client.premium && !client.trialActive
+                            "disabled" -> client.disabled
+                            "requests" -> client.pendingChannelRequests > 0 || client.premiumRequestPending
+                            else -> true
+                        }
+                        matchesQuery && matchesFilter
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "מוצגים ${visible.size} מתוך ${snapshot.clients.size}",
+                        color = ThemeState.subtext2, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                    )
+                    visible.forEach { client ->
+                        ClientCard(
+                            client = client,
+                            busy = busy,
+                            onAction = { action, plan, days ->
+                                scope.launch {
+                                    busy = true
+                                    status = "מבצע…"
+                                    val result = AdminDashboard.manage(client.uid, action, plan, days)
+                                    status = result.message
+                                    busy = false
+                                    if (result.ok) loadDashboard()
+                                }
+                            },
+                        )
                     }
                 }
 
@@ -563,6 +617,170 @@ fun AdminScreen(onBack: () -> Unit) {
                 HorizontalDivider(color = ThemeState.card)
             }
         }
+    }
+}
+
+/**
+ * כרטיס לקוח — מה הוא בחר, מה מצבו, ומה אפשר לעשות לו.
+ *
+ * ## למה כרטיס ולא שורה
+ * הרשימה הקודמת הציגה מייל ותווית מנוי, וזה לא ניהול: אי אפשר היה לדעת
+ * באיזו רמת סינון הלקוח נמצא, אם הוא סיים הרשמה, כמה בקשות הוא שלח, ולא
+ * הייתה שום פעולה לבצע עליו. כאן הנתונים והפעולות יושבים יחד, ופעולה
+ * הרסנית (מחיקה) דורשת אישור שני.
+ */
+@Composable
+private fun ClientCard(
+    client: AdminDashboard.Client,
+    busy: Boolean,
+    onAction: (action: String, plan: String?, days: Int?) -> Unit,
+) {
+    var expanded by remember(client.uid) { mutableStateOf(false) }
+    var confirmDelete by remember(client.uid) { mutableStateOf(false) }
+
+    val stateColor = when {
+        client.disabled -> Color(0xFFE05A5A)
+        client.premium -> Color(0xFF81C784)
+        client.trialActive -> Color(0xFFFFB74D)
+        else -> ThemeState.subtext
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            .clip(RoundedCornerShape(12.dp)).background(ThemeState.card)
+            .clickable { expanded = !expanded }
+            .padding(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    client.displayName.ifBlank { client.email.ifBlank { client.uid } },
+                    color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+                if (client.displayName.isNotBlank() && client.email.isNotBlank()) {
+                    Text(client.email, color = ThemeState.subtext2, fontSize = 11.sp, maxLines = 1)
+                }
+            }
+            Text(client.stateHe, color = stateColor, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+        }
+
+        Spacer(Modifier.height(6.dp))
+        Text(
+            listOfNotNull(
+                client.filterLevelHe,
+                client.genderHe.ifBlank { null },
+                if (client.onboardingDone) null else "לא סיים הרשמה",
+                if (client.verified) null else "מייל לא מאומת",
+            ).joinToString(" · "),
+            color = ThemeState.subtext, fontSize = 11.sp, lineHeight = 16.sp,
+        )
+        if (client.pendingChannelRequests > 0 || client.premiumRequestPending) {
+            Text(
+                listOfNotNull(
+                    if (client.pendingChannelRequests > 0) {
+                        "${client.pendingChannelRequests} בקשות ערוץ ממתינות"
+                    } else {
+                        null
+                    },
+                    if (client.premiumRequestPending) "בקשת פרימיום ממתינה" else null,
+                ).joinToString(" · "),
+                color = Color(0xFFFFAA00), fontSize = 11.sp,
+            )
+        }
+
+        if (expanded) {
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = ThemeState.bg2)
+            Spacer(Modifier.height(8.dp))
+            DetailLine("מזהה", client.uid)
+            DetailLine("נרשם", formatDashboardDate(client.createdAt))
+            DetailLine(
+                "כניסה אחרונה",
+                if (client.lastSignInAt.isBlank()) "טרם התחבר" else formatDashboardDate(client.lastSignInAt),
+            )
+            DetailLine("סה\"כ בקשות ערוץ", client.channelRequests.toString())
+            if (client.premium || client.trialActive) {
+                DetailLine(
+                    "מסלול",
+                    when (client.plan) {
+                        "year" -> "שנתי"
+                        "month" -> "חודשי"
+                        else -> if (client.trialActive) "ניסיון" else "לא ידוע"
+                    },
+                )
+                DetailLine("תוקף עד", formatDashboardDate(client.subscriptionEndsAt))
+            }
+
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                ClientAction("פרימיום חודש", Color(0xFF2E7D32), busy) {
+                    onAction("grantPremium", "month", 30)
+                }
+                ClientAction("פרימיום שנה", Color(0xFF2E7D32), busy) {
+                    onAction("grantPremium", "year", 365)
+                }
+                if (client.manualPremium) {
+                    ClientAction("בטל פרימיום", Color(0xFF6D4C41), busy) {
+                        onAction("revokePremium", null, null)
+                    }
+                }
+                if (client.disabled) {
+                    ClientAction("הפעל חשבון", Color(0xFF1565C0), busy) {
+                        onAction("enable", null, null)
+                    }
+                } else {
+                    ClientAction("השבת חשבון", Color(0xFF8D6E63), busy) {
+                        onAction("disable", null, null)
+                    }
+                }
+                ClientAction("מחק לקוח", Color(0xFFB71C1C), busy) { confirmDelete = true }
+            }
+        }
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("למחוק את הלקוח?") },
+            text = {
+                Text(
+                    "החשבון של ${client.email.ifBlank { client.uid }} יימחק יחד עם הפרופיל, " +
+                        "החיוב, הספרייה והבקשות שלו. אי אפשר לבטל את זה.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    onAction("delete", null, null)
+                }) { Text("מחק", color = Color(0xFFE05A5A), fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("ביטול") }
+            },
+            containerColor = ThemeState.card,
+        )
+    }
+}
+
+@Composable
+private fun DetailLine(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
+        Text("$label:", color = ThemeState.subtext2, fontSize = 11.sp)
+        Spacer(Modifier.width(6.dp))
+        Text(value, color = ThemeState.subtext, fontSize = 11.sp, maxLines = 1)
+    }
+}
+
+@Composable
+private fun ClientAction(label: String, color: Color, busy: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier.padding(end = 6.dp).clip(RoundedCornerShape(50))
+            .background(if (busy) ThemeState.bg2 else color)
+            .clickable(enabled = !busy, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+    ) {
+        Text(label, color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
     }
 }
 
