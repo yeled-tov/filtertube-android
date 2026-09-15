@@ -41,7 +41,8 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> {
+class _PlayerScreenState extends State<PlayerScreen>
+    with WidgetsBindingObserver {
   late YoutubePlayerController _controller;
   late Video _current;
   List<Video> _upNext = [];
@@ -58,6 +59,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _current = widget.video;
     _audioOnly = widget.musicMode ||
         widget.channels.isAudioOnly(_current.channelId, appSettings.filterLevel);
@@ -320,10 +322,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
     _sleepTimer?.cancel();
     _controller.close();
     super.dispose();
+  }
+
+
+  /// אין ניגון ברקע בגרסת החנות: כשהאפליקציה יוצאת מהמסך הניגון נעצר.
+  /// paused ולא inactive — inactive נדלק גם על מגירת ההתראות או שיחה
+  /// נכנסת, ולעצור שם היה נראה כמו תקלה.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) _controller.pauseVideo();
   }
 
   @override

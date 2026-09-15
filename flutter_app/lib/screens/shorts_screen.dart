@@ -39,7 +39,8 @@ class ShortsScreen extends StatefulWidget {
   State<ShortsScreen> createState() => _ShortsScreenState();
 }
 
-class _ShortsScreenState extends State<ShortsScreen> {
+class _ShortsScreenState extends State<ShortsScreen>
+    with WidgetsBindingObserver {
   late final YoutubePlayerController _controller;
   final _pageController = PageController();
 
@@ -53,6 +54,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _controller = YoutubePlayerController(
       params: const YoutubePlayerParams(
         showControls: false,
@@ -94,10 +96,20 @@ class _ShortsScreenState extends State<ShortsScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
     _pageController.dispose();
     _controller.close();
     super.dispose();
+  }
+
+
+  /// אין ניגון ברקע בגרסת החנות: כשהאפליקציה יוצאת מהמסך הניגון נעצר.
+  /// paused ולא inactive — inactive נדלק גם על מגירת ההתראות או שיחה
+  /// נכנסת, ולעצור שם היה נראה כמו תקלה.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) _controller.pauseVideo();
   }
 
   /// הפיד: העלאות אחרונות מהערוצים המאושרים, מסוננות לאורך קצר.
