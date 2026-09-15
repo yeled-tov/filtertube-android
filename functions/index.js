@@ -18,8 +18,18 @@ const auth = getAuth();
 const db = getFirestore();
 const creemApiKey = defineSecret("CREEM_API_KEY");
 const creemWebhookSecret = defineSecret("CREEM_WEBHOOK_SECRET");
-const creemMonthlyProduct = defineString("CREEM_MONTHLY_PRODUCT_ID");
-const creemYearlyProduct = defineString("CREEM_YEARLY_PRODUCT_ID");
+// ── תשלומים אוטומטיים כבויים ──────────────────────────────────────────
+// אין כרגע חשבון Creem פעיל, ולכן אין מזהי מוצר. ברירת מחדל ריקה ולא
+// פרמטר חובה: פרמטר בלי ערך עוצר כל פריסה לא-אינטראקטיבית, כלומר תכונה
+// שאינה בשימוש הייתה חוסמת גם את כל התיקונים שכן צריך להוציא.
+//
+// הקוד עצמו נשאר על כנו. ביום שייפתח עוסק ויהיה חשבון, מגדירים את שני
+// הערכים ב-GitHub Secrets והכל חוזר לפעול — בלי לכתוב שורה מחדש.
+//
+// עד אז createCheckout מחזיר שגיאה מסודרת (ראה "תשלומים אינם פעילים"),
+// והמסלול היחיד לפרימיום הוא הענקה ידנית מדשבורד הניהול.
+const creemMonthlyProduct = defineString("CREEM_MONTHLY_PRODUCT_ID", { default: "" });
+const creemYearlyProduct = defineString("CREEM_YEARLY_PRODUCT_ID", { default: "" });
 const creemApiBase = defineString("CREEM_API_BASE", {
   default: "https://api.creem.io",
 });
@@ -1491,7 +1501,14 @@ export const createCheckout = onRequest({
     : plan === "year"
       ? creemYearlyProduct.value()
       : null;
-  if (!plan || !productId) {
+  if (!productId) {
+    return res.status(503).json({
+      ok: false,
+      code: "BILLING_DISABLED",
+      message: "תשלומים אינם פעילים כרגע. לפרטים על מנוי — פנה אלינו מתוך מסך הפרימיום",
+    });
+  }
+  if (!plan) {
     return res.status(400).json({ ok: false, message: "Unknown plan" });
   }
   if (!decoded.email) {
