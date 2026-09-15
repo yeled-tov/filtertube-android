@@ -1,0 +1,74 @@
+# פריסת Cloud Functions מתוך GitHub, בלי מחשב ובלי CLI מקומי.
+#
+# ## למה זה קיים
+# פריסת פונקציות אינה אפשרית מקונסולת Firebase — היא דורשת העלאת קוד
+# ולכן CLI. מי שאין לו מחשב זמין נשאר בלי שום דרך לפרוס שינוי בשרת, וזה
+# בדיוק המצב שבו תיקון מוכן יושב שבוע בלי להגיע ללקוחות.
+#
+# ## מה צריך פעם אחת
+# סוד בשם FIREBASE_SERVICE_ACCOUNT ב-Settings → Secrets → Actions של
+# המאגר, שתוכנו הוא קובץ ה-JSON של חשבון שירות עם הרשאת פריסה.
+#
+# ## איך מריצים
+# Actions → "פריסת פונקציות" → Run workflow. או אוטומטית, בכל דחיפה
+# ל-main שנוגעת ב-functions/.
+name: פריסת שרת
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'functions/**'
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - '.github/workflows/deploy-functions.yml'
+
+# שתי פריסות במקביל לאותו פרויקט נכשלות אחת על השנייה.
+concurrency:
+  group: deploy-functions
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: בדיקת תחביר של הפונקציות
+        run: npm --prefix functions run lint
+
+      - name: כתיבת חשבון השירות לקובץ
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then
+            echo "::error::חסר הסוד FIREBASE_SERVICE_ACCOUNT. ראה את ההסבר בראש הקובץ."
+            exit 1
+          fi
+          # הקובץ נכתב מחוץ לעץ העבודה כדי שלא ייכלל בטעות בפריסה עצמה.
+          printf '%s' "$SA" > "$RUNNER_TEMP/service-account.json"
+
+      - name: פריסה
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/service-account.json
+        run: |
+          npm install -g firebase-tools@15
+          # גם כללי האבטחה ולא רק הפונקציות: הכללים שבמאגר הם מקור האמת,
+          # ואם הם לא פורסמו, מסד הנתונים חוסם את כל בקשות הלקוח — סנכרון
+          # הפרופיל והספרייה מפסיק לעבוד בלי שום שגיאה גלויה באפליקציה.
+          firebase deploy \
+            --only functions,firestore:rules,firestore:indexes \
+            --project filter-tube-52d8e \
+            --non-interactive \
+            --force
+
+      - name: ניקוי
+        if: always()
+        run: rm -f "$RUNNER_TEMP/service-account.json"
