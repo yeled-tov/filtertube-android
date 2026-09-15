@@ -4,6 +4,7 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 /**
@@ -68,4 +69,29 @@ object Motion {
     fun <T> quick() = tween<T>(durationMillis = 150, easing = standard)
     fun <T> normal() = tween<T>(durationMillis = 260, easing = emphasized)
     fun <T> slow() = tween<T>(durationMillis = 420, easing = emphasized)
+}
+
+/**
+ * גווני הסימון של האייקונים.
+ *
+ * ## למה פלטה ולא צבע לכל שורה
+ * בהגדרות ישבו עד עכשיו שנים-עשר גוונים שנבחרו אחד-אחד: אדום מלא
+ * (0xFFFF0000) ליד ירוק עמום (0xFF10B981) ליד צהוב זוהר (0xFFFFC107).
+ * הבעיה אינה הריבוי אלא חוסר ההתאמה: כשכל גוון בעוצמה אחרת, העין רואה
+ * בלגן ולא קידוד. הגוונים כאן כולם באותה רוויה ובאותה בהירות, ולכן ריבוי
+ * הצבעים נקרא כמערכת — בדיוק כמו קידוד צבע במפה טובה.
+ *
+ * צבע נושא מידע רק כשהוא עקבי, ולכן לכל גוון יש כאן משמעות קבועה:
+ * אדום = יוטיוב, ענבר = הגנה וסינון, זהב = פרימיום, ירוק = מדיה, וכו'.
+ */
+object Tint {
+    val red = Color(0xFFE5484D)
+    val orange = Color(0xFFF07B3F)
+    val amber = Color(0xFFE0A63C)
+    val gold = Color(0xFFD4A62A)
+    val green = Color(0xFF3BA46C)
+    val teal = Color(0xFF29A3A3)
+    val blue = Color(0xFF4A7BF7)
+    val violet = Color(0xFF8B62F0)
+    val pink = Color(0xFFDB5BA0)
 }

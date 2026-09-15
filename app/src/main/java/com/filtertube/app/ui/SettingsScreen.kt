@@ -15,6 +15,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AdminPanelSettings
+import androidx.compose.material.icons.rounded.CloudDone
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FilterAlt
 import androidx.compose.material.icons.rounded.Info
@@ -43,6 +46,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.filtertube.app.BuildConfig
 import com.filtertube.app.ThemeState
+import com.filtertube.app.ui.theme.Tint
 import com.filtertube.app.data.CloudSync
 import com.filtertube.app.data.FirebaseAccount
 import com.filtertube.app.data.GoogleAuth
@@ -90,47 +94,64 @@ fun SettingsScreen(
         modifier = Modifier.fillMaxSize().background(ThemeState.bg)
             .verticalScroll(rememberScrollState()),
     ) {
+        // כותרת גדולה בלי קו מפריד: הקו סימן גבול שכבר מסומן ע"י המרווח,
+        // והוא רק הוסיף עוד קו למסך שכולו קווים.
         Text(
-            "הגדרות", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = ThemeState.text,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 12.dp),
+            "הגדרות",
+            style = MaterialTheme.typography.displaySmall,
+            color = ThemeState.text,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 34.dp, bottom = 6.dp),
         )
-        HorizontalDivider(color = ThemeState.divider)
 
-        Spacer(Modifier.height(8.dp))
-        SettingsSectionHeader("חיבור ואימות")
-        SettingsRow(Icons.Rounded.AccountCircle, Color(0xFFFF0000), "חיבור ל-YouTube (אופציונלי)",
-            "רק לסנכרון לייקים, היסטוריה ומנויים ב-YouTube — לא החשבון של FilterTube") { onOpenYoutubeLogin() }
-        SettingsRow(Icons.Rounded.AccountCircle, Color(0xFF2563EB), "סנכרון ענן",
-            if (settings.cloudEmail.isNotBlank()) "מחובר: ${settings.cloudEmail}" else "החשבון נדרש בכניסה לאפליקציה") { showCloud = true }
-        SettingsRow(Icons.Rounded.WorkspacePremium, Color(0xFFFFC107), "FilterTube Premium",
-            "הורדות וניגון ברקע — ניסיון חינם 30 יום") { onOpenPremium() }
-
-        SettingsSectionHeader("סינון וניגון")
-        SettingsRow(Icons.Rounded.FilterAlt, Color(0xFFFFAA00), "הגדרות סינון 🔒",
-            "רמת סינון והצגת Shorts — מוגן בקוד") {
-            gateTarget = SettingsGateTarget.FILTER
+        SettingsSectionHeader("חשבון")
+        SettingsGroup {
+            SettingsRow(Icons.Rounded.AccountCircle, Tint.red, "חיבור ל-YouTube",
+                "לסנכרון לייקים, היסטוריה ומנויים — לא החשבון של FilterTube") { onOpenYoutubeLogin() }
+            SettingsRow(Icons.Rounded.CloudDone, Tint.blue, "סנכרון ענן",
+                if (settings.cloudEmail.isNotBlank()) "מחובר: ${settings.cloudEmail}" else "החשבון נדרש בכניסה לאפליקציה") { showCloud = true }
+            SettingsRow(Icons.Rounded.WorkspacePremium, Tint.gold, "FilterTube Premium",
+                "הורדות וניגון ברקע — ניסיון חינם 30 יום", last = true) { onOpenPremium() }
         }
-        SettingsRow(Icons.Rounded.MusicNote, Color(0xFF10B981), "נגן ושמע",
-            "עיצוב הנגן ואיכות") { showPlayerAudio = true }
 
-        SettingsSectionHeader("ניהול והצגה")
-        SettingsRow(Icons.Rounded.Download, Color(0xFF00BFA5), "מנהל הורדות",
-            "הורדת לייקים · מהירות · הורדות במקביל") { onOpenDownloads() }
-        SettingsRow(Icons.Rounded.Tune, Color(0xFF3B82F6), "הגדרות תצוגה",
-            "צבע ראשי · מצב כהה/בהיר · 120 הרץ") { showDisplay = true }
-        SettingsRow(Icons.Rounded.Notifications, Color(0xFFEC407A), "התראות",
-            "התראה על סרטון חדש בערוץ מאושר") { showNotify = true }
-        SettingsRow(Icons.Rounded.SystemUpdate, Color(0xFFA855F7), "עדכונים",
-            "בדוק והורד גרסה חדשה") { showUpdate = true }
-        SettingsRow(Icons.Rounded.Info, ThemeState.subtext2, "אודות",
-            "FilterTube — רק ערוצים מאושרים") { showAbout = true }
+        SettingsSectionHeader("סינון והגנה")
+        SettingsGroup {
+            SettingsRow(Icons.Rounded.Shield, Tint.amber, "הגדרות סינון",
+                "רמת סינון והצגת Shorts", locked = true, last = true) {
+                gateTarget = SettingsGateTarget.FILTER
+            }
+        }
+
+        SettingsSectionHeader("ניגון ומדיה")
+        SettingsGroup {
+            SettingsRow(Icons.Rounded.GraphicEq, Tint.green, "נגן ושמע",
+                "עיצוב הנגן ואיכות") { showPlayerAudio = true }
+            SettingsRow(Icons.Rounded.Download, Tint.teal, "מנהל הורדות",
+                "הורדת לייקים · מהירות · הורדות במקביל", last = true) { onOpenDownloads() }
+        }
+
+        SettingsSectionHeader("תצוגה והתראות")
+        SettingsGroup {
+            SettingsRow(Icons.Rounded.Tune, Tint.violet, "הגדרות תצוגה",
+                "צבע ראשי · מצב כהה/בהיר · 120 הרץ") { showDisplay = true }
+            SettingsRow(Icons.Rounded.Notifications, Tint.pink, "התראות",
+                "התראה על סרטון חדש בערוץ מאושר", last = true) { showNotify = true }
+        }
+
+        SettingsSectionHeader("על האפליקציה")
+        SettingsGroup {
+            SettingsRow(Icons.Rounded.SystemUpdate, Tint.orange, "עדכונים",
+                "בדוק והורד גרסה חדשה") { showUpdate = true }
+            SettingsRow(Icons.Rounded.Info, ThemeState.subtext, "אודות",
+                "FilterTube — רק ערוצים מאושרים", last = true) { showAbout = true }
+        }
 
         if (isAdmin) {
-            SettingsRow(Icons.Rounded.Speed, Color(0xFF00BFA5), "אבחון מהירות/עצירות",
-                "מה איטי או נתקע בניגון — ושליחה אליי") { onOpenDiag() }
-            SettingsRow(Icons.Rounded.AdminPanelSettings, Color(0xFFFFAA00), "ניהול ערוצים",
-                "הוספה/הסרה של ערוצים מהרשימה הלבנה") {
-                onOpenAdmin()
+            SettingsSectionHeader("ניהול")
+            SettingsGroup {
+                SettingsRow(Icons.Rounded.AdminPanelSettings, Tint.amber, "ניהול ערוצים",
+                    "הוספה/הסרה של ערוצים מהרשימה הלבנה") { onOpenAdmin() }
+                SettingsRow(Icons.Rounded.Speed, Tint.teal, "אבחון מהירות/עצירות",
+                    "מה איטי או נתקע בניגון — ושליחה אליי", last = true) { onOpenDiag() }
             }
         }
         // מרווח תחתון כדי שהפריט האחרון יהיה מעל סרגל הניווט הצף
@@ -285,14 +306,39 @@ private fun SettingsSheet(title: String, onBack: () -> Unit, content: @Composabl
     }
 }
 
+/**
+ * כותרת קטע.
+ *
+ * אפורה ולא בצבע ההדגשה: כשכל כותרת צבועה באדום, הצבע מפסיק לסמן "חשוב"
+ * ומתחיל לסמן "כותרת" — והמסך מתמלא באדום שאינו אומר דבר. ההדגשה שמורה
+ * כאן למה שהמשתמש בחר או צריך לשים לב אליו.
+ */
 @Composable
 private fun SettingsSectionHeader(title: String) {
     Text(
         title,
-        color = ThemeState.accent,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(start = 20.dp, end = 16.dp, top = 18.dp, bottom = 6.dp),
+        color = ThemeState.subtext,
+        style = MaterialTheme.typography.labelSmall,
+        modifier = Modifier.padding(start = 26.dp, end = 20.dp, top = 22.dp, bottom = 7.dp),
+    )
+}
+
+/**
+ * קבוצת הגדרות — כרטיס אחד שמכיל כמה שורות.
+ *
+ * קודם כל שורה הייתה כרטיס נפרד עם מרווח של 3dp בינה לבין השכנה. התוצאה
+ * הייתה ערימה של מלבנים שכולם נראים באותה חשיבות, בלי שום סימן לאילו
+ * שורות שייכות זו לזו. כשהקבוצה היא הכרטיס, החלוקה הלוגית הופכת לחלוקה
+ * ויזואלית — וזה מה שגורם למסך ארוך להיראות מסודר במקום עמוס.
+ */
+@Composable
+private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(ThemeState.card),
+        content = content,
     )
 }
 
@@ -305,24 +351,60 @@ private fun SettingsSectionHeader(title: String) {
  * הזה, וגם מגדירים את שטח ההקשה.
  */
 @Composable
-private fun SettingsRow(icon: ImageVector, accent: Color, title: String, subtitle: String, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 3.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(ThemeState.card)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(ThemeState.surface),
-            contentAlignment = Alignment.Center) { Icon(icon, null, tint = accent) }
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = ThemeState.text, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            Text(subtitle, color = ThemeState.subtext, fontSize = 12.sp)
+private fun SettingsRow(
+    icon: ImageVector,
+    accent: Color,
+    title: String,
+    subtitle: String,
+    locked: Boolean = false,
+    last: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // אריח האייקון נצבע בגוון עצמו בשקיפות נמוכה, ולא באפור אחיד:
+            // כך הצבע מופיע פעמיים (ברקע ובאייקון) ונקרא כתווית ולא ככתם.
+            Box(
+                modifier = Modifier.size(38.dp).clip(RoundedCornerShape(11.dp))
+                    .background(accent.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center,
+            ) { Icon(icon, null, tint = accent, modifier = Modifier.size(21.dp)) }
+            Spacer(Modifier.width(13.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, color = ThemeState.text, style = MaterialTheme.typography.titleMedium)
+                    // מנעול כאייקון ולא כאמוג'י בתוך הכותרת: אמוג'י נשלט ע"י
+                    // גופן המערכת, משנה צורה בין מכשירים ואינו מיישר לטקסט.
+                    if (locked) {
+                        Spacer(Modifier.width(6.dp))
+                        Icon(
+                            Icons.Rounded.Lock, "מוגן בקוד",
+                            tint = ThemeState.subtext, modifier = Modifier.size(13.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(1.dp))
+                Text(subtitle, color = ThemeState.subtext, style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                Icons.AutoMirrored.Rounded.KeyboardArrowRight, null,
+                tint = ThemeState.divider, modifier = Modifier.size(20.dp),
+            )
         }
-        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = Color(0xFF666666))
+        // קו מפריד שמתחיל אחרי האייקון ולא מקצה לקצה — כך הוא מפריד בין
+        // שורות בתוך הקבוצה בלי לחתוך את הכרטיס לשניים.
+        if (!last) {
+            HorizontalDivider(
+                color = ThemeState.divider.copy(alpha = 0.6f),
+                modifier = Modifier.padding(start = 65.dp, end = 14.dp),
+            )
+        }
     }
 }
 

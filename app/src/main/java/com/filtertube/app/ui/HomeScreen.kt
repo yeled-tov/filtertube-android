@@ -396,28 +396,41 @@ private fun DestinationChip(
     ) {
         Icon(icon, null, tint = tint, modifier = Modifier.size(15.dp))
         Spacer(Modifier.width(6.dp))
-        Text(label, color = ThemeState.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Text(label, color = ThemeState.text, style = MaterialTheme.typography.labelMedium)
     }
 }
 
 @Composable
 private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    // צ'יפ שאינו נבחר קיבל מסגרת: בלעדיה הוא רק טקסט על מלבן, ולא היה שום
+    // סימן שאפשר להקיש עליו — בדיוק ההבדל בין תווית לפקד.
+    val content by androidx.compose.animation.animateColorAsState(
+        targetValue = if (selected) Color.White else ThemeState.subtext2,
+        animationSpec = com.filtertube.app.ui.theme.Motion.normal(),
+        label = "chipContent",
+    )
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
             .then(
-                if (selected) Modifier.background(
-                    Brush.horizontalGradient(ThemeState.accentColors),
-                ) else Modifier.background(ThemeState.surface),
+                if (selected) {
+                    Modifier.background(Brush.horizontalGradient(ThemeState.accentColors))
+                } else {
+                    Modifier.background(ThemeState.bg2)
+                        .border(1.dp, ThemeState.divider, RoundedCornerShape(50))
+                },
             )
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Text(
             label,
-            color = if (selected) Color.White else ThemeState.subtext2,
-            fontSize = 13.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = content,
+            style = if (selected) {
+                MaterialTheme.typography.labelMedium
+            } else {
+                MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium)
+            },
         )
     }
 }
