@@ -90,20 +90,14 @@ jobs:
           # רק במחשב שממנו נפרס בפעם הראשונה. בפריסה לא-אינטראקטיבית אין
           # מי שישאל אותם, והיא נעצרת.
           #
-          # לשניים האחרונים יש ברירת מחדל בקוד עצמו, ולכן הם לא דורשים סוד.
-          # שני מזהי המוצר הם היחידים שחייבים להגיע מבחוץ.
+          # לכולם יש ברירת מחדל בקוד, ולכן אף אחד מהם אינו חובה: מזהי
+          # המוצר ריקים כל עוד אין חשבון Creem פעיל, וביום שיהיה מוסיפים
+          # אותם כסודות כאן והתשלומים מתחילים לעבוד בלי שינוי קוד.
           CREEM_MONTHLY_PRODUCT_ID: ${{ secrets.CREEM_MONTHLY_PRODUCT_ID }}
           CREEM_YEARLY_PRODUCT_ID: ${{ secrets.CREEM_YEARLY_PRODUCT_ID }}
           CREEM_API_BASE: ${{ secrets.CREEM_API_BASE || 'https://api.creem.io' }}
           CREEM_SUCCESS_URL: ${{ secrets.CREEM_SUCCESS_URL || 'https://filter-tube-52d8e.web.app/premium/success' }}
         run: |
-          missing=""
-          [ -z "$CREEM_MONTHLY_PRODUCT_ID" ] && missing="$missing CREEM_MONTHLY_PRODUCT_ID"
-          [ -z "$CREEM_YEARLY_PRODUCT_ID" ] && missing="$missing CREEM_YEARLY_PRODUCT_ID"
-          if [ -n "$missing" ]; then
-            echo "::error::חסרים סודות ב-GitHub:$missing — ראה את ההסבר בשלב הזה."
-            exit 1
-          fi
           npm install -g firebase-tools@15
           # גם כללי האבטחה ולא רק הפונקציות: הכללים שבמאגר הם מקור האמת,
           # ואם הם לא פורסמו, מסד הנתונים חוסם את כל בקשות הלקוח — סנכרון
