@@ -9,12 +9,12 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -197,7 +197,7 @@ fun MiniPlayer(
                             modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
                         )
                     } else {
-                        Icon(Icons.Default.MusicNote, null, tint = ThemeState.subtext, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Rounded.MusicNote, null, tint = ThemeState.subtext, modifier = Modifier.size(20.dp))
                     }
                 }
                 Spacer(Modifier.width(10.dp))
@@ -212,22 +212,22 @@ fun MiniPlayer(
                     )
                 }
                 IconButton(onClick = { controller.seekToPreviousMediaItem() }, modifier = Modifier.size(38.dp)) {
-                    Icon(Icons.Default.SkipPrevious, "שיר קודם", tint = ThemeState.text)
+                    Icon(Icons.Rounded.SkipPrevious, "שיר קודם", tint = ThemeState.text)
                 }
                 IconButton(
                     onClick = { if (ui.isPlaying) controller.pause() else controller.play() },
                     modifier = Modifier.size(42.dp),
                 ) {
                     Icon(
-                        if (ui.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         if (ui.isPlaying) "השהה" else "נגן", tint = ThemeState.text,
                     )
                 }
                 IconButton(onClick = { controller.seekToNextMediaItem() }, modifier = Modifier.size(38.dp)) {
-                    Icon(Icons.Default.SkipNext, "שיר הבא", tint = ThemeState.text)
+                    Icon(Icons.Rounded.SkipNext, "שיר הבא", tint = ThemeState.text)
                 }
                 IconButton(onClick = { stopEverything() }, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.Close, "עצור וסגור", tint = ThemeState.subtext2, modifier = Modifier.size(19.dp))
+                    Icon(Icons.Rounded.Close, "עצור וסגור", tint = ThemeState.subtext2, modifier = Modifier.size(19.dp))
                 }
             }
         }

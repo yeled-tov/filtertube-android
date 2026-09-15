@@ -7,18 +7,18 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RepeatOne
-import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -103,11 +103,11 @@ fun MusicPlayerScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onCollapse) {
-                Icon(Icons.Default.KeyboardArrowDown, "סגור", tint = ThemeState.text, modifier = Modifier.size(28.dp))
+                Icon(Icons.Rounded.KeyboardArrowDown, "סגור", tint = ThemeState.text, modifier = Modifier.size(28.dp))
             }
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Default.Tune, "הגדרות", tint = ThemeState.subtext2)
+                Icon(Icons.Rounded.Tune, "הגדרות", tint = ThemeState.subtext2)
             }
         }
 
@@ -148,7 +148,7 @@ fun MusicPlayerScreen(
                 com.filtertube.app.data.LibraryBadges.setLiked(id, liked)
             }) {
                 Icon(
-                    if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     "אהבתי", tint = if (liked) ThemeState.accent else ThemeState.subtext2,
                 )
             }
@@ -198,13 +198,13 @@ fun MusicPlayerScreen(
                 controller?.shuffleModeEnabled = shuffle
             }) {
                 Icon(
-                    Icons.Default.Shuffle, "ערבוב",
+                    Icons.Rounded.Shuffle, "ערבוב",
                     tint = if (shuffle) ThemeState.accent else ThemeState.subtext2,
                 )
             }
             IconButton(onClick = { controller?.seekToPreviousMediaItem() }, enabled = ui.hasPrev) {
                 Icon(
-                    Icons.Default.SkipPrevious, "הקודם", modifier = Modifier.size(36.dp),
+                    Icons.Rounded.SkipPrevious, "הקודם", modifier = Modifier.size(36.dp),
                     tint = if (ui.hasPrev) ThemeState.text else ThemeState.divider,
                 )
             }
@@ -222,7 +222,7 @@ fun MusicPlayerScreen(
                     CircularProgressIndicator(color = Color.White, strokeWidth = 2.5.dp, modifier = Modifier.size(26.dp))
                 } else {
                     Icon(
-                        if (ui.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         if (ui.isPlaying) "השהה" else "נגן",
                         tint = Color.White, modifier = Modifier.size(34.dp),
                     )
@@ -230,7 +230,7 @@ fun MusicPlayerScreen(
             }
             IconButton(onClick = { controller?.seekToNextMediaItem() }, enabled = ui.hasNext) {
                 Icon(
-                    Icons.Default.SkipNext, "הבא", modifier = Modifier.size(36.dp),
+                    Icons.Rounded.SkipNext, "הבא", modifier = Modifier.size(36.dp),
                     tint = if (ui.hasNext) ThemeState.text else ThemeState.divider,
                 )
             }
@@ -243,7 +243,7 @@ fun MusicPlayerScreen(
                 controller?.repeatMode = repeatMode
             }) {
                 Icon(
-                    if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                    if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
                     "חזרה",
                     tint = if (repeatMode == Player.REPEAT_MODE_OFF) ThemeState.subtext2 else ThemeState.accent,
                 )
@@ -261,7 +261,7 @@ fun MusicPlayerScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, tint = ThemeState.text, modifier = Modifier.size(20.dp))
+            Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, null, tint = ThemeState.text, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
             Text("הבא בתור", color = ThemeState.text, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
         }

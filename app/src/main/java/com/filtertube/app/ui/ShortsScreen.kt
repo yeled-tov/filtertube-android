@@ -12,10 +12,10 @@ import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -100,7 +100,7 @@ fun ShortsScreen(onOpenShort: () -> Unit, onSearch: () -> Unit) {
         ) {
             Text("Shorts", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = ThemeState.text, modifier = Modifier.weight(1f))
             IconButton(onClick = onSearch) {
-                Icon(Icons.Default.Search, "חיפוש", tint = ThemeState.text)
+                Icon(Icons.Rounded.Search, "חיפוש", tint = ThemeState.text)
             }
         }
         HorizontalDivider(color = ThemeState.divider)
@@ -209,7 +209,7 @@ fun ShortsPlayerScreen(onBack: () -> Unit) {
         }
         // כפתור חזרה לגריד
         IconButton(onClick = onBack, modifier = Modifier.align(Alignment.TopStart).padding(top = 28.dp, start = 4.dp)) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = ThemeState.text)
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, "חזור", tint = ThemeState.text)
         }
     }
 }
@@ -296,7 +296,7 @@ private fun ShortPage(video: Video, isActive: Boolean, loading: Boolean, player:
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null,
+                Icon(if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null,
                     tint = ThemeState.text, modifier = Modifier.size(36.dp))
             }
         }

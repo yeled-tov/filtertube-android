@@ -31,34 +31,34 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Audiotrack
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.Cast
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Radio
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.HighQuality
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Bedtime
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PictureInPictureAlt
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.rounded.Audiotrack
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.Cast
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.FullscreenExit
+import androidx.compose.material.icons.rounded.HighQuality
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -230,7 +230,7 @@ fun PlayerScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onCollapse) {
-                Icon(Icons.Default.KeyboardArrowDown, "כווץ", tint = ThemeState.text)
+                Icon(Icons.Rounded.KeyboardArrowDown, "כווץ", tint = ThemeState.text)
             }
             Text("מתנגן עכשיו", color = ThemeState.subtext2, fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
@@ -239,7 +239,7 @@ fun PlayerScreen(
                 com.filtertube.app.data.LibraryBadges.setLiked(ui.mediaId ?: "", liked)
                 syncLikeToYoutube(context, scope, ui.mediaId ?: "", liked)
             }) {
-                Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                Icon(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     "אהבתי", tint = if (liked) ThemeState.accent else Color.White)
             }
             PlayerOverflowMenu(
@@ -281,7 +281,7 @@ fun PlayerScreen(
                         AsyncImage(model = ui.artworkUri, contentDescription = null,
                             modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                     } else {
-                        Icon(Icons.Default.MusicNote, null, tint = Color(0xFF555555), modifier = Modifier.size(64.dp))
+                        Icon(Icons.Rounded.MusicNote, null, tint = Color(0xFF555555), modifier = Modifier.size(64.dp))
                     }
                 }
             }
@@ -333,7 +333,7 @@ fun PlayerScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = { controller.seekToPreviousMediaItem() }, enabled = ui.hasPrev) {
-                Icon(Icons.Default.SkipPrevious, "הקודם", tint = if (ui.hasPrev) Color.White else Color(0xFF555555),
+                Icon(Icons.Rounded.SkipPrevious, "הקודם", tint = if (ui.hasPrev) Color.White else Color(0xFF555555),
                     modifier = Modifier.size(40.dp))
             }
             Spacer(Modifier.width(20.dp))
@@ -342,12 +342,12 @@ fun PlayerScreen(
                     .clickable { if (ui.isPlaying) controller.pause() else controller.play() },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(if (ui.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                Icon(if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                     if (ui.isPlaying) "השהה" else "נגן", tint = ThemeState.text, modifier = Modifier.size(40.dp))
             }
             Spacer(Modifier.width(20.dp))
             IconButton(onClick = { controller.seekToNextMediaItem() }, enabled = ui.hasNext) {
-                Icon(Icons.Default.SkipNext, "הבא", tint = if (ui.hasNext) Color.White else Color(0xFF555555),
+                Icon(Icons.Rounded.SkipNext, "הבא", tint = if (ui.hasNext) Color.White else Color(0xFF555555),
                     modifier = Modifier.size(40.dp))
             }
         }
@@ -360,14 +360,14 @@ fun PlayerScreen(
         ) {
             if (currentData != null) {
                 IconButton(onClick = { replaceCurrent(!audioMode, qualityIndex) }) {
-                    Icon(if (audioMode) Icons.Default.Videocam else Icons.Default.Audiotrack,
+                    Icon(if (audioMode) Icons.Rounded.Videocam else Icons.Rounded.Audiotrack,
                         if (audioMode) "וידאו" else "אודיו", tint = ThemeState.text)
                 }
             }
 
             var speedMenu by remember { mutableStateOf(false) }
             Box {
-                IconButton(onClick = { speedMenu = true }) { Icon(Icons.Default.Speed, "מהירות", tint = ThemeState.text) }
+                IconButton(onClick = { speedMenu = true }) { Icon(Icons.Rounded.Speed, "מהירות", tint = ThemeState.text) }
                 DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
                     listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { sp ->
                         DropdownMenuItem(
@@ -381,7 +381,7 @@ fun PlayerScreen(
             if (!audioMode && currentData != null && currentData.tracks.size > 1) {
                 var qMenu by remember { mutableStateOf(false) }
                 Box {
-                    IconButton(onClick = { qMenu = true }) { Icon(Icons.Default.HighQuality, "איכות", tint = ThemeState.text) }
+                    IconButton(onClick = { qMenu = true }) { Icon(Icons.Rounded.HighQuality, "איכות", tint = ThemeState.text) }
                     DropdownMenu(expanded = qMenu, onDismissRequest = { qMenu = false }) {
                         currentData.tracks.forEachIndexed { i, t ->
                             DropdownMenuItem(
@@ -395,7 +395,7 @@ fun PlayerScreen(
 
             if (!audioMode) {
                 IconButton(onClick = { isFullscreen = true }) {
-                    Icon(Icons.Default.Fullscreen, "מסך מלא", tint = ThemeState.text)
+                    Icon(Icons.Rounded.Fullscreen, "מסך מלא", tint = ThemeState.text)
                 }
             }
         }
@@ -539,7 +539,7 @@ private fun FullscreenVideo(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = { controller.seekToPrevious() }, modifier = Modifier.size(56.dp)) {
-                        Icon(Icons.Default.SkipPrevious, "הקודם", tint = ThemeState.text,
+                        Icon(Icons.Rounded.SkipPrevious, "הקודם", tint = ThemeState.text,
                             modifier = Modifier.size(38.dp))
                     }
                     Spacer(Modifier.width(18.dp))
@@ -549,12 +549,12 @@ private fun FullscreenVideo(
                             .clickable { if (ui.isPlaying) controller.pause() else controller.play() },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(if (ui.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null,
+                        Icon(if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null,
                             tint = ThemeState.text, modifier = Modifier.size(44.dp))
                     }
                     Spacer(Modifier.width(18.dp))
                     IconButton(onClick = { controller.seekToNext() }, modifier = Modifier.size(56.dp)) {
-                        Icon(Icons.Default.SkipNext, "הבא", tint = ThemeState.text,
+                        Icon(Icons.Rounded.SkipNext, "הבא", tint = ThemeState.text,
                             modifier = Modifier.size(38.dp))
                     }
                 }
@@ -580,7 +580,7 @@ private fun FullscreenVideo(
                         }
                     }
                     Text(timeLtr(fmtTime(ui.duration)), color = ThemeState.text, fontSize = 11.sp)
-                    IconButton(onClick = onExit) { Icon(Icons.Default.FullscreenExit, "צא ממסך מלא", tint = ThemeState.text) }
+                    IconButton(onClick = onExit) { Icon(Icons.Rounded.FullscreenExit, "צא ממסך מלא", tint = ThemeState.text) }
                 }
                 }
                 }
@@ -599,7 +599,7 @@ private fun FullscreenVideo(
                     .padding(bottom = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(Icons.Default.KeyboardArrowUp, "הבא בתור", tint = Color.White)
+                Icon(Icons.Rounded.KeyboardArrowUp, "הבא בתור", tint = Color.White)
                 Text("הבא בתור", color = Color.White, fontSize = 10.sp)
             }
         }
@@ -674,45 +674,45 @@ private fun PlayerOverflowMenu(
     var menu by remember { mutableStateOf(false) }
     var qMenu by remember { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "עוד", tint = ThemeState.text) }
+        IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "עוד", tint = ThemeState.text) }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             if (hasData) {
                 DropdownMenuItem(
                     text = { Text(if (audioMode) "עבור לווידאו" else "אודיו בלבד") },
-                    leadingIcon = { Icon(if (audioMode) Icons.Default.Videocam else Icons.Default.MusicNote, null) },
+                    leadingIcon = { Icon(if (audioMode) Icons.Rounded.Videocam else Icons.Rounded.MusicNote, null) },
                     onClick = { menu = false; onToggleAudio() },
                 )
                 if (!audioMode && tracks.size > 1) {
                     DropdownMenuItem(
                         text = { Text("איכות: ${tracks.getOrNull(currentQuality)?.label ?: "אוטו"}") },
-                        leadingIcon = { Icon(Icons.Default.HighQuality, null) },
+                        leadingIcon = { Icon(Icons.Rounded.HighQuality, null) },
                         onClick = { menu = false; qMenu = true },
                     )
                 }
                 DropdownMenuItem(
                     text = { Text("הורד") },
-                    leadingIcon = { Icon(Icons.Default.Download, null) },
+                    leadingIcon = { Icon(Icons.Rounded.Download, null) },
                     onClick = { menu = false; onDownload() },
                 )
             }
             DropdownMenuItem(
                 text = { Text("מהירות: ${speed}x") },
-                leadingIcon = { Icon(Icons.Default.Speed, null) },
+                leadingIcon = { Icon(Icons.Rounded.Speed, null) },
                 onClick = { onCycleSpeed() },
             )
             DropdownMenuItem(
                 text = { Text(if (sleepMinutes > 0) "טיימר: $sleepMinutes דק׳" else "טיימר שינה") },
-                leadingIcon = { Icon(Icons.Default.Bedtime, null) },
+                leadingIcon = { Icon(Icons.Rounded.Bedtime, null) },
                 onClick = { onCycleSleep() },
             )
             DropdownMenuItem(
                 text = { Text("הוסף לאלבום") },
-                leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null) },
+                leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) },
                 onClick = { menu = false; onAddToPlaylist() },
             )
             DropdownMenuItem(
                 text = { Text("הצג אמן") },
-                leadingIcon = { Icon(Icons.Default.Person, null) },
+                leadingIcon = { Icon(Icons.Rounded.Person, null) },
                 onClick = {
                     menu = false
                     Toast.makeText(context, artist.ifEmpty { "—" }, Toast.LENGTH_SHORT).show()
@@ -720,7 +720,7 @@ private fun PlayerOverflowMenu(
             )
             DropdownMenuItem(
                 text = { Text("העתק קישור") },
-                leadingIcon = { Icon(Icons.Default.Link, null) },
+                leadingIcon = { Icon(Icons.Rounded.Link, null) },
                 onClick = {
                     menu = false
                     val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -1013,17 +1013,17 @@ private fun OnVideoPlayerScreen(
                         modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(11.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        GlassCircle(38.dp, onCollapse) { Icon(Icons.Default.KeyboardArrowDown, "כווץ", tint = Color.White) }
+                        GlassCircle(38.dp, onCollapse) { Icon(Icons.Rounded.KeyboardArrowDown, "כווץ", tint = Color.White) }
                         Spacer(Modifier.weight(1f))
-                        GlassCircle(38.dp, { /* cast */ }) { Icon(Icons.Default.Cast, "שידור", tint = Color.White, modifier = Modifier.size(20.dp)) }
+                        GlassCircle(38.dp, { /* cast */ }) { Icon(Icons.Rounded.Cast, "שידור", tint = Color.White, modifier = Modifier.size(20.dp)) }
                         Spacer(Modifier.width(8.dp))
-                        GlassCircle(38.dp, { showSheet = true }) { Icon(Icons.Default.Settings, "הגדרות נגן", tint = Color.White, modifier = Modifier.size(20.dp)) }
+                        GlassCircle(38.dp, { showSheet = true }) { Icon(Icons.Rounded.Settings, "הגדרות נגן", tint = Color.White, modifier = Modifier.size(20.dp)) }
                     }
 
                     // center transport
                     Row(modifier = Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
                         GlassCircle(46.dp, { controller.seekToPrevious() }) {
-                            Icon(Icons.Default.SkipPrevious, "שיר קודם", tint = Color.White, modifier = Modifier.size(26.dp))
+                            Icon(Icons.Rounded.SkipPrevious, "שיר קודם", tint = Color.White, modifier = Modifier.size(26.dp))
                         }
                         Spacer(Modifier.width(30.dp))
                         Box(
@@ -1033,12 +1033,12 @@ private fun OnVideoPlayerScreen(
                                 .clickable { if (ui.isPlaying) controller.pause() else controller.play() },
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(if (ui.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null,
+                            Icon(if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null,
                                 tint = Color.White, modifier = Modifier.size(34.dp))
                         }
                         Spacer(Modifier.width(30.dp))
                         GlassCircle(46.dp, { controller.seekToNext() }) {
-                            Icon(Icons.Default.SkipNext, "שיר הבא", tint = Color.White, modifier = Modifier.size(26.dp))
+                            Icon(Icons.Rounded.SkipNext, "שיר הבא", tint = Color.White, modifier = Modifier.size(26.dp))
                         }
                     }
 
@@ -1063,7 +1063,7 @@ private fun OnVideoPlayerScreen(
                                 if (forcedAudio) Toast.makeText(context, "תוכן זה זמין באודיו בלבד", Toast.LENGTH_SHORT).show()
                                 else setAudio(!audioMode)
                             }.padding(4.dp)) {
-                                Icon(Icons.Default.GraphicEq, "אודיו", tint = if (audioMode) ThemeState.accent else Color.White, modifier = Modifier.size(19.dp))
+                                Icon(Icons.Rounded.GraphicEq, "אודיו", tint = if (audioMode) ThemeState.accent else Color.White, modifier = Modifier.size(19.dp))
                             }
                             Spacer(Modifier.width(10.dp))
                             Box(modifier = Modifier.clip(RoundedCornerShape(9.dp)).background(Color(0x29FFFFFF)).clickable { showSheet = true }.padding(horizontal = 9.dp, vertical = 3.dp)) {
@@ -1071,7 +1071,7 @@ private fun OnVideoPlayerScreen(
                             }
                             Spacer(Modifier.weight(1f))
                             IconButton(onClick = onFullscreen, modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Default.Fullscreen, "מסך מלא", tint = Color.White)
+                                Icon(Icons.Rounded.Fullscreen, "מסך מלא", tint = Color.White)
                             }
                         }
                     }
@@ -1118,8 +1118,8 @@ private fun OnVideoPlayerScreen(
                         Toast.makeText(context, "מוריד אוטומטית ⚡", Toast.LENGTH_SHORT).show()
                     }
                 }
-            }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "אהבתי", tint = if (liked) ThemeState.accent else ThemeState.text) }
-            IconButton(onClick = { showSheet = true }) { Icon(Icons.Default.Tune, "הגדרות נגן", tint = ThemeState.text) }
+            }) { Icon(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, "אהבתי", tint = if (liked) ThemeState.accent else ThemeState.text) }
+            IconButton(onClick = { showSheet = true }) { Icon(Icons.Rounded.Tune, "הגדרות נגן", tint = ThemeState.text) }
         }
 
         // ---- פעולות מתחת לסרטון: עקוב · הורדה · אודיו/וידאו · חלון צף ----
@@ -1127,29 +1127,29 @@ private fun OnVideoPlayerScreen(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp).padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            ActionPill(if (subscribed) "עוקב ✓" else "עקוב", Icons.Default.Person, subscribed, Modifier.weight(1f)) {
+            ActionPill(if (subscribed) "עוקב ✓" else "עקוב", Icons.Rounded.Person, subscribed, Modifier.weight(1f)) {
                 val cid = currentData?.channelId
                 if (!cid.isNullOrBlank()) subscribed = store.toggleSubscription(cid)
                 else Toast.makeText(context, "לא ניתן לזהות את הערוץ", Toast.LENGTH_SHORT).show()
             }
-            ActionPill("הורדה", Icons.Default.Download, false, Modifier.weight(1f)) {
+            ActionPill("הורדה", Icons.Rounded.Download, false, Modifier.weight(1f)) {
                 if (sb.premiumActive) showDownload = true
                 else Toast.makeText(context, "הורדות — פיצ'ר פרימיום. ראה הגדרות → Premium", Toast.LENGTH_LONG).show()
             }
             // "רדיו" מהשיר שמתנגן — תור באותו סגנון. הזרע נבנה עם מזהה
             // הערוץ האמיתי מ-currentData; ל-currentVideo() אין אחד, ובלעדיו
             // התחנה מאבדת את אות ה"אותה קטגוריה".
-            ActionPill("רדיו", Icons.Default.Radio, false, Modifier.weight(1f)) {
+            ActionPill("רדיו", Icons.Rounded.Radio, false, Modifier.weight(1f)) {
                 val seed = currentVideo().copy(channelId = currentData?.channelId.orEmpty())
                 if (seed.id.isBlank()) Toast.makeText(context, "אין שיר פעיל", Toast.LENGTH_SHORT).show()
                 else onRadioFromSong(seed)
             }
-            ActionPill(if (audioMode) "וידאו" else "אודיו", Icons.Default.GraphicEq, audioMode, Modifier.weight(1f)) {
+            ActionPill(if (audioMode) "וידאו" else "אודיו", Icons.Rounded.GraphicEq, audioMode, Modifier.weight(1f)) {
                 if (forcedAudio) Toast.makeText(context, "תוכן זה זמין באודיו בלבד", Toast.LENGTH_SHORT).show()
                 else setAudio(!audioMode)
             }
             if (!audioMode) {
-                ActionPill("חלון צף", Icons.Default.PictureInPictureAlt, false, Modifier.weight(1f)) {
+                ActionPill("חלון צף", Icons.Rounded.PictureInPictureAlt, false, Modifier.weight(1f)) {
                     if (!sb.premiumActive) {
                         Toast.makeText(context, "חלון צף — פיצ'ר פרימיום. ראה הגדרות → Premium", Toast.LENGTH_LONG).show()
                     } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && activity != null) {
@@ -1360,11 +1360,11 @@ private fun PlayerSettingsSheet(
         ) {
             // כותרת
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-                Icon(Icons.Default.Settings, null, tint = ThemeState.accent, modifier = Modifier.size(20.dp))
+                Icon(Icons.Rounded.Settings, null, tint = ThemeState.accent, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(9.dp))
                 Text("הגדרות נגן ושמע", color = ThemeState.text, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
                 Box(modifier = Modifier.size(32.dp).clip(RoundedCornerShape(50)).background(Color(0x10FFFFFF)).clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Close, "סגור", tint = ThemeState.subtext2, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Rounded.Close, "סגור", tint = ThemeState.subtext2, modifier = Modifier.size(18.dp))
                 }
             }
 

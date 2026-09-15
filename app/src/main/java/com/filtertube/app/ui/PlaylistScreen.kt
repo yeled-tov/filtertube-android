@@ -6,8 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,10 +31,10 @@ fun PlaylistScreen(name: String, onVideoClick: (Video) -> Unit, onBack: () -> Un
             modifier = Modifier.fillMaxWidth().padding(top = 24.dp, start = 4.dp, end = 16.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = ThemeState.text) }
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "חזור", tint = ThemeState.text) }
             Text(name, color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             IconButton(onClick = { store.deletePlaylist(name); onBack() }) {
-                Icon(Icons.Default.Delete, "מחק אלבום", tint = Color(0xFFFF0000))
+                Icon(Icons.Rounded.Delete, "מחק אלבום", tint = Color(0xFFFF0000))
             }
         }
         HorizontalDivider(color = ThemeState.divider)

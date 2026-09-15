@@ -9,8 +9,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -47,7 +47,7 @@ fun DetailTopBar(title: String, onBack: () -> Unit, action: (@Composable () -> U
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = ThemeState.text)
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, "חזור", tint = ThemeState.text)
             }
             Text(title, color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -280,7 +280,7 @@ private fun SubRow(
             } else {
                 Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(channelColor(sub.title)),
                     contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Person, null, tint = ThemeState.text)
+                    Icon(Icons.Rounded.Person, null, tint = ThemeState.text)
                 }
             }
         }

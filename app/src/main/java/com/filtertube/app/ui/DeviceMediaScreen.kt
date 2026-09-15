@@ -11,10 +11,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -97,7 +97,7 @@ fun DeviceMediaScreen(
         DetailTopBar("במכשיר שלי", onBack, action = {
             if (granted) {
                 IconButton(onClick = { rescan() }, enabled = !loading) {
-                    Icon(Icons.Default.Refresh, contentDescription = "רענון", tint = ThemeState.subtext2)
+                    Icon(Icons.Rounded.Refresh, contentDescription = "רענון", tint = ThemeState.subtext2)
                 }
             }
         })
@@ -200,7 +200,7 @@ private fun DeviceMediaRow(media: DeviceMedia.Item, onClick: () -> Unit) {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                if (media.isVideo) Icons.Default.Videocam else Icons.Default.MusicNote,
+                if (media.isVideo) Icons.Rounded.Videocam else Icons.Rounded.MusicNote,
                 contentDescription = null, tint = Color.White, modifier = Modifier.size(21.dp),
             )
         }
@@ -212,7 +212,7 @@ private fun DeviceMediaRow(media: DeviceMedia.Item, onClick: () -> Unit) {
             )
             Spacer(Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Folder, null, tint = ThemeState.subtext, modifier = Modifier.size(12.dp))
+                Icon(Icons.Rounded.Folder, null, tint = ThemeState.subtext, modifier = Modifier.size(12.dp))
                 Spacer(Modifier.width(4.dp))
                 Text(
                     listOf(media.artist, media.folder).filter { it.isNotBlank() }.joinToString(" · "),

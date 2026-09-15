@@ -6,10 +6,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.Equalizer
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.rounded.Equalizer
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -78,7 +78,7 @@ fun SongArt(video: Video, size: Dp, modifier: Modifier = Modifier, corner: Dp = 
                 contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
             )
         } else {
-            Icon(Icons.Default.MusicNote, null, tint = ThemeState.subtext, modifier = Modifier.size(size / 3))
+            Icon(Icons.Rounded.MusicNote, null, tint = ThemeState.subtext, modifier = Modifier.size(size / 3))
         }
     }
 }
@@ -114,7 +114,7 @@ fun SongListItem(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.Default.Equalizer, null,
+                        Icons.Rounded.Equalizer, null,
                         tint = if (playing) ThemeState.accent else Color.White,
                         modifier = Modifier.size(22.dp),
                     )
@@ -175,7 +175,7 @@ fun MusicCell(video: Video, active: Boolean, onClick: () -> Unit) {
                         .background(Color(0x66000000)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Default.Equalizer, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                    Icon(Icons.Rounded.Equalizer, null, tint = Color.White, modifier = Modifier.size(28.dp))
                 }
             }
         }
@@ -221,7 +221,7 @@ fun ArtistCircle(
                 // עד שהסמל נמשך — צללית אדם, לא אות באנגלית. שם עברי שמוצג
                 // כאות לטינית בודדת נראה כמו תקלה, וזה גם לא מזהה כלום.
                 Icon(
-                    Icons.Default.Person, null,
+                    Icons.Rounded.Person, null,
                     tint = ThemeState.subtext, modifier = Modifier.size(size / 2.4f),
                 )
             }
@@ -272,7 +272,7 @@ fun NavigationTitle(
         }
         if (onClick != null) {
             Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowLeft, null,
+                Icons.AutoMirrored.Rounded.KeyboardArrowLeft, null,
                 tint = ThemeState.subtext, modifier = Modifier.size(22.dp),
             )
         }

@@ -11,19 +11,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Inbox
-import androidx.compose.material.icons.filled.Recommend
-import androidx.compose.material.icons.filled.Subscriptions
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.ThumbUp
-import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Inbox
+import androidx.compose.material.icons.rounded.Recommend
+import androidx.compose.material.icons.rounded.Subscriptions
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.ThumbUp
+import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -347,7 +347,7 @@ fun LibraryScreen(
             Column(modifier = Modifier.fillMaxWidth().padding(16.dp)
                 .clip(RoundedCornerShape(12.dp)).background(ThemeState.card).padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.AccountCircle, null, tint = Color(0xFFFF0000), modifier = Modifier.size(28.dp))
+                    Icon(Icons.Rounded.AccountCircle, null, tint = Color(0xFFFF0000), modifier = Modifier.size(28.dp))
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
@@ -396,7 +396,7 @@ fun LibraryScreen(
             Column(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
                 .clip(RoundedCornerShape(12.dp)).background(ThemeState.card).padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Sync, null, tint = ThemeState.accent, modifier = Modifier.size(26.dp))
+                    Icon(Icons.Rounded.Sync, null, tint = ThemeState.accent, modifier = Modifier.size(26.dp))
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(if (loggedIn) "חיבור דפדפן — פעיל" else "חיבור דפדפן",
@@ -442,22 +442,22 @@ fun LibraryScreen(
         // אוסף שהמשתמש *בונה* — הן נוצרות מאליהן, ולכן לא צריכות את אותו משקל.
         item {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                LibTile("אהבתי", likes.size + ytLikes.size, Icons.Default.Favorite, Color(0xFFFF0000)) { onOpenCollection("likes") }
-                LibTile("הורדות", downloads.size, Icons.Default.Download, Color(0xFF10B981)) { onOpenCollection("downloads") }
-                LibTile("מנויים", subs.size, Icons.Default.Subscriptions, Color(0xFFA855F7)) { onOpenSubscriptions() }
+                LibTile("אהבתי", likes.size + ytLikes.size, Icons.Rounded.Favorite, Color(0xFFFF0000)) { onOpenCollection("likes") }
+                LibTile("הורדות", downloads.size, Icons.Rounded.Download, Color(0xFF10B981)) { onOpenCollection("downloads") }
+                LibTile("מנויים", subs.size, Icons.Rounded.Subscriptions, Color(0xFFA855F7)) { onOpenSubscriptions() }
             }
             Spacer(Modifier.height(14.dp))
             // "ערוצים מאושרים" חי כאן ולא בתפריט צף שמסתתר מאחורי אווטאר במסך
             // הבית. הספרייה היא "התוכן שלי", ומעקב אחרי ערוץ הוא בדיוק זה —
             // ממש ליד "מנויים", שהוא אותו רעיון בצד של יוטיוב.
-            LibRow("ערוצים מאושרים", channelCount, Icons.Default.Tv, ThemeState.accent) { onOpenChannels() }
+            LibRow("ערוצים מאושרים", channelCount, Icons.Rounded.Tv, ThemeState.accent) { onOpenChannels() }
             // הבקשות יושבות ליד "ערוצים מאושרים" בכוונה: זו אותה שאלה משני
             // צדדיה — מה כבר מאושר, ומה ביקשתי שיאושר.
-            LibRow("הבקשות שלי", -1, Icons.Default.Inbox, Color(0xFFF59E0B)) { onOpenMyRequests() }
-            LibRow("היסטוריית צפייה", localHist.size, Icons.Default.History, Color(0xFFFF6D00)) { onOpenCollection("history") }
-            LibRow("מומלצים מיוטיוב", recs.size, Icons.Default.Recommend, Color(0xFF00BFA5)) { onOpenCollection("recs") }
+            LibRow("הבקשות שלי", -1, Icons.Rounded.Inbox, Color(0xFFF59E0B)) { onOpenMyRequests() }
+            LibRow("היסטוריית צפייה", localHist.size, Icons.Rounded.History, Color(0xFFFF6D00)) { onOpenCollection("history") }
+            LibRow("מומלצים מיוטיוב", recs.size, Icons.Rounded.Recommend, Color(0xFF00BFA5)) { onOpenCollection("recs") }
             // FilterTube יודעת לנגן גם מה שכבר על הטלפון, לא רק מה שהיא הורידה.
-            LibRow("במכשיר שלי", -1, Icons.Default.PhoneAndroid, Color(0xFF3B82F6)) { onOpenDeviceMedia() }
+            LibRow("במכשיר שלי", -1, Icons.Rounded.PhoneAndroid, Color(0xFF3B82F6)) { onOpenDeviceMedia() }
         }
 
         // אלבומים
@@ -466,10 +466,10 @@ fun LibraryScreen(
                 modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 24.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, tint = Color(0xFFFF0000), modifier = Modifier.size(20.dp))
+                Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, null, tint = Color(0xFFFF0000), modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("אלבומים", color = ThemeState.text, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                IconButton(onClick = { showCreate = true }) { Icon(Icons.Default.Add, "אלבום חדש", tint = ThemeState.text) }
+                IconButton(onClick = { showCreate = true }) { Icon(Icons.Rounded.Add, "אלבום חדש", tint = ThemeState.text) }
             }
         }
         if (playlists.isEmpty()) {
@@ -484,7 +484,7 @@ fun LibraryScreen(
                 ) {
                     Box(modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)).background(ThemeState.divider),
                         contentAlignment = Alignment.Center) {
-                        Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, tint = ThemeState.subtext)
+                        Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, null, tint = ThemeState.subtext)
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {

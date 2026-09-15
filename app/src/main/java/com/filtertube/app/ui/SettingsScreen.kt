@@ -12,19 +12,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.AdminPanelSettings
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.FilterAlt
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.SystemUpdate
-import androidx.compose.material.icons.filled.WorkspacePremium
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.AdminPanelSettings
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.FilterAlt
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.WorkspacePremium
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -98,37 +98,37 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(8.dp))
         SettingsSectionHeader("חיבור ואימות")
-        SettingsRow(Icons.Default.AccountCircle, Color(0xFFFF0000), "חיבור ל-YouTube (אופציונלי)",
+        SettingsRow(Icons.Rounded.AccountCircle, Color(0xFFFF0000), "חיבור ל-YouTube (אופציונלי)",
             "רק לסנכרון לייקים, היסטוריה ומנויים ב-YouTube — לא החשבון של FilterTube") { onOpenYoutubeLogin() }
-        SettingsRow(Icons.Default.AccountCircle, Color(0xFF2563EB), "סנכרון ענן",
+        SettingsRow(Icons.Rounded.AccountCircle, Color(0xFF2563EB), "סנכרון ענן",
             if (settings.cloudEmail.isNotBlank()) "מחובר: ${settings.cloudEmail}" else "החשבון נדרש בכניסה לאפליקציה") { showCloud = true }
-        SettingsRow(Icons.Default.WorkspacePremium, Color(0xFFFFC107), "FilterTube Premium",
+        SettingsRow(Icons.Rounded.WorkspacePremium, Color(0xFFFFC107), "FilterTube Premium",
             "הורדות וניגון ברקע — ניסיון חינם 30 יום") { onOpenPremium() }
 
         SettingsSectionHeader("סינון וניגון")
-        SettingsRow(Icons.Default.FilterAlt, Color(0xFFFFAA00), "הגדרות סינון 🔒",
+        SettingsRow(Icons.Rounded.FilterAlt, Color(0xFFFFAA00), "הגדרות סינון 🔒",
             "רמת סינון והצגת Shorts — מוגן בקוד") {
             gateTarget = SettingsGateTarget.FILTER
         }
-        SettingsRow(Icons.Default.MusicNote, Color(0xFF10B981), "נגן ושמע",
+        SettingsRow(Icons.Rounded.MusicNote, Color(0xFF10B981), "נגן ושמע",
             "עיצוב הנגן ואיכות") { showPlayerAudio = true }
 
         SettingsSectionHeader("ניהול והצגה")
-        SettingsRow(Icons.Default.Download, Color(0xFF00BFA5), "מנהל הורדות",
+        SettingsRow(Icons.Rounded.Download, Color(0xFF00BFA5), "מנהל הורדות",
             "הורדת לייקים · מהירות · הורדות במקביל") { onOpenDownloads() }
-        SettingsRow(Icons.Default.Tune, Color(0xFF3B82F6), "הגדרות תצוגה",
+        SettingsRow(Icons.Rounded.Tune, Color(0xFF3B82F6), "הגדרות תצוגה",
             "צבע ראשי · מצב כהה/בהיר · 120 הרץ") { showDisplay = true }
-        SettingsRow(Icons.Default.Notifications, Color(0xFFEC407A), "התראות",
+        SettingsRow(Icons.Rounded.Notifications, Color(0xFFEC407A), "התראות",
             "התראה על סרטון חדש בערוץ מאושר") { showNotify = true }
-        SettingsRow(Icons.Default.SystemUpdate, Color(0xFFA855F7), "עדכונים",
+        SettingsRow(Icons.Rounded.SystemUpdate, Color(0xFFA855F7), "עדכונים",
             "בדוק והורד גרסה חדשה") { showUpdate = true }
-        SettingsRow(Icons.Default.Info, ThemeState.subtext2, "אודות",
+        SettingsRow(Icons.Rounded.Info, ThemeState.subtext2, "אודות",
             "FilterTube — רק ערוצים מאושרים") { showAbout = true }
 
         if (isAdmin) {
-            SettingsRow(Icons.Default.Speed, Color(0xFF00BFA5), "אבחון מהירות/עצירות",
+            SettingsRow(Icons.Rounded.Speed, Color(0xFF00BFA5), "אבחון מהירות/עצירות",
                 "מה איטי או נתקע בניגון — ושליחה אליי") { onOpenDiag() }
-            SettingsRow(Icons.Default.AdminPanelSettings, Color(0xFFFFAA00), "ניהול ערוצים",
+            SettingsRow(Icons.Rounded.AdminPanelSettings, Color(0xFFFFAA00), "ניהול ערוצים",
                 "הוספה/הסרה של ערוצים מהרשימה הלבנה") {
                 onOpenAdmin()
             }
@@ -322,7 +322,7 @@ private fun SettingsRow(icon: ImageVector, accent: Color, title: String, subtitl
             Text(title, color = ThemeState.text, fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Text(subtitle, color = ThemeState.subtext, fontSize = 12.sp)
         }
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color(0xFF666666))
+        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = Color(0xFF666666))
     }
 }
 
@@ -338,7 +338,7 @@ private fun FilterGateDialog(settings: SettingsStore, onUnlock: () -> Unit, onDi
     var checking by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.Lock, null, tint = Color(0xFFFFAA00)) },
+        icon = { Icon(Icons.Rounded.Lock, null, tint = Color(0xFFFFAA00)) },
         title = { Text(if (isSetup) "קביעת קוד לחשבון ולהורים" else "הזן קוד הורים") },
         text = {
             Column {
@@ -646,7 +646,7 @@ private fun AboutDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.Info, null, tint = Color(0xFFFF0000)) },
+        icon = { Icon(Icons.Rounded.Info, null, tint = Color(0xFFFF0000)) },
         title = { Text("FilterTube") },
         text = {
             Column {

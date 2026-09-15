@@ -10,9 +10,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -262,7 +262,7 @@ fun AdminScreen(onBack: () -> Unit) {
             modifier = Modifier.fillMaxWidth().padding(top = 24.dp, start = 4.dp, end = 16.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = ThemeState.text) }
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "חזור", tint = ThemeState.text) }
             Text("פאנל ניהול", color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
         HorizontalDivider(color = ThemeState.divider)
@@ -580,7 +580,7 @@ fun AdminScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(8.dp))
                     Button(onClick = { addChannel() }, modifier = Modifier.fillMaxWidth(), enabled = !busy,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF0000))) {
-                        Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("הוסף ערוץ")
                     }
@@ -611,7 +611,7 @@ fun AdminScreen(onBack: () -> Unit) {
                         )
                     }
                     IconButton(onClick = { removeChannel(channel) }, enabled = !busy) {
-                        Icon(Icons.Default.Delete, "הסר", tint = Color(0xFFFF0000))
+                        Icon(Icons.Rounded.Delete, "הסר", tint = Color(0xFFFF0000))
                     }
                 }
                 HorizontalDivider(color = ThemeState.card)

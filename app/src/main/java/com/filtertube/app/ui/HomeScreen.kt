@@ -13,22 +13,22 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.LiveTv
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.Radio
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.LiveTv
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -197,36 +197,20 @@ fun HomeScreen(
     Box(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         // התוכן הראשי — מטושטש כשהתפריט הצף פתוח (אפקט זכוכית)
         Column(modifier = Modifier.fillMaxSize()) {
-            // טופ-בר: אווטאר לתפריט, ושם האפליקציה. זהו.
+            // טופ-בר: מחליף המצבים בלבד.
             //
-            // קודם ישבו כאן גם "סרטונים חדשים" ו"שידורים חיים" כשני עיגולים
-            // קטנים. שניהם *יעדי תוכן*, לא פעולות על המסך הנוכחי, והם נדחסו
-            // לפינה שהעין לא סורקת. הם ירדו לשורת הצ'יפים — בדיוק המקום שאליו
-            // המשתמש מסתכל כשהוא מחפש "מה יש כאן".
+            // הוא ממלא כאן שני תפקידים ולכן אין צורך בשורת כותרת נפרדת:
+            // החצי המסומן הוא שם האפליקציה, והחצי השני הוא הדרך למוזיקה.
+            // קודם ישב כאן כפתור "Music" קטן ואפור שאיש לא זיהה ככפתור,
+            // וכותרת נפרדת לצידו — שתי שורות תפקיד בשביל חצי תפקיד.
             Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 32.dp, bottom = 10.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 30.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
             ) {
-                // ── מעבר ל-FilterMusic ────────────────────────────────
-                // בפינה השמאלית של הטופ-בר, נגיש בלחיצה אחת מהמסך הראשי.
-                // אותו כפתור בדיוק, בכיוון ההפוך, יושב בטופ-בר של FilterMusic.
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(ThemeState.card)
-                        .clickable(onClick = onOpenMusic)
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Default.MusicNote, null,
-                        tint = ThemeState.accent, modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(Modifier.width(5.dp))
-                    Text("Music", color = ThemeState.text, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                com.filtertube.app.ui.theme.ModeSwitch(musicMode = false) { music ->
+                    if (music) onOpenMusic()
                 }
-                Spacer(Modifier.weight(1f))
-                Text("Filter Tube", color = ThemeState.text, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
             }
             // שורה אחת לכל מה ש"יש כאן": קודם שני יעדי התוכן (חי, חדש) ואז
             // סינון הפיד לפי קטגוריה. היעדים מסומנים באייקון וצבע כדי שיהיה
@@ -237,10 +221,10 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                DestinationChip("שידורים חיים", Icons.Default.LiveTv, Color(0xFFFF3B30), onLive)
+                DestinationChip("שידורים חיים", Icons.Rounded.LiveTv, Color(0xFFFF3B30), onLive)
                 DestinationChip(
                     label = if (newCount > 0) "חדשים ($newCount)" else "חדשים",
-                    icon = Icons.Default.Notifications,
+                    icon = Icons.Rounded.Notifications,
                     tint = if (newCount > 0) ThemeState.accent else ThemeState.subtext2,
                     onClick = onInbox,
                 )
@@ -277,7 +261,7 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        Icons.Default.CloudOff, null,
+                        Icons.Rounded.CloudOff, null,
                         tint = Color(0xFFFFAA00), modifier = Modifier.size(20.dp),
                     )
                     Spacer(Modifier.width(12.dp))
@@ -287,7 +271,7 @@ fun HomeScreen(
                         Text("אפשר להאזין למה שהורדת — הקש כאן", color = ThemeState.subtext, fontSize = 11.5.sp)
                     }
                     Icon(
-                        Icons.Default.Download, null,
+                        Icons.Rounded.Download, null,
                         tint = ThemeState.accent, modifier = Modifier.size(18.dp),
                     )
                 }
@@ -372,7 +356,7 @@ fun HomeScreen(
                     modifier = Modifier.size(15.dp),
                 )
             } else {
-                Icon(Icons.Default.Radio, null, tint = ThemeState.accent, modifier = Modifier.size(16.dp))
+                Icon(Icons.Rounded.Radio, null, tint = ThemeState.accent, modifier = Modifier.size(16.dp))
             }
             Spacer(Modifier.width(6.dp))
             Text(
@@ -453,7 +437,7 @@ fun CenteredLoading(text: String) {
 fun CenteredError(message: String, onRetry: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
-            Icon(Icons.Default.Warning, null, tint = Color(0xFFFF0000), modifier = Modifier.size(48.dp))
+            Icon(Icons.Rounded.Warning, null, tint = Color(0xFFFF0000), modifier = Modifier.size(48.dp))
             Spacer(Modifier.height(16.dp))
             Text("שגיאה בטעינה", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ThemeState.text)
             Spacer(Modifier.height(8.dp))
@@ -503,7 +487,7 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                     .padding(horizontal = 8.dp, vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Default.Check, null, tint = Color(0xFF7CF2C0), modifier = Modifier.size(11.dp))
+                Icon(Icons.Rounded.Check, null, tint = Color(0xFF7CF2C0), modifier = Modifier.size(11.dp))
                 Spacer(Modifier.width(4.dp))
                 Text("מאושר", color = Color(0xFF7CF2C0), fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
@@ -532,7 +516,7 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                         .clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.5f))
                         .padding(5.dp),
                 ) {
-                    Icon(Icons.Default.Favorite, "אהבתי", tint = ThemeState.accent,
+                    Icon(Icons.Rounded.Favorite, "אהבתי", tint = ThemeState.accent,
                         modifier = Modifier.size(12.dp))
                 }
             }
@@ -555,7 +539,7 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                     )
                 } else {
                     Icon(
-                        Icons.Default.Person, null, tint = Color.White,
+                        Icons.Rounded.Person, null, tint = Color.White,
                         modifier = Modifier.size(18.dp),
                     )
                 }
@@ -599,7 +583,7 @@ private fun VideoActionMenu(video: Video, onDismiss: () -> Unit) {
         title = { Text("פעולות לסרטון", color = ThemeState.text) },
         text = {
             Column {
-                VideoAction("הבא בתור", Icons.AutoMirrored.Filled.QueueMusic) {
+                VideoAction("הבא בתור", Icons.AutoMirrored.Rounded.QueueMusic) {
                     busy = true
                     scope.launch {
                         val immediate = Playback.enqueueNext(context, video)
@@ -607,7 +591,7 @@ private fun VideoActionMenu(video: Video, onDismiss: () -> Unit) {
                         android.widget.Toast.makeText(context, if (immediate) "נוסף לתור הבא" else "נשמר לתור הבא", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
-                VideoAction("הורד סרטון", Icons.Default.Download) {
+                VideoAction("הורד סרטון", Icons.Rounded.Download) {
                     busy = true
                     scope.launch {
                         val ok = DownloadEngine.enqueueByVideo(context, video, isAudio = false)
@@ -616,18 +600,18 @@ private fun VideoActionMenu(video: Video, onDismiss: () -> Unit) {
                     }
                 }
                 val liked = video.id in LibraryBadges.liked
-                VideoAction(if (liked) "הסר מסרטונים שאהבתי" else "הוסף לסרטונים שאהבתי", if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder) {
+                VideoAction(if (liked) "הסר מסרטונים שאהבתי" else "הוסף לסרטונים שאהבתי", if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder) {
                     LibraryBadges.setLiked(video.id, store.toggleLike(video)); onDismiss()
                 }
-                VideoAction("שתף סרטון", Icons.Default.Share) {
+                VideoAction("שתף סרטון", Icons.Rounded.Share) {
                     val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                         type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, "https://www.youtube.com/watch?v=${video.id}")
                     }
                     context.startActivity(android.content.Intent.createChooser(share, "שתף סרטון")); onDismiss()
                 }
-                VideoAction("הוסף לפלייליסט", Icons.AutoMirrored.Filled.PlaylistAdd) { playlistOpen = true }
-                VideoAction("דווח על הסרטון", Icons.Default.Flag) { reportOpen = true }
-                VideoAction("הסר סרטון", Icons.Default.Delete) {
+                VideoAction("הוסף לפלייליסט", Icons.AutoMirrored.Rounded.PlaylistAdd) { playlistOpen = true }
+                VideoAction("דווח על הסרטון", Icons.Rounded.Flag) { reportOpen = true }
+                VideoAction("הסר סרטון", Icons.Rounded.Delete) {
                     store.removeVideo(video); onDismiss()
                     android.widget.Toast.makeText(context, "הסרטון הוסר מהספרייה", android.widget.Toast.LENGTH_SHORT).show()
                 }

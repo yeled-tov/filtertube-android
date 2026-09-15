@@ -16,15 +16,15 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -67,10 +67,10 @@ private enum class MusicChip(val label: String) {
 }
 
 private enum class MusicTab(val label: String, val icon: ImageVector) {
-    HOME("בית", Icons.Default.Home),
-    SEARCH("חיפוש", Icons.Default.Search),
-    LIBRARY("ספריה", Icons.Default.LibraryMusic),
-    DOWNLOADS("הורדות", Icons.Default.Download),
+    HOME("בית", Icons.Rounded.Home),
+    SEARCH("חיפוש", Icons.Rounded.Search),
+    LIBRARY("ספריה", Icons.Rounded.LibraryMusic),
+    DOWNLOADS("הורדות", Icons.Rounded.Download),
 }
 
 /**
@@ -207,18 +207,16 @@ private fun MusicTopBar(tab: MusicTab, onExit: () -> Unit, onOpenSettings: () ->
             .padding(start = 6.dp, end = MusicDim.screenPadding, top = 6.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // חזרה ל-FilterTube — במקום הקבוע של "אחורה", כדי שהמעבר יהיה
-        // רפלקס ולא חיפוש. אותו כפתור בדיוק קיים בכיוון ההפוך במסך הבית.
-        IconButton(onClick = onExit) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזרה ל-FilterTube", tint = ThemeState.text)
+        // אותו מחליף מצבים שבמסך הבית, רק שכאן החצי השני מסומן. חץ "אחורה"
+        // היה מסתיר את העובדה שאלה שני מצבים של אותה אפליקציה, ובעיקר לא
+        // לימד את מי שהגיע לכאן איך חוזרים — מחליף מראה את שני הצדדים תמיד.
+        Spacer(Modifier.width(6.dp))
+        com.filtertube.app.ui.theme.ModeSwitch(musicMode = true) { music ->
+            if (!music) onExit()
         }
-        Text(
-            "FilterMusic", color = ThemeState.text,
-            fontSize = 20.sp, fontWeight = FontWeight.ExtraBold,
-            modifier = Modifier.weight(1f),
-        )
+        Spacer(Modifier.weight(1f))
         IconButton(onClick = onOpenSettings) {
-            Icon(Icons.Default.Settings, "הגדרות FilterMusic", tint = ThemeState.subtext2)
+            Icon(Icons.Rounded.Settings, "הגדרות FilterMusic", tint = ThemeState.subtext2)
         }
     }
 }
@@ -473,7 +471,7 @@ private fun MusicSearch(pool: List<Video>, activeId: String?, onPlay: (List<Vide
             onValueChange = { query = it },
             singleLine = true,
             placeholder = { Text("שיר או אמן", color = ThemeState.subtext, fontSize = 14.sp) },
-            leadingIcon = { Icon(Icons.Default.Search, null, tint = ThemeState.subtext) },
+            leadingIcon = { Icon(Icons.Rounded.Search, null, tint = ThemeState.subtext) },
             modifier = Modifier.fillMaxWidth().padding(MusicDim.screenPadding),
             shape = RoundedCornerShape(24.dp),
             colors = OutlinedTextFieldDefaults.colors(
@@ -577,7 +575,7 @@ private fun MusicDownloads(
                     .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Default.CloudOff, null, tint = Color(0xFFFFAA00), modifier = Modifier.size(20.dp))
+                Icon(Icons.Rounded.CloudOff, null, tint = Color(0xFFFFAA00), modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text("אין חיבור לאינטרנט", color = ThemeState.text, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
@@ -617,7 +615,7 @@ private fun MusicDownloads(
             modifier = Modifier.fillMaxWidth()
                 .padding(horizontal = MusicDim.screenPadding, vertical = 6.dp),
         ) {
-            BigAction("הורד את מה שאהבת (אודיו)", Icons.Default.Download, Modifier.weight(1f)) {
+            BigAction("הורד את מה שאהבת (אודיו)", Icons.Rounded.Download, Modifier.weight(1f)) {
                 scope.launch {
                     // בדיוק מה שמוצג במסך, ולא store.likes() — אחרת הכפתור
                     // מוריד רשימה אחרת מזו שהמשתמש רואה מולו.
@@ -651,10 +649,10 @@ private fun MusicDownloads(
                         .padding(horizontal = MusicDim.screenPadding, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    BigAction("נגן הכל", Icons.Default.PlayArrow, Modifier.weight(1f)) {
+                    BigAction("נגן הכל", Icons.Rounded.PlayArrow, Modifier.weight(1f)) {
                         onPlay(downloads, 0)
                     }
-                    BigAction("ערבוב", Icons.Default.Shuffle, Modifier.weight(1f)) {
+                    BigAction("ערבוב", Icons.Rounded.Shuffle, Modifier.weight(1f)) {
                         onPlay(downloads.shuffled(), 0)
                     }
                 }

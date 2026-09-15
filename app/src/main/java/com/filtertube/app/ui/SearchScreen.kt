@@ -10,10 +10,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.NorthWest
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.NorthWest
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -139,11 +139,11 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
                 onValueChange = { query = it; state = SearchState.Idle },
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("חפש בערוצים המאושרים...", color = ThemeState.subtext) },
-                leadingIcon = { Icon(Icons.Default.Search, null, tint = ThemeState.subtext) },
+                leadingIcon = { Icon(Icons.Rounded.Search, null, tint = ThemeState.subtext) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
                         IconButton(onClick = { query = ""; state = SearchState.Idle }) {
-                            Icon(Icons.Default.Close, "נקה", tint = ThemeState.subtext)
+                            Icon(Icons.Rounded.Close, "נקה", tint = ThemeState.subtext)
                         }
                     }
                 },
@@ -177,7 +177,7 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.padding(24.dp),
                 ) {
-                    Icon(Icons.Default.Search, null, tint = ThemeState.subtext, modifier = Modifier.size(44.dp))
+                    Icon(Icons.Rounded.Search, null, tint = ThemeState.subtext, modifier = Modifier.size(44.dp))
                     Spacer(Modifier.height(12.dp))
                     Text("לא נמצאו סרטונים ל\"$query\"", color = ThemeState.text, fontSize = 15.sp,
                         fontWeight = FontWeight.Bold)
@@ -236,11 +236,11 @@ private fun SuggestionsList(suggestions: List<String>, query: String, onPick: (S
                         .padding(horizontal = 16.dp, vertical = 13.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.Search, null, tint = ThemeState.subtext, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Rounded.Search, null, tint = ThemeState.subtext, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(14.dp))
                     Text(s, color = ThemeState.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
                     Icon(
-                        Icons.Default.NorthWest, "חפש את זה",
+                        Icons.Rounded.NorthWest, "חפש את זה",
                         tint = ThemeState.subtext, modifier = Modifier.size(16.dp),
                     )
                 }
@@ -259,7 +259,7 @@ private fun SearchHistory(
     if (history.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Search, null, tint = Color(0xFF444444), modifier = Modifier.size(48.dp))
+                Icon(Icons.Rounded.Search, null, tint = Color(0xFF444444), modifier = Modifier.size(48.dp))
                 Spacer(Modifier.height(12.dp))
                 Text("חפש סרטונים בערוצים המאושרים", color = ThemeState.subtext, fontSize = 14.sp)
             }
@@ -280,11 +280,11 @@ private fun SearchHistory(
                     modifier = Modifier.fillMaxWidth().clickable { onPick(q) }.padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.History, null, tint = ThemeState.subtext, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Rounded.History, null, tint = ThemeState.subtext, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(12.dp))
                     Text(q, color = ThemeState.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
                     IconButton(onClick = { onRemove(q) }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Close, "הסר", tint = Color(0xFF666666), modifier = Modifier.size(18.dp))
+                        Icon(Icons.Rounded.Close, "הסר", tint = Color(0xFF666666), modifier = Modifier.size(18.dp))
                     }
                 }
             }
