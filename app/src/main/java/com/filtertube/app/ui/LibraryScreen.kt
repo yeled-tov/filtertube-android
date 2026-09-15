@@ -1,5 +1,8 @@
 package com.filtertube.app.ui
 import com.filtertube.app.ThemeState
+import com.filtertube.app.ui.theme.GroupCard
+import com.filtertube.app.ui.theme.GroupRow
+import com.filtertube.app.ui.theme.Tint
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -337,7 +340,7 @@ fun LibraryScreen(
 
     LazyColumn(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         item {
-            Text("ספריה", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = ThemeState.text,
+            Text("ספריה", style = MaterialTheme.typography.displaySmall, color = ThemeState.text,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 8.dp))
             HorizontalDivider(color = ThemeState.divider)
         }
@@ -442,22 +445,33 @@ fun LibraryScreen(
         // אוסף שהמשתמש *בונה* — הן נוצרות מאליהן, ולכן לא צריכות את אותו משקל.
         item {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                LibTile("אהבתי", likes.size + ytLikes.size, Icons.Rounded.Favorite, Color(0xFFFF0000)) { onOpenCollection("likes") }
-                LibTile("הורדות", downloads.size, Icons.Rounded.Download, Color(0xFF10B981)) { onOpenCollection("downloads") }
-                LibTile("מנויים", subs.size, Icons.Rounded.Subscriptions, Color(0xFFA855F7)) { onOpenSubscriptions() }
+                LibTile("אהבתי", likes.size + ytLikes.size, Icons.Rounded.Favorite, Tint.red) { onOpenCollection("likes") }
+                LibTile("הורדות", downloads.size, Icons.Rounded.Download, Tint.green) { onOpenCollection("downloads") }
+                LibTile("מנויים", subs.size, Icons.Rounded.Subscriptions, Tint.violet) { onOpenSubscriptions() }
             }
             Spacer(Modifier.height(14.dp))
             // "ערוצים מאושרים" חי כאן ולא בתפריט צף שמסתתר מאחורי אווטאר במסך
             // הבית. הספרייה היא "התוכן שלי", ומעקב אחרי ערוץ הוא בדיוק זה —
             // ממש ליד "מנויים", שהוא אותו רעיון בצד של יוטיוב.
-            LibRow("ערוצים מאושרים", channelCount, Icons.Rounded.Tv, ThemeState.accent) { onOpenChannels() }
-            // הבקשות יושבות ליד "ערוצים מאושרים" בכוונה: זו אותה שאלה משני
-            // צדדיה — מה כבר מאושר, ומה ביקשתי שיאושר.
-            LibRow("הבקשות שלי", -1, Icons.Rounded.Inbox, Color(0xFFF59E0B)) { onOpenMyRequests() }
-            LibRow("היסטוריית צפייה", localHist.size, Icons.Rounded.History, Color(0xFFFF6D00)) { onOpenCollection("history") }
-            LibRow("מומלצים מיוטיוב", recs.size, Icons.Rounded.Recommend, Color(0xFF00BFA5)) { onOpenCollection("recs") }
-            // FilterTube יודעת לנגן גם מה שכבר על הטלפון, לא רק מה שהיא הורידה.
-            LibRow("במכשיר שלי", -1, Icons.Rounded.PhoneAndroid, Color(0xFF3B82F6)) { onOpenDeviceMedia() }
+            // שתי קבוצות ולא שש שורות רצופות: הראשונה היא "מה מאושר ומה
+            // ביקשתי", השנייה היא "מה נאסף עליי מאליו". קודם כל השורות היו
+            // כרטיסים נפרדים באותו משקל, וההבחנה הזו לא נראתה בכלל.
+            GroupCard {
+                GroupRow(Icons.Rounded.Tv, ThemeState.accent, "ערוצים מאושרים",
+                    trailingText = "$channelCount") { onOpenChannels() }
+                // הבקשות יושבות ליד "ערוצים מאושרים" בכוונה: זו אותה שאלה
+                // משני צדדיה — מה כבר מאושר, ומה ביקשתי שיאושר.
+                GroupRow(Icons.Rounded.Inbox, Tint.amber, "הבקשות שלי", last = true) { onOpenMyRequests() }
+            }
+            Spacer(Modifier.height(10.dp))
+            GroupCard {
+                GroupRow(Icons.Rounded.History, Tint.orange, "היסטוריית צפייה",
+                    trailingText = "${localHist.size}") { onOpenCollection("history") }
+                GroupRow(Icons.Rounded.Recommend, Tint.teal, "מומלצים מיוטיוב",
+                    trailingText = "${recs.size}") { onOpenCollection("recs") }
+                // FilterTube יודעת לנגן גם מה שכבר על הטלפון, לא רק מה שהורידה.
+                GroupRow(Icons.Rounded.PhoneAndroid, Tint.blue, "במכשיר שלי", last = true) { onOpenDeviceMedia() }
+            }
         }
 
         // אלבומים
@@ -466,9 +480,10 @@ fun LibraryScreen(
                 modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 24.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, null, tint = Color(0xFFFF0000), modifier = Modifier.size(20.dp))
+                Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, null, tint = Tint.red, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("אלבומים", color = ThemeState.text, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text("אלבומים", color = ThemeState.text, style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.weight(1f))
                 IconButton(onClick = { showCreate = true }) { Icon(Icons.Rounded.Add, "אלבום חדש", tint = ThemeState.text) }
             }
         }
@@ -488,35 +503,14 @@ fun LibraryScreen(
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(pl.name, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        Text("${pl.videos.size} סרטונים", color = ThemeState.subtext, fontSize = 12.sp)
+                        Text(pl.name, color = ThemeState.text, style = MaterialTheme.typography.titleMedium)
+                        Text("${pl.videos.size} סרטונים", color = ThemeState.subtext,
+                            style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
         }
         item { Spacer(Modifier.height(96.dp)) }
-    }
-}
-
-/**
- * שורה, לא קובייה — לאוספים שנוצרים מאליהם ולא נבנים ע"י המשתמש.
- * ההבדל בגודל הוא ההבדל בחשיבות, וזה בדיוק מה שהיה חסר כששש קוביות
- * זהות התחרו על אותה תשומת לב.
- */
-@Composable
-private fun LibRow(title: String, count: Int, icon: ImageVector, accent: Color, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(12.dp)).background(ThemeState.card)
-            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, null, tint = accent, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(12.dp))
-        Text(title, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(1f))
-        // count שלילי = לשורה אין מונה (כמו "במכשיר שלי", שנספר רק אחרי סריקה).
-        if (count >= 0) Text("$count", color = ThemeState.subtext, fontSize = 13.sp)
     }
 }
 
@@ -532,9 +526,12 @@ private fun RowScope.LibTile(title: String, count: Int, icon: ImageVector, accen
             Icon(icon, null, tint = accent, modifier = Modifier.size(22.dp))
         }
         Column {
-            Text(title, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("$count פריטים", color = ThemeState.subtext, fontSize = 11.sp)
+            Text(
+                title, color = ThemeState.text,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            Text("$count פריטים", color = ThemeState.subtext, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
