@@ -23,6 +23,7 @@ object ChannelRequests {
         "https://europe-west1-filter-tube-52d8e.cloudfunctions.net"
     private const val SUBMIT_API = "$BASE_API/submitChannelRequest"
     private const val LIST_API = "$BASE_API/listChannelRequests"
+    private const val MY_LIST_API = "$BASE_API/listMyChannelRequests"
     private const val RESOLVE_API = "$BASE_API/resolveChannelRequest"
     private const val APPROVED_API = "$BASE_API/listApprovedChannels"
     private const val UPSERT_API = "$BASE_API/upsertApprovedChannel"
@@ -47,6 +48,24 @@ object ChannelRequests {
     )
 
     data class SubmitResult(val ok: Boolean, val message: String)
+
+    /** בקשה של המשתמש עצמו, כפי שהיא מוצגת לו במסך "הבקשות שלי". */
+    data class MyReq(
+        val id: String,
+        val name: String,
+        val url: String,
+        val category: String,
+        val status: String,
+        val requestedAt: String,
+        val resolvedAt: String,
+    ) {
+        val statusHe: String
+            get() = when (status) {
+                "approved" -> "אושר"
+                "rejected" -> "נדחה"
+                else -> "ממתין לאישור"
+            }
+    }
 
     data class Approved(
         val youtubeChannelId: String,
@@ -132,6 +151,49 @@ object ChannelRequests {
                 }
             }
         }.getOrElse { SubmitResult(false, "לא ניתן להתחבר לשרת כרגע") }
+    }
+
+    /**
+     * הבקשות של המשתמש עצמו.
+     *
+     * [list] היא לאדמין בלבד, ולכן ללקוח לא הייתה שום דרך לדעת מה קרה
+     * לבקשה ששלח. כאן השרת מסנן ל-uid של המחובר ואין מה להעביר לו.
+     *
+     * לא זורק: מסך שמציג "לא הצלחנו לטעון" עדיף על מסך שקורס.
+     */
+    suspend fun listMine(): List<MyReq> = withContext(Dispatchers.IO) {
+        val session = verifiedSession(forceRefresh = false) ?: return@withContext emptyList()
+        val request = Request.Builder()
+            .url(MY_LIST_API)
+            .header("Authorization", "Bearer ${session.token}")
+            .get()
+            .build()
+        runCatching {
+            http.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use emptyList()
+                val json = JSONObject(response.body?.string().orEmpty())
+                val array = json.optJSONArray("requests") ?: return@use emptyList()
+                val out = ArrayList<MyReq>(array.length())
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    out += MyReq(
+                        id = item.optString("id"),
+                        name = item.optString("name"),
+                        url = item.optString("url"),
+                        category = item.optString("category"),
+                        status = item.optString("status", "pending"),
+                        requestedAt = item.optString("requestedAt"),
+                        resolvedAt = item.optString("resolvedAt"),
+                    )
+                }
+                // השרת לא ממיין (צירוף where ו-orderBy דורש אינדקס מורכב),
+                // והמיון כאן זול על עשרות פריטים.
+                out.sortedByDescending { it.requestedAt }
+            }
+        }.getOrElse {
+            Diagnostics.log("REQUESTS: טעינת הבקשות שלי נכשלה — ${it.message}")
+            emptyList()
+        }
     }
 
     suspend fun list(history: Boolean = false): List<Req> = withContext(Dispatchers.IO) {

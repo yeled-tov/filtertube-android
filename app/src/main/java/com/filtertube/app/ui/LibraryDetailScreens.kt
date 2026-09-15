@@ -80,6 +80,16 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
     // הם באמת אותו דבר. המתג עבר להבחנה שכן קיימת: יוטיוב מול יוטיוב
     // מיוזיק, שתי רשימות נפרדות אצל גוגל עצמה.
     var musicSource by remember { mutableStateOf(false) }
+    // הרשימה המאושרת. ריקה = עוד לא נטענה, ואז לא מאפירים כלום: להראות את
+    // כל הספרייה אפורה לרגע בכל כניסה גרוע מלא להאפיר בכלל.
+    var approvedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var requestFor by remember { mutableStateOf<Video?>(null) }
+    LaunchedEffect(Unit) {
+        approvedIds = runCatching {
+            com.filtertube.app.data.ChannelsRepository.getChannels(context)
+                .mapTo(HashSet()) { it.youtubeChannelId }
+        }.getOrDefault(emptySet())
+    }
     val (title, videos) = remember(type, refreshKey, musicSource) {
         when (type) {
             "likes" -> "אהבתי" to (if (musicSource) store.musicLikes() else store.youtubeLikes())
@@ -95,12 +105,22 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
         if (type == "likes") {
             val ytCount = remember(refreshKey) { store.youtubeLikes().size }
             val musicCount = remember(refreshKey) { store.musicLikes().size }
+            val greyed = videos.count {
+                approvedIds.isNotEmpty() && it.channelId.isNotBlank() && it.channelId !in approvedIds
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 SourceTab("יוטיוב ($ytCount)", !musicSource) { musicSource = false }
                 SourceTab("יוטיוב מיוזיק ($musicCount)", musicSource) { musicSource = true }
+            }
+            if (greyed > 0) {
+                Text(
+                    "$greyed באפור — מערוצים שלא אושרו. לחיצה עליהם שולחת בקשה להוסיף.",
+                    color = ThemeState.subtext2, fontSize = 12.sp, lineHeight = 17.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                )
             }
         }
         if (type == "history" && videos.isNotEmpty()) {
@@ -112,8 +132,30 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
         }
         if (videos.isEmpty()) EmptyHint(if (type == "history") "עדיין לא צפית בכלום" else "האוסף ריק")
         else LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)) {
-            items(videos, key = { it.id }) { v -> VideoRow(v, onClick = { onVideoClick(v) }) }
+            items(videos, key = { it.id }) { v ->
+                // ── אפור = הערוץ לא ברשימה המאושרת ────────────────────────
+                // הרשימה שלמה בכוונה: "אהבתי" חתוך בלי שום רמז שחסר בו משהו
+                // הוא בלבול, בדיוק כמו שהיה במנויים. אבל אפור אינו דלת —
+                // הלחיצה מגיעה לטופס הבקשה ולא לנגן, ולכן אין מכאן שום דרך
+                // לסרטון מערוץ שלא אושר.
+                val ok = approvedIds.isEmpty() || v.channelId.isBlank() || v.channelId in approvedIds
+                if (ok) {
+                    VideoRow(v, onClick = { onVideoClick(v) })
+                } else {
+                    Box(Modifier.alpha(0.45f)) {
+                        VideoRow(v, onClick = { requestFor = v })
+                    }
+                }
+            }
         }
+    }
+
+    requestFor?.let { target ->
+        ChannelRequestDialog(
+            onDismiss = { requestFor = null },
+            prefillName = target.channelName.ifBlank { target.title },
+            prefillUrl = "https://www.youtube.com/channel/${target.channelId}",
+        )
     }
 }
 
