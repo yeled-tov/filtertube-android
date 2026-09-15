@@ -28,9 +28,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.filtertube.app.data.LibraryStore
+import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.SubChannel
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeRepository
+import com.filtertube.app.data.forLevel
 
 /**
  * סרגל עליון אחיד עם כפתור חזרה לכל מסכי הפירוט.
@@ -73,6 +75,7 @@ private fun EmptyHint(text: String) {
 fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     val store = remember { LibraryStore(context) }
+    val settings = remember { SettingsStore(context) }
     var refreshKey by remember { mutableStateOf(0) }
     // ── שני מקורות, ושניהם של יוטיוב ──────────────────────────────────
     // קודם המתג היה בין "אהבתי ב-FilterTube" ל"אהבתי ביוטיוב", ואלה נראו
@@ -82,13 +85,20 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
     var musicSource by remember { mutableStateOf(false) }
     // הרשימה המאושרת. ריקה = עוד לא נטענה, ואז לא מאפירים כלום: להראות את
     // כל הספרייה אפורה לרגע בכל כניסה גרוע מלא להאפיר בכלל.
-    var approvedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var approved by remember {
+        mutableStateOf(com.filtertube.app.data.ApprovedChannels(emptyList()))
+    }
     var requestFor by remember { mutableStateOf<Video?>(null) }
     LaunchedEffect(Unit) {
-        approvedIds = runCatching {
-            com.filtertube.app.data.ChannelsRepository.getChannels(context)
-                .mapTo(HashSet()) { it.youtubeChannelId }
-        }.getOrDefault(emptySet())
+        approved = com.filtertube.app.data.ApprovedChannels(
+            runCatching {
+                // forLevel ולא הרשימה הגולמית: בלעדיו שיר מקטגוריה שאינה
+                // מותרת ברמת הסינון הנוכחית הוצג כמאושר וניתן לניגון. זו
+                // הייתה פרצה שקטה — הרשימה הלבנה נאכפה בכל מסך אחר ולא כאן.
+                com.filtertube.app.data.ChannelsRepository.getChannels(context)
+                    .forLevel(settings.filterLevel, settings.userGender)
+            }.getOrDefault(emptyList()),
+        )
     }
     val (title, videos) = remember(type, refreshKey, musicSource) {
         when (type) {
@@ -105,9 +115,7 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
         if (type == "likes") {
             val ytCount = remember(refreshKey) { store.youtubeLikes().size }
             val musicCount = remember(refreshKey) { store.musicLikes().size }
-            val greyed = videos.count {
-                approvedIds.isNotEmpty() && it.channelId.isNotBlank() && it.channelId !in approvedIds
-            }
+            val greyed = videos.count { !approved.isEmpty() && !approved.approves(it) }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -138,7 +146,7 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
                 // הוא בלבול, בדיוק כמו שהיה במנויים. אבל אפור אינו דלת —
                 // הלחיצה מגיעה לטופס הבקשה ולא לנגן, ולכן אין מכאן שום דרך
                 // לסרטון מערוץ שלא אושר.
-                val ok = approvedIds.isEmpty() || v.channelId.isBlank() || v.channelId in approvedIds
+                val ok = approved.isEmpty() || approved.approves(v)
                 if (ok) {
                     VideoRow(v, onClick = { onVideoClick(v) })
                 } else {
@@ -195,19 +203,27 @@ fun SubscriptionsScreen(onOpenChannel: (String, String) -> Unit, onBack: () -> U
     val context = LocalContext.current
     val store = remember { LibraryStore(context) }
     val subs = remember { store.subscriptions() }
-    var approved by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val settings = remember { SettingsStore(context) }
+    var approved by remember {
+        mutableStateOf(com.filtertube.app.data.ApprovedChannels(emptyList()))
+    }
     var pending by remember { mutableStateOf<SubChannel?>(null) }
     // ערוצים שכבר נשלחה עליהם בקשה במסך הזה — כדי לא לשלוח פעמיים ברצף.
     var requested by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     LaunchedEffect(Unit) {
-        approved = runCatching {
-            com.filtertube.app.data.ChannelsRepository.getChannels(context)
-                .mapTo(HashSet()) { it.youtubeChannelId }
-        }.getOrDefault(emptySet())
+        approved = com.filtertube.app.data.ApprovedChannels(
+            runCatching {
+                // forLevel כמו בכל שאר האפליקציה. בלעדיו ערוץ מקטגוריה
+                // חסומה ברמה הנוכחית הוצג כמאושר וניתן לפתיחה מכאן.
+                com.filtertube.app.data.ChannelsRepository.getChannels(context)
+                    .forLevel(settings.filterLevel, settings.userGender)
+            }.getOrDefault(emptyList()),
+        )
     }
 
-    val approvedCount = subs.count { it.channelId in approved }
+    fun approves(sub: SubChannel) = approved.approves(sub.channelId, sub.title)
+    val approvedCount = subs.count { approves(it) }
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar("המנויים שלי (${subs.size})", onBack)
         if (subs.isEmpty()) {
@@ -225,10 +241,10 @@ fun SubscriptionsScreen(onOpenChannel: (String, String) -> Unit, onBack: () -> U
                 items(subs, key = { it.channelId }) { sub ->
                     SubRow(
                         sub = sub,
-                        approved = sub.channelId in approved,
+                        approved = approves(sub),
                         requested = sub.channelId in requested,
                     ) {
-                        if (sub.channelId in approved) onOpenChannel(sub.channelId, sub.title)
+                        if (approves(sub)) onOpenChannel(sub.channelId, sub.title)
                         else pending = sub
                     }
                 }

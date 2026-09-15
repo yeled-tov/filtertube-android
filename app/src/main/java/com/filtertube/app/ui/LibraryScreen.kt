@@ -123,7 +123,8 @@ fun LibraryScreen(
                 val token = GoogleAuth.accessToken(context, a, googleSession)
                 Diagnostics.log("SYNC גוגל: אסימון התקבל (${token.length} תווים)")
                 // רק תוכן מהערוצים המאושרים — לייק/מנוי שלא ברשימה הלבנה לא נשמר ולא מוצג
-                val approved = ChannelsRepository.getChannels(context).map { it.youtubeChannelId }.toHashSet()
+                val approvedList = ChannelsRepository.getChannels(context)
+                val approved = com.filtertube.app.data.ApprovedChannels(approvedList)
 
                 // ── מיוזיק קודם, מאותה סיבה כמו בסנכרון הדפדפן ────────────
                 // "מוזיקה שאהבתי" היא תת-קבוצה של אותו פלייליסט LL. מי שמושך
@@ -140,12 +141,12 @@ fun LibraryScreen(
                         ).distinctBy { it.id }
                     // distinctBy לפני ההשלמה ולא אחריה: שני המקורות מחזירים
                     // את אותם שירים, והשלמת ערוץ היא בקשה לכל פריט.
-                    InnerTube.fillOwners(fromBoth) { it.channelId !in approved }
+                    InnerTube.fillOwners(fromBoth) { !approved.approves(it) }
                 }
                 val musicLiked = musicRaw
                 Diagnostics.log(
                     "SYNC גוגל · מיוזיק: ${musicRaw.size} התקבלו · " +
-                        "${musicRaw.count { it.channelId in approved }} מאושרים",
+                        "${musicRaw.count { approved.approves(it) }} מאושרים",
                 )
                 if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
                 if (musicLiked.isNotEmpty()) store.setMusicLikes(musicLiked)
@@ -157,12 +158,12 @@ fun LibraryScreen(
                     // למרות שהערוץ שהעלה אותו מאושר.
                     InnerTube.fillOwners(
                         YouTubeAccountRepository.likedVideos(token),
-                    ) { it.channelId !in approved }
+                    ) { !approved.approves(it) }
                 }
                 val liked = likedRaw.filter { it.id !in musicIds }
                 Diagnostics.log(
                     "SYNC גוגל · אהבתי: ${likedRaw.size} התקבלו · " +
-                        "${liked.count { it.channelId in approved }} מאושרים",
+                        "${liked.count { approved.approves(it) }} מאושרים",
                 )
                 if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
                 if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
@@ -179,7 +180,7 @@ fun LibraryScreen(
                 }
                 Diagnostics.log(
                     "SYNC גוגל · מנויים: ${subList.size} התקבלו · " +
-                        "${subList.count { it.channelId in approved }} מאושרים",
+                        "${subList.count { approved.approves(it.channelId, it.title) }} מאושרים",
                 )
                 if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
                 if (subList.isNotEmpty()) { store.setSubscriptions(subList); subs = subList }
@@ -190,7 +191,7 @@ fun LibraryScreen(
                 // הכל בלי שהמשתמש יקליד סיסמה אף פעם.
                 val oauthHistory = syncStep("היסטוריה") {
                     InnerTubeOAuth.history(token)
-                }.filter { it.channelId in approved }
+                }.filter { approved.approves(it) }
                 if (oauthHistory.isNotEmpty()) {
                     store.setHistory(oauthHistory); history = oauthHistory
                 }
@@ -222,14 +223,15 @@ fun LibraryScreen(
         syncing = true; status = "מסנכרן את החשבון שלך..."
         scope.launch {
             try {
-                val approved = ChannelsRepository.getChannels(context).map { it.youtubeChannelId }.toHashSet()
+                val approvedList = ChannelsRepository.getChannels(context)
+                val approved = com.filtertube.app.data.ApprovedChannels(approvedList)
                 // ערוץ שלא זוהה נפסל. באפליקציית רשימה לבנה "לא ידוע" אינו
                 // "מותר", ו-InnerTube מחזירה לא מעט פריטים שלא הצליחה לחלץ
                 // להם מזהה ערוץ — כלומר זו הדרך העיקרית שבה תוכן לא מאושר
                 // יכול היה להגיע לספרייה ומשם לנגן.
-                val hist = InnerTube.history(accountStore.cookies).filter { it.channelId in approved }
+                val hist = InnerTube.history(accountStore.cookies).filter { approved.approves(it) }
                 store.setHistory(hist); history = hist
-                val rec = InnerTube.recommendations(accountStore.cookies).filter { it.channelId in approved }
+                val rec = InnerTube.recommendations(accountStore.cookies).filter { approved.approves(it) }
                 store.setRecommendations(rec); recs = rec
 
                 // ── לייקים, מנויים ומוזיקה — אותן עוגיות, אותה פעולה ──────
@@ -239,7 +241,7 @@ fun LibraryScreen(
                 // מאיזה.
                 fun report(name: String, items: List<Video>): List<Video> {
                     val noChannel = items.count { it.channelId.isBlank() }
-                    val kept = items.filter { it.channelId in approved }
+                    val kept = items.filter { approved.approves(it) }
                     Diagnostics.log(
                         "SYNC $name: ${items.size} התקבלו · $noChannel בלי מזהה ערוץ · " +
                             "${kept.size} מאושרים",
@@ -259,7 +261,7 @@ fun LibraryScreen(
                 // עצמה, ולא לפי ניחוש שלנו.
                 val musicRaw = InnerTube.fillOwners(
                     InnerTube.likedMusic(accountStore.cookies),
-                ) { it.channelId !in approved }
+                ) { !approved.approves(it) }
                 // ── נשמר הכל, כולל מערוצים שלא אושרו ──────────────────────
                 // כמו במנויים: רשימה קטועה בלי שום רמז שחסר בה משהו היא
                 // בלבול. מסך "אהבתי" מציג את הלא-מאושרים באפור ומאפשר לבקש
@@ -276,7 +278,7 @@ fun LibraryScreen(
                 // שהערוץ שהעלה אותו מאושר לגמרי.
                 val likedRaw = InnerTube.fillOwners(
                     InnerTube.likedVideos(accountStore.cookies),
-                ) { it.channelId !in approved }
+                ) { !approved.approves(it) }
                 val liked = likedRaw.filter { it.id !in musicIds }
                 report("אהבתי", liked)
                 if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
@@ -285,7 +287,7 @@ fun LibraryScreen(
                 val subsFromCookies = allSubs.map { (id, name) -> SubChannel(id, name) }
                 Diagnostics.log(
                     "SYNC מנויים: ${allSubs.size} התקבלו · " +
-                        "${allSubs.count { it.first in approved }} מאושרים",
+                        "${allSubs.count { approved.approves(it.first, it.second) }} מאושרים",
                 )
                 if (subsFromCookies.isNotEmpty()) {
                     store.setSubscriptions(subsFromCookies); subs = subsFromCookies

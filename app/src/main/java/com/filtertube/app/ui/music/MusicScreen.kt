@@ -115,14 +115,17 @@ fun FilterMusicScreen(
         val channels = runCatching {
             ChannelsRepository.getChannels(context).forLevel(settings.filterLevel, settings.userGender)
         }.getOrNull().orEmpty()
-        val musicIds = channels.asSequence()
-            .filter { it.category in MUSIC_CATEGORIES }
-            .mapTo(HashSet()) { it.youtubeChannelId }
+        // ApprovedChannels ולא סט מזהים: שיר שהועלה ע"י ערוץ ה-Topic של אמן
+        // מאושר נשא מזהה שאינו ברשימה, ולכן נפל כאן בשקט — הוא לא הוצג אפור
+        // אלא פשוט לא הופיע, ו"אהבתי" ב-FilterMusic נראה חסר בלי שום הסבר.
+        val musicChannels = com.filtertube.app.data.ApprovedChannels(
+            channels.filter { it.category in MUSIC_CATEGORIES },
+        )
 
         // distinctBy חובה ולא נוי: מפתח כפול ב-LazyColumn מפיל את המסך,
         // ואותו סרטון יכול להופיע פעמיים בפיד אחרי רענון.
         fun List<Video>.musicOnly() =
-            filter { it.channelId in musicIds && !it.isShort && it.id.isNotBlank() }
+            filter { musicChannels.approves(it) && !it.isShort && it.id.isNotBlank() }
                 .distinctBy { it.id }
 
         feed = runCatching { FeedCache.loadFeed(context) }.getOrNull().orEmpty().musicOnly()
