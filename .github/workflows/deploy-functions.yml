@@ -98,6 +98,20 @@ jobs:
           CREEM_API_BASE: ${{ secrets.CREEM_API_BASE || 'https://api.creem.io' }}
           CREEM_SUCCESS_URL: ${{ secrets.CREEM_SUCCESS_URL || 'https://filter-tube-52d8e.web.app/premium/success' }}
         run: |
+          # ── הערכים נכתבים לקובץ, לא נשלחים כמשתני סביבה ──────────────
+          # firebase-tools מחפש פרמטרים בקובץ dotenv בתיקיית הפונקציות
+          # ולא ב-process.env. העברתם כ-env נראתה נכונה אבל פשוט התעלמו
+          # ממנה, והפריסה נעצרה על "no value for the following environment
+          # variables" גם כשהערכים היו מוגדרים ומודפסים ביומן.
+          #
+          # הקובץ אינו במאגר (/functions/.env* ב-.gitignore) ונוצר כאן בכל
+          # ריצה מחדש, כך שאין עותק שמתיישן בלי שאיש שם לב.
+          {
+            echo "CREEM_MONTHLY_PRODUCT_ID=$CREEM_MONTHLY_PRODUCT_ID"
+            echo "CREEM_YEARLY_PRODUCT_ID=$CREEM_YEARLY_PRODUCT_ID"
+            echo "CREEM_API_BASE=$CREEM_API_BASE"
+            echo "CREEM_SUCCESS_URL=$CREEM_SUCCESS_URL"
+          } > functions/.env
           npm install -g firebase-tools@15
           # גם כללי האבטחה ולא רק הפונקציות: הכללים שבמאגר הם מקור האמת,
           # ואם הם לא פורסמו, מסד הנתונים חוסם את כל בקשות הלקוח — סנכרון
