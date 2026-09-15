@@ -12,7 +12,7 @@
 # ## איך מריצים
 # Actions → "פריסת פונקציות" → Run workflow. או אוטומטית, בכל דחיפה
 # ל-main שנוגעת ב-functions/.
-name: פריסת פונקציות
+name: פריסת שרת
 
 on:
   workflow_dispatch:
@@ -20,6 +20,8 @@ on:
     branches: [main]
     paths:
       - 'functions/**'
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
       - '.github/workflows/deploy-functions.yml'
 
 # שתי פריסות במקביל לאותו פרויקט נכשלות אחת על השנייה.
@@ -58,7 +60,11 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/service-account.json
         run: |
           npm install -g firebase-tools@15
-          firebase deploy --only functions \
+          # גם כללי האבטחה ולא רק הפונקציות: הכללים שבמאגר הם מקור האמת,
+          # ואם הם לא פורסמו, מסד הנתונים חוסם את כל בקשות הלקוח — סנכרון
+          # הפרופיל והספרייה מפסיק לעבוד בלי שום שגיאה גלויה באפליקציה.
+          firebase deploy \
+            --only functions,firestore:rules,firestore:indexes \
             --project filter-tube-52d8e \
             --non-interactive \
             --force
