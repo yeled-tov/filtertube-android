@@ -167,7 +167,7 @@ class _ChannelRow extends StatelessWidget {
           Container(
             width: 42,
             height: 42,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               gradient: AppTheme.accentGradient,
               shape: BoxShape.circle,
             ),
