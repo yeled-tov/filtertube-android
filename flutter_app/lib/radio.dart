@@ -10,16 +10,20 @@ const Set<String> kMusicCategories = {'music', 'dati_light', 'events'};
 
 /// בניית תחנות רדיו מהטעם של המשתמש.
 ///
+/// השם StationBuilder ולא RadioBuilder: פלאטר עצמה מייצאת RadioBuilder
+/// (רכיב כפתור הרדיו) דרך material.dart, ושני שמות זהים בקובץ אחד הם
+/// ambiguous_import.
+///
 /// ## למה זה לא "סרטונים קשורים"
 /// ה-API הרשמי סגר את relatedToVideoId, ובלעדיו אין דרך לשאול את יוטיוב
 /// "מה דומה לזה". מה שכן יש הוא מה שהמשתמש עצמו סימן ושמע, ואת הרשימה
 /// הלבנה — ומהשניים אפשר לבנות תחנה שבאמת מכירה אותו, בלי לצאת מהערוצים
 /// המאושרים ובלי לשרוף מכסה על חיפושים.
-class RadioBuilder {
+class StationBuilder {
   final YoutubeApi api;
   final ChannelsRepo channels;
 
-  RadioBuilder({required this.api, required this.channels});
+  StationBuilder({required this.api, required this.channels});
 
   /// תחנה אישית: קודם מה שאהבת, אחר כך מה ששמעת, ורק אז חדש מהערוצים.
   ///

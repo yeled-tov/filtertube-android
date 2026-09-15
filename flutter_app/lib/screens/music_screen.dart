@@ -26,8 +26,8 @@ class MusicScreen extends StatefulWidget {
 }
 
 class _MusicScreenState extends State<MusicScreen> {
-  late final RadioBuilder _radio =
-      RadioBuilder(api: widget.api, channels: widget.channels);
+  late final StationBuilder _radio =
+      StationBuilder(api: widget.api, channels: widget.channels);
 
   late Future<List<Video>> _picks;
   bool _startingStation = false;

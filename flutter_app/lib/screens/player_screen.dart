@@ -123,7 +123,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _startStation() async {
     if (_buildingStation) return;
     setState(() => _buildingStation = true);
-    final station = await RadioBuilder(api: widget.api, channels: widget.channels)
+    final station = await StationBuilder(api: widget.api, channels: widget.channels)
         .stationForSeed(_current);
     if (!mounted) return;
     setState(() {
