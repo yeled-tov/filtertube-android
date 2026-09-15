@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Recommend
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.Sync
@@ -76,6 +77,7 @@ fun LibraryScreen(
     onOpenPlaylist: (String) -> Unit,
     onOpenLogin: () -> Unit,
     onOpenDeviceMedia: () -> Unit,
+    onOpenMyRequests: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -147,7 +149,12 @@ fun LibraryScreen(
                 val musicIds = musicRaw.mapTo(HashSet()) { it.id }
 
                 val likedRaw = syncStep("אהבתי") {
-                    YouTubeAccountRepository.likedVideos(token)
+                    // אותה השלמה כמו בסנכרון הדפדפן: מזהה שאינו ברשימה הוא
+                    // לרוב ערוץ האמן ולא המעלה, ובלי ההשלמה השיר מוצג אפור
+                    // למרות שהערוץ שהעלה אותו מאושר.
+                    InnerTube.fillOwners(
+                        YouTubeAccountRepository.likedVideos(token),
+                    ) { it.channelId !in approved }
                 }
                 val liked = likedRaw.filter { it.id !in musicIds }
                 Diagnostics.log(
@@ -259,9 +266,14 @@ fun LibraryScreen(
                 if (musicRaw.isNotEmpty()) store.setMusicLikes(musicRaw)
                 val musicIds = musicRaw.mapTo(HashSet()) { it.id }
 
+                // ── משלימים ערוץ לכל מה שלא נמצא ברשימה, לא רק לריקים ─────
+                // פלייליסט "אהבתי" מחזיר לחלק מהפריטים את ערוץ ה-Topic של
+                // האמן ולא את המעלה. הם קיבלו מזהה — ולכן לא נחשבו "ריקים" —
+                // אבל המזהה לא היה ברשימה הלבנה, והשיר הוצג אפור למרות
+                // שהערוץ שהעלה אותו מאושר לגמרי.
                 val likedRaw = InnerTube.fillOwners(
                     InnerTube.likedVideos(accountStore.cookies),
-                ) { it.channelId.isBlank() }
+                ) { it.channelId !in approved }
                 val liked = likedRaw.filter { it.id !in musicIds }
                 report("אהבתי", liked)
                 if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
@@ -439,6 +451,9 @@ fun LibraryScreen(
             // הבית. הספרייה היא "התוכן שלי", ומעקב אחרי ערוץ הוא בדיוק זה —
             // ממש ליד "מנויים", שהוא אותו רעיון בצד של יוטיוב.
             LibRow("ערוצים מאושרים", channelCount, Icons.Default.Tv, ThemeState.accent) { onOpenChannels() }
+            // הבקשות יושבות ליד "ערוצים מאושרים" בכוונה: זו אותה שאלה משני
+            // צדדיה — מה כבר מאושר, ומה ביקשתי שיאושר.
+            LibRow("הבקשות שלי", -1, Icons.Default.Inbox, Color(0xFFF59E0B)) { onOpenMyRequests() }
             LibRow("היסטוריית צפייה", localHist.size, Icons.Default.History, Color(0xFFFF6D00)) { onOpenCollection("history") }
             LibRow("מומלצים מיוטיוב", recs.size, Icons.Default.Recommend, Color(0xFF00BFA5)) { onOpenCollection("recs") }
             // FilterTube יודעת לנגן גם מה שכבר על הטלפון, לא רק מה שהיא הורידה.

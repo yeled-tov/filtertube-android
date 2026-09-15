@@ -35,7 +35,10 @@ const STATUS_REFRESH_COOLDOWN_MS = 15_000;
 const STATUS_REFRESH_LOCK_MS = 30_000;
 const PORTAL_COOLDOWN_MS = 15_000;
 const PORTAL_LOCK_MS = 30_000;
-const CHANNEL_REQUEST_COOLDOWN_MS = 30 * 1000;
+// שלוש שניות ולא שלושים: ההגבלה נועדה לעצור הצפה, לא אדם שמסמן ארבעה
+// ערוצים ברצף. הכפילויות ממילא נחסמות לפי כתובת הערוץ, ולכן אין מה להרוויח
+// מהמתנה ארוכה — רק לגרום למשתמש לחשוב שהבקשות נעלמות.
+const CHANNEL_REQUEST_COOLDOWN_MS = 3 * 1000;
 const PREMIUM_REQUEST_COOLDOWN_MS = 10 * 60 * 1000;
 const BUG_REPORT_COOLDOWN_MS = 10 * 60 * 1000;
 const TRIAL_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -459,10 +462,22 @@ async function sendAdminPush(title, body) {
     const tokens = snapshot.docs.map((doc) => doc.get("token"))
       .filter((token) => typeof token === "string" && token.length > 20);
     if (tokens.length === 0) return;
+    // ── עדיפות גבוהה, אחרת ההתראה פשוט לא מגיעה ───────────────────
+    // הודעה בעדיפות רגילה נדחית ע"י Doze ומצב חיסכון בסוללה עד שהמכשיר
+    // מתעורר מעצמו — כלומר לפעמים שעות. בקשה שממתינה לאישור היא בדיוק
+    // הדבר שאסור שיחכה.
     await getMessaging().sendEachForMulticast({
       tokens,
       notification: { title, body },
       data: { type: "admin_request" },
+      android: {
+        priority: "high",
+        notification: {
+          channelId: "admin_alerts",
+          priority: "max",
+          defaultSound: true,
+        },
+      },
     });
   } catch (error) {
     console.error("sendAdminPush failed", error);
@@ -632,13 +647,31 @@ export const submitChannelRequest = onRequest({
       return res.status(429).json({
         ok: false,
         code: "CHANNEL_REQUEST_RATE_LIMITED",
-        message: "כבר נשלחה בקשה לאחרונה. נסה שוב בעוד חצי דקה",
+        message: "רגע אחד — נשלחה בקשה ממש עכשיו. נסה שוב בעוד כמה שניות",
       });
     }
 
+    // ── מסמך לכל בקשה ─────────────────────────────────────────────
+    // קודם מזהה המסמך היה ה-uid של המשתמש, כלומר לכל משתמש הייתה בדיוק
+    // בקשה אחת אי פעם: כל בקשה חדשה *דרסה* את הקודמת. ארבע בקשות נשלחו
+    // ורק האחרונה הגיעה לניהול — לא תקלת רשת ולא הגבלת קצב, אלא אובדן
+    // נתונים מובנה. מזהה אוטומטי פותר את זה, ו-ownerUid נשאר כשדה.
+    const existing = await db.collection("channelRequests")
+      .where("ownerUid", "==", decoded.uid)
+      .where("status", "==", "pending")
+      .limit(50)
+      .get();
+    const duplicate = existing.docs.find(
+      (document) => normalizeYoutubeChannelUrl(document.get("url")) === channelUrl,
+    );
+    if (duplicate) {
+      return res.json({ ok: true, message: "כבר שלחת בקשה על הערוץ הזה — היא ממתינה לאישור" });
+    }
+
     const requestVersion = randomUUID();
-    await db.collection("channelRequests").doc(decoded.uid).set({
+    await db.collection("channelRequests").add({
       ownerUid: decoded.uid,
+      ownerEmail: cleanSingleLine(decoded.email, 254).toLowerCase(),
       requestVersion,
       name,
       url: channelUrl,
@@ -649,7 +682,7 @@ export const submitChannelRequest = onRequest({
       submittedAt: FieldValue.serverTimestamp(),
     });
     await sendAdminPush("בקשת ערוץ חדשה", `${name} ביקש/ה להוסיף ערוץ`);
-    return res.json({ ok: true });
+    return res.json({ ok: true, message: "הבקשה נשלחה" });
   } catch (error) {
     console.error("submitChannelRequest failed", error);
     return res.status(502).json({
@@ -1075,6 +1108,56 @@ export const listChannelRequests = onRequest({
     return res.status(502).json({
       ok: false,
       message: "Unable to load channel requests",
+    });
+  }
+});
+
+/**
+ * הבקשות של המשתמש עצמו.
+ *
+ * listChannelRequests היא לאדמין בלבד, ולכן ללקוח לא הייתה שום דרך לדעת מה
+ * קרה לבקשה ששלח — אם היא התקבלה, אושרה או נדחתה. כאן הוא רואה רק את שלו:
+ * השאילתה מסוננת ל-ownerUid של המחובר, ואין שום פרמטר שמאפשר לבקש אחר.
+ */
+export const listMyChannelRequests = onRequest({
+  ...STATUS_HTTP_OPTIONS,
+  maxInstances: 5,
+}, async (req, res) => {
+  if (handleCors(req, res)) return;
+  if (req.method !== "GET") {
+    return res.status(405).json({ ok: false, message: "GET required" });
+  }
+  const decoded = await requireUser(req, res, true);
+  if (!decoded) return;
+
+  try {
+    res.set("Cache-Control", "private, no-store");
+    // בלי orderBy: צירוף של where ו-orderBy דורש אינדקס מורכב, והמיון
+    // ממילא זול בצד הלקוח על עשרות פריטים.
+    const snapshot = await db.collection("channelRequests")
+      .where("ownerUid", "==", decoded.uid)
+      .limit(100)
+      .get();
+    const requests = snapshot.docs.map((document) => {
+      const data = document.data();
+      const submittedAt = data.submittedAt?.toDate?.();
+      const resolvedAt = data.resolvedAt?.toDate?.();
+      return {
+        id: document.id,
+        name: cleanSingleLine(data.name, 120),
+        url: normalizeYoutubeChannelUrl(data.url) || "",
+        category: cleanSingleLine(data.category, 40),
+        status: cleanSingleLine(data.status, 16) || "pending",
+        requestedAt: submittedAt instanceof Date ? submittedAt.toISOString() : "",
+        resolvedAt: resolvedAt instanceof Date ? resolvedAt.toISOString() : "",
+      };
+    });
+    return res.json({ ok: true, requests });
+  } catch (error) {
+    console.error("listMyChannelRequests failed", error);
+    return res.status(502).json({
+      ok: false,
+      message: "לא ניתן לטעון את הבקשות שלך כרגע",
     });
   }
 });

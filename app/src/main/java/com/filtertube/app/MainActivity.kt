@@ -262,6 +262,9 @@ fun AppRoot() {
         // שגיאת התחברות של גוגל נפתרת בהשוואה של שלושת אלה למה שרשום
         // בפרויקט, ובלעדיהם כל דיון עליה מתחיל מלנחש.
         com.filtertube.app.data.GoogleAuth.logSignInConfig(context)
+        // ערוץ ההתראות נוצר בעלייה ולא במסך כלשהו: התראת FCM מגיעה גם
+        // כשהאפליקציה סגורה, וערוץ שלא קיים גורם למערכת לזרוק אותה בשקט.
+        com.filtertube.app.data.NotificationChannels.ensure(context)
         try {
             // לקוחות מקבלים רק גרסאות יציבות; גרסאות טסט רק אם הופעל ערוץ בדיקות.
             val u = com.filtertube.app.data.UpdateChecker.check(includeTestBuilds = settings.testChannel)
@@ -693,7 +696,11 @@ fun AppRoot() {
                     onOpenPlaylist = { name -> navController.navigate("playlist/${Uri.encode(name)}") },
                     onOpenLogin = { navController.navigate("ytlogin") },
                     onOpenDeviceMedia = { navController.navigate("devicemedia") },
+                    onOpenMyRequests = { navController.navigate("myrequests") },
                 )
+            }
+            composable("myrequests") {
+                MyRequestsScreen(onBack = { navController.popBackStack() })
             }
             composable("ytlogin") { AccountLoginScreen(onDone = { navController.popBackStack() }) }
             composable("music") {
