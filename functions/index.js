@@ -18,8 +18,18 @@ const auth = getAuth();
 const db = getFirestore();
 const creemApiKey = defineSecret("CREEM_API_KEY");
 const creemWebhookSecret = defineSecret("CREEM_WEBHOOK_SECRET");
-const creemMonthlyProduct = defineString("CREEM_MONTHLY_PRODUCT_ID");
-const creemYearlyProduct = defineString("CREEM_YEARLY_PRODUCT_ID");
+// ── תשלומים אוטומטיים כבויים ──────────────────────────────────────────
+// אין כרגע חשבון Creem פעיל, ולכן אין מזהי מוצר. ברירת מחדל ריקה ולא
+// פרמטר חובה: פרמטר בלי ערך עוצר כל פריסה לא-אינטראקטיבית, כלומר תכונה
+// שאינה בשימוש הייתה חוסמת גם את כל התיקונים שכן צריך להוציא.
+//
+// הקוד עצמו נשאר על כנו. ביום שייפתח עוסק ויהיה חשבון, מגדירים את שני
+// הערכים ב-GitHub Secrets והכל חוזר לפעול — בלי לכתוב שורה מחדש.
+//
+// עד אז createCheckout מחזיר שגיאה מסודרת (ראה "תשלומים אינם פעילים"),
+// והמסלול היחיד לפרימיום הוא הענקה ידנית מדשבורד הניהול.
+const creemMonthlyProduct = defineString("CREEM_MONTHLY_PRODUCT_ID", { default: "" });
+const creemYearlyProduct = defineString("CREEM_YEARLY_PRODUCT_ID", { default: "" });
 const creemApiBase = defineString("CREEM_API_BASE", {
   default: "https://api.creem.io",
 });
@@ -35,7 +45,10 @@ const STATUS_REFRESH_COOLDOWN_MS = 15_000;
 const STATUS_REFRESH_LOCK_MS = 30_000;
 const PORTAL_COOLDOWN_MS = 15_000;
 const PORTAL_LOCK_MS = 30_000;
-const CHANNEL_REQUEST_COOLDOWN_MS = 30 * 1000;
+// שלוש שניות ולא שלושים: ההגבלה נועדה לעצור הצפה, לא אדם שמסמן ארבעה
+// ערוצים ברצף. הכפילויות ממילא נחסמות לפי כתובת הערוץ, ולכן אין מה להרוויח
+// מהמתנה ארוכה — רק לגרום למשתמש לחשוב שהבקשות נעלמות.
+const CHANNEL_REQUEST_COOLDOWN_MS = 3 * 1000;
 const PREMIUM_REQUEST_COOLDOWN_MS = 10 * 60 * 1000;
 const BUG_REPORT_COOLDOWN_MS = 10 * 60 * 1000;
 const TRIAL_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -459,10 +472,22 @@ async function sendAdminPush(title, body) {
     const tokens = snapshot.docs.map((doc) => doc.get("token"))
       .filter((token) => typeof token === "string" && token.length > 20);
     if (tokens.length === 0) return;
+    // ── עדיפות גבוהה, אחרת ההתראה פשוט לא מגיעה ───────────────────
+    // הודעה בעדיפות רגילה נדחית ע"י Doze ומצב חיסכון בסוללה עד שהמכשיר
+    // מתעורר מעצמו — כלומר לפעמים שעות. בקשה שממתינה לאישור היא בדיוק
+    // הדבר שאסור שיחכה.
     await getMessaging().sendEachForMulticast({
       tokens,
       notification: { title, body },
       data: { type: "admin_request" },
+      android: {
+        priority: "high",
+        notification: {
+          channelId: "admin_alerts",
+          priority: "max",
+          defaultSound: true,
+        },
+      },
     });
   } catch (error) {
     console.error("sendAdminPush failed", error);
@@ -632,13 +657,31 @@ export const submitChannelRequest = onRequest({
       return res.status(429).json({
         ok: false,
         code: "CHANNEL_REQUEST_RATE_LIMITED",
-        message: "כבר נשלחה בקשה לאחרונה. נסה שוב בעוד חצי דקה",
+        message: "רגע אחד — נשלחה בקשה ממש עכשיו. נסה שוב בעוד כמה שניות",
       });
     }
 
+    // ── מסמך לכל בקשה ─────────────────────────────────────────────
+    // קודם מזהה המסמך היה ה-uid של המשתמש, כלומר לכל משתמש הייתה בדיוק
+    // בקשה אחת אי פעם: כל בקשה חדשה *דרסה* את הקודמת. ארבע בקשות נשלחו
+    // ורק האחרונה הגיעה לניהול — לא תקלת רשת ולא הגבלת קצב, אלא אובדן
+    // נתונים מובנה. מזהה אוטומטי פותר את זה, ו-ownerUid נשאר כשדה.
+    const existing = await db.collection("channelRequests")
+      .where("ownerUid", "==", decoded.uid)
+      .where("status", "==", "pending")
+      .limit(50)
+      .get();
+    const duplicate = existing.docs.find(
+      (document) => normalizeYoutubeChannelUrl(document.get("url")) === channelUrl,
+    );
+    if (duplicate) {
+      return res.json({ ok: true, message: "כבר שלחת בקשה על הערוץ הזה — היא ממתינה לאישור" });
+    }
+
     const requestVersion = randomUUID();
-    await db.collection("channelRequests").doc(decoded.uid).set({
+    await db.collection("channelRequests").add({
       ownerUid: decoded.uid,
+      ownerEmail: cleanSingleLine(decoded.email, 254).toLowerCase(),
       requestVersion,
       name,
       url: channelUrl,
@@ -649,7 +692,7 @@ export const submitChannelRequest = onRequest({
       submittedAt: FieldValue.serverTimestamp(),
     });
     await sendAdminPush("בקשת ערוץ חדשה", `${name} ביקש/ה להוסיף ערוץ`);
-    return res.json({ ok: true });
+    return res.json({ ok: true, message: "הבקשה נשלחה" });
   } catch (error) {
     console.error("submitChannelRequest failed", error);
     return res.status(502).json({
@@ -934,8 +977,37 @@ export const adminDashboard = onRequest({
       pageToken = page.pageToken;
     } while (pageToken && users.length < 10_000);
     const now = Date.now();
+    // ── ספירות לפי בעלים, בשאילתה אחת לכל אוסף ────────────────────
+    // לא שאילתה לכל לקוח: עם מאה לקוחות זה מאות קריאות לכל רענון של
+    // המסך. כאן קוראים את האוספים פעם אחת וסופרים בזיכרון.
+    const [channelReqSnap, premiumReqSnap] = await Promise.all([
+      db.collection("channelRequests").limit(2_000).get(),
+      db.collection("premiumRequests").limit(2_000).get(),
+    ]);
+    const channelReqByUid = new Map();
+    channelReqSnap.docs.forEach((document) => {
+      const uid = document.get("ownerUid");
+      if (!uid) return;
+      const entry = channelReqByUid.get(uid) || { total: 0, pending: 0 };
+      entry.total += 1;
+      if ((document.get("status") || "pending") === "pending") entry.pending += 1;
+      channelReqByUid.set(uid, entry);
+    });
+    const premiumPendingUids = new Set(
+      premiumReqSnap.docs
+        .filter((document) => (document.get("status") || "pending") === "pending")
+        .map((document) => document.get("ownerUid"))
+        .filter(Boolean),
+    );
+
     const clients = await Promise.all(users.map(async (user) => {
-      const billing = (await billingRef(user.uid).get()).data() || {};
+      const [billingSnap, profileSnap] = await Promise.all([
+        billingRef(user.uid).get(),
+        db.collection("users").doc(user.uid).collection("profile").doc("main").get(),
+      ]);
+      const billing = billingSnap.data() || {};
+      const profile = profileSnap.data() || {};
+      const requests = channelReqByUid.get(user.uid) || { total: 0, pending: 0 };
       const createdAt = Date.parse(user.metadata.creationTime) || now;
       const trialEndsAt = createdAt + TRIAL_DURATION_MS;
       const manualEndsAt = positiveMillis(billing.manualPremiumEndsAtMillis);
@@ -960,6 +1032,16 @@ export const adminDashboard = onRequest({
         plan: cleanSingleLine(billing.manualPremiumPlan || billing.plan, 20) || null,
         subscriptionStartedAt: new Date(paidStart || createdAt).toISOString(),
         subscriptionEndsAt: new Date(paidEnd || trialEndsAt).toISOString(),
+        // ── מה הלקוח בחר בפועל ────────────────────────────────────
+        // "כמה חשבונות" אינו מספיק כדי לנהל לקוחות. רמת הסינון והמגדר
+        // הם מה שקובע מה הוא בכלל רואה, והם כבר מסונכרנים לענן.
+        displayName: cleanSingleLine(profile.name, 80),
+        gender: cleanSingleLine(profile.gender, 16),
+        filterLevel: Number(profile.filterLevel) || 0,
+        onboardingDone: Boolean(profile.onboardingDone),
+        channelRequests: requests.total,
+        pendingChannelRequests: requests.pending,
+        premiumRequestPending: premiumPendingUids.has(user.uid),
       };
     }));
     clients.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -969,12 +1051,124 @@ export const adminDashboard = onRequest({
       connectedAccounts: clients.filter((client) => client.lastSignInAt).length,
       premiumAccounts: clients.filter((client) => client.premium).length,
       trialAccounts: clients.filter((client) => client.trialActive).length,
+      disabledAccounts: clients.filter((client) => client.disabled).length,
+      pendingRequests: clients.reduce(
+        (sum, client) => sum + client.pendingChannelRequests, 0,
+      ),
+      byFilterLevel: {
+        level1: clients.filter((client) => client.filterLevel === 1).length,
+        level2: clients.filter((client) => client.filterLevel === 2).length,
+        level3: clients.filter((client) => client.filterLevel === 3).length,
+        unset: clients.filter((client) => !client.filterLevel).length,
+      },
     };
     res.set("Cache-Control", "private, no-store");
     return res.json({ ok: true, summary, clients });
   } catch (error) {
     console.error("adminDashboard failed", error);
     return res.status(502).json({ ok: false, message: "לא ניתן לטעון את דשבורד הלקוחות" });
+  }
+});
+
+/**
+ * פעולות ניהול על לקוח בודד: פרימיום ידני, השבתה, ומחיקה.
+ *
+ * ## למה שלוש פעולות בנקודת קצה אחת
+ * שלושתן חולקות בדיוק את אותן בדיקות — אדמין מאומת, uid תקין, ואיסור על
+ * פעולה נגד חשבון האדמין עצמו. שלוש נקודות קצה נפרדות היו משכפלות את
+ * הבדיקות האלה שלוש פעמים, וזה בדיוק המקום שבו אחת מהן נשכחת.
+ *
+ * ## המחיקה
+ * מוחקת גם את נתוני המשתמש ב-Firestore ולא רק את חשבון ההזדהות. חשבון
+ * שנמחק בלי הנתונים משאיר חיוב, פרופיל וספרייה יתומים, ואם ייווצר חשבון
+ * חדש עם אותו מייל הוא יקבל uid אחר ולא יראה אותם לעולם.
+ */
+export const manageClient = onRequest({
+  ...STATUS_HTTP_OPTIONS,
+  maxInstances: 3,
+}, async (req, res) => {
+  if (handleCors(req, res)) return;
+  if (req.method !== "POST") {
+    return res.status(405).json({ ok: false, message: "POST required" });
+  }
+  const decoded = await requireUser(req, res, true);
+  if (!decoded) return;
+  if (!requireVerifiedEmail(decoded, res)) return;
+  if (!requireAdmin(decoded, res)) return;
+
+  const uid = cleanSingleLine(req.body?.uid, 128);
+  const action = cleanSingleLine(req.body?.action, 24);
+  if (!uid || !/^[A-Za-z0-9_-]{6,128}$/.test(uid)) {
+    return res.status(400).json({ ok: false, message: "מזהה לקוח לא תקין" });
+  }
+  if (!["grantPremium", "revokePremium", "disable", "enable", "delete"].includes(action)) {
+    return res.status(400).json({ ok: false, message: "פעולה לא מוכרת" });
+  }
+  // האדמין לא יכול למחוק או להשבית את עצמו. בלי זה לחיצה אחת שגויה נועלת
+  // את הניהול לצמיתות, ואין דרך לחזור ממנה מתוך האפליקציה.
+  if (uid === decoded.uid && ["disable", "delete"].includes(action)) {
+    return res.status(400).json({
+      ok: false,
+      message: "אי אפשר להשבית או למחוק את חשבון המנהל עצמו",
+    });
+  }
+
+  try {
+    switch (action) {
+      case "grantPremium": {
+        const plan = normalizePlan(cleanSingleLine(req.body?.plan, 16)) || "month";
+        const requestedDays = Number(req.body?.days);
+        const days = Number.isFinite(requestedDays) && requestedDays > 0
+          ? Math.min(Math.round(requestedDays), 3_650)
+          : (plan === "year" ? 365 : 30);
+        const grantedAt = Date.now();
+        const target = await auth.getUser(uid);
+        await billingRef(uid).set({
+          manualPremiumActive: true,
+          manualPremiumGrantedAt: FieldValue.serverTimestamp(),
+          manualPremiumStartedAtMillis: grantedAt,
+          manualPremiumEndsAtMillis: grantedAt + days * 24 * 60 * 60 * 1_000,
+          manualPremiumGrantedFor: cleanSingleLine(target.email, 254),
+          manualPremiumPlan: plan,
+          manualPremiumSource: "admin_dashboard",
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        return res.json({ ok: true, message: `פרימיום הוענק ל-${days} ימים` });
+      }
+      case "revokePremium": {
+        await billingRef(uid).set({
+          manualPremiumActive: false,
+          manualPremiumEndsAtMillis: Date.now(),
+          manualPremiumSource: "admin_dashboard",
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        return res.json({ ok: true, message: "הפרימיום הידני בוטל" });
+      }
+      case "disable":
+      case "enable": {
+        await auth.updateUser(uid, { disabled: action === "disable" });
+        return res.json({
+          ok: true,
+          message: action === "disable" ? "החשבון הושבת" : "החשבון הופעל מחדש",
+        });
+      }
+      case "delete": {
+        await db.recursiveDelete(db.collection("users").doc(uid));
+        const owned = await db.collection("channelRequests")
+          .where("ownerUid", "==", uid).limit(500).get();
+        await Promise.all(owned.docs.map((document) => document.ref.delete()));
+        await auth.deleteUser(uid);
+        return res.json({ ok: true, message: "הלקוח והנתונים שלו נמחקו" });
+      }
+      default:
+        return res.status(400).json({ ok: false, message: "פעולה לא מוכרת" });
+    }
+  } catch (error) {
+    console.error("manageClient failed", action, error);
+    if (error?.code === "auth/user-not-found") {
+      return res.status(404).json({ ok: false, message: "הלקוח לא נמצא" });
+    }
+    return res.status(502).json({ ok: false, message: "הפעולה נכשלה" });
   }
 });
 
@@ -1075,6 +1269,56 @@ export const listChannelRequests = onRequest({
     return res.status(502).json({
       ok: false,
       message: "Unable to load channel requests",
+    });
+  }
+});
+
+/**
+ * הבקשות של המשתמש עצמו.
+ *
+ * listChannelRequests היא לאדמין בלבד, ולכן ללקוח לא הייתה שום דרך לדעת מה
+ * קרה לבקשה ששלח — אם היא התקבלה, אושרה או נדחתה. כאן הוא רואה רק את שלו:
+ * השאילתה מסוננת ל-ownerUid של המחובר, ואין שום פרמטר שמאפשר לבקש אחר.
+ */
+export const listMyChannelRequests = onRequest({
+  ...STATUS_HTTP_OPTIONS,
+  maxInstances: 5,
+}, async (req, res) => {
+  if (handleCors(req, res)) return;
+  if (req.method !== "GET") {
+    return res.status(405).json({ ok: false, message: "GET required" });
+  }
+  const decoded = await requireUser(req, res, true);
+  if (!decoded) return;
+
+  try {
+    res.set("Cache-Control", "private, no-store");
+    // בלי orderBy: צירוף של where ו-orderBy דורש אינדקס מורכב, והמיון
+    // ממילא זול בצד הלקוח על עשרות פריטים.
+    const snapshot = await db.collection("channelRequests")
+      .where("ownerUid", "==", decoded.uid)
+      .limit(100)
+      .get();
+    const requests = snapshot.docs.map((document) => {
+      const data = document.data();
+      const submittedAt = data.submittedAt?.toDate?.();
+      const resolvedAt = data.resolvedAt?.toDate?.();
+      return {
+        id: document.id,
+        name: cleanSingleLine(data.name, 120),
+        url: normalizeYoutubeChannelUrl(data.url) || "",
+        category: cleanSingleLine(data.category, 40),
+        status: cleanSingleLine(data.status, 16) || "pending",
+        requestedAt: submittedAt instanceof Date ? submittedAt.toISOString() : "",
+        resolvedAt: resolvedAt instanceof Date ? resolvedAt.toISOString() : "",
+      };
+    });
+    return res.json({ ok: true, requests });
+  } catch (error) {
+    console.error("listMyChannelRequests failed", error);
+    return res.status(502).json({
+      ok: false,
+      message: "לא ניתן לטעון את הבקשות שלך כרגע",
     });
   }
 });
@@ -1257,7 +1501,14 @@ export const createCheckout = onRequest({
     : plan === "year"
       ? creemYearlyProduct.value()
       : null;
-  if (!plan || !productId) {
+  if (!productId) {
+    return res.status(503).json({
+      ok: false,
+      code: "BILLING_DISABLED",
+      message: "תשלומים אינם פעילים כרגע. לפרטים על מנוי — פנה אלינו מתוך מסך הפרימיום",
+    });
+  }
+  if (!plan) {
     return res.status(400).json({ ok: false, message: "Unknown plan" });
   }
   if (!decoded.email) {
