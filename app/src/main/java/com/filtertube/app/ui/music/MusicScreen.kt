@@ -154,7 +154,9 @@ fun FilterMusicScreen(
                 context, channels.map { it.youtubeChannelId },
             )
         }
-        artists = channels.filter { it.youtubeChannelId in musicIds }
+        // רשימת האמנים נבנית מהערוצים המאושרים עצמם, ולכן היא לא עוברת דרך
+        // גשר ה-Topic: ערוץ Topic אינו מוצג כאמן נפרד אלא נספר לאמן שלו.
+        artists = channels.filter { it.category in MUSIC_CATEGORIES }
             .sortedByDescending { it.youtubeChannelId in favorites }
         downloads = runCatching { store.downloads() }.getOrNull().orEmpty()
             .filter { it.localUri.isNotBlank() }
