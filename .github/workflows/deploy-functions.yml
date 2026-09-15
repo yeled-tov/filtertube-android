@@ -47,6 +47,14 @@ jobs:
         with:
           node-version: '22'
 
+      # ── התקנת התלויות, ולא רק בדיקת תחביר ─────────────────────────
+      # firebase-tools טוען את קוד הפונקציות כדי לדעת מה לפרוס, ובלי
+      # node_modules הטעינה נכשלת עם "Couldn't find firebase-functions
+      # package" ואז "An unexpected error has occurred" — שגיאה שלא מסגירה
+      # במאום שהסיבה היא תלויות חסרות.
+      - name: התקנת התלויות של הפונקציות
+        run: npm --prefix functions ci
+
       - name: בדיקת תחביר של הפונקציות
         run: npm --prefix functions run lint
 
