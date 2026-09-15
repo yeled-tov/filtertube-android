@@ -11,6 +11,7 @@ import 'screens/search_screen.dart';
 import 'screens/channels_screen.dart';
 import 'screens/player_screen.dart';
 import 'screens/library_screen.dart';
+import 'screens/music_screen.dart';
 import 'library.dart';
 
 /// מפתח ניווט גלובלי — לפתיחת קישורים חיצוניים מחוץ לעץ הווידג'טים.
@@ -141,6 +142,7 @@ class _RootState extends State<_Root> {
               onFilterLevelChanged: _onLevelChanged),
           ChannelsScreen(api: _api, channels: _channels),
           SearchScreen(api: _api, channels: _channels),
+          MusicScreen(api: _api, channels: _channels),
           LibraryScreen(api: _api, channels: _channels),
         ];
         return Scaffold(
@@ -166,13 +168,14 @@ class _FloatingNav extends StatelessWidget {
     (Icons.home_rounded, 'בית'),
     (Icons.subscriptions_rounded, 'ערוצים'),
     (Icons.search_rounded, 'חיפוש'),
+    (Icons.music_note_rounded, 'מוזיקה'),
     (Icons.library_books_rounded, 'ספרייה'),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(26, 0, 26, 16),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
       child: Container(
         height: 62,
         decoration: BoxDecoration(
@@ -197,7 +200,7 @@ class _FloatingNav extends StatelessWidget {
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOut,
                 padding: EdgeInsets.symmetric(
-                    horizontal: selected ? 16 : 12, vertical: 9),
+                    horizontal: selected ? 12 : 9, vertical: 9),
                 decoration: BoxDecoration(
                   gradient: selected ? AppTheme.accentGradient : null,
                   borderRadius: BorderRadius.circular(16),
@@ -208,7 +211,7 @@ class _FloatingNav extends StatelessWidget {
                         color: selected ? Colors.white : AppTheme.subtext,
                         size: 22),
                     if (selected) ...[
-                      const SizedBox(width: 7),
+                      const SizedBox(width: 6),
                       Text(_items[i].$2,
                           style: const TextStyle(
                               color: Colors.white,

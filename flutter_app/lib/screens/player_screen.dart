@@ -10,6 +10,7 @@ import '../settings.dart';
 import '../library.dart';
 import '../youtube_api.dart';
 import '../channels_repo.dart';
+import '../radio.dart';
 import '../widgets/video_card.dart';
 
 /// נגן וידאו מבוסס IFrame רשמי. ה-UI של יוטיוב מוסתר/נעול (showControls:false +
@@ -20,11 +21,20 @@ class PlayerScreen extends StatefulWidget {
   final YoutubeApi api;
   final ChannelsRepo channels;
 
+  /// תור מוכן מראש (תחנת רדיו / רשימת שירים). כשהוא קיים הוא מחליף את
+  /// "הבא בתור" מהערוץ, כדי שסדר הניגון יהיה זה שהמשתמש בחר.
+  final List<Video>? queue;
+
+  /// פילטר מיוזיק — אודיו בלבד, בלי קשר לקטגוריה או לרמת הסינון.
+  final bool musicMode;
+
   const PlayerScreen({
     super.key,
     required this.video,
     required this.api,
     required this.channels,
+    this.queue,
+    this.musicMode = false,
   });
 
   @override
@@ -37,6 +47,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   List<Video> _upNext = [];
   bool _advancing = false;
   bool _audioOnly = false;
+  /// התור מגיע מתחנה/רשימה ולא מהערוץ — ואז לא דורסים אותו בכל מעבר שיר.
+  bool _stationMode = false;
+  bool _buildingStation = false;
   double _speed = 1.0;
   Timer? _sleepTimer;
   int _sleepMinutes = 0;
@@ -46,8 +59,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void initState() {
     super.initState();
     _current = widget.video;
-    _audioOnly =
+    _audioOnly = widget.musicMode ||
         widget.channels.isAudioOnly(_current.channelId, appSettings.filterLevel);
+    final queue = widget.queue;
+    if (queue != null && queue.isNotEmpty) {
+      _stationMode = true;
+      _upNext = queue.where((v) => v.id != _current.id).toList();
+    }
     _controller = YoutubePlayerController(
       params: const YoutubePlayerParams(
         showControls: false,
@@ -69,7 +87,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         _playVideo(_upNext.first);
       }
     });
-    _loadUpNext();
+    if (!_stationMode) _loadUpNext();
   }
 
   Future<void> _loadUpNext() async {
@@ -84,15 +102,42 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _playVideo(Video v) {
+    // בתחנה שומרים על שאר התור: מדלגים על מה שכבר נוגן ולא טוענים מחדש
+    // מהערוץ, אחרת כל מעבר שיר היה מוחק את התחנה שהמשתמש התחיל.
+    final rest = _upNext.where((x) => x.id != v.id).toList();
+    final keepStation = _stationMode && rest.isNotEmpty;
     setState(() {
       _current = v;
-      _upNext = [];
+      _upNext = keepStation ? rest : [];
       _advancing = false;
-      _audioOnly = widget.channels.isAudioOnly(v.channelId, appSettings.filterLevel);
+      _stationMode = keepStation;
+      _audioOnly = widget.musicMode ||
+          widget.channels.isAudioOnly(v.channelId, appSettings.filterLevel);
     });
     _controller.loadVideoById(videoId: v.id);
-    _loadUpNext();
+    if (!keepStation) _loadUpNext();
     appLibrary.recordWatch(v);
+  }
+
+  /// "רדיו מהשיר הזה" — ממלא את התור בתחנה באותו סגנון.
+  Future<void> _startStation() async {
+    if (_buildingStation) return;
+    setState(() => _buildingStation = true);
+    final station = await RadioBuilder(api: widget.api, channels: widget.channels)
+        .stationForSeed(_current);
+    if (!mounted) return;
+    setState(() {
+      _buildingStation = false;
+      if (station.isNotEmpty) {
+        _stationMode = true;
+        _upNext = station;
+      }
+    });
+    if (station.isEmpty && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('לא נמצאו סרטונים לתחנה')),
+      );
+    }
   }
 
   /// הלב. נשמר מקומית בלבד — באפליקציית החנות אין חשבון ואין שרת.
@@ -134,22 +179,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
           case 'sleep':
             _pickSleep();
             break;
+          case 'radio':
+            _startStation();
+            break;
           case 'copy':
             _copyLink();
             break;
         }
       },
       itemBuilder: (context) => [
-        PopupMenuItem(
-          value: 'audio',
-          child: Row(children: [
-            Icon(_audioOnly ? Icons.videocam : Icons.headphones,
-                color: AppTheme.text, size: 20),
-            const SizedBox(width: 10),
-            Text(_audioOnly ? 'הצג וידאו' : 'אודיו בלבד',
-                style: const TextStyle(color: AppTheme.text)),
-          ]),
-        ),
+        if (!widget.musicMode)
+          PopupMenuItem(
+            value: 'audio',
+            child: Row(children: [
+              Icon(_audioOnly ? Icons.videocam : Icons.headphones,
+                  color: AppTheme.text, size: 20),
+              const SizedBox(width: 10),
+              Text(_audioOnly ? 'הצג וידאו' : 'אודיו בלבד',
+                  style: const TextStyle(color: AppTheme.text)),
+            ]),
+          ),
         PopupMenuItem(
           value: 'speed',
           child: Row(children: [
@@ -166,6 +215,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
             const SizedBox(width: 10),
             Text(_sleepMinutes > 0 ? 'טיימר ($_sleepMinutes דק׳)' : 'טיימר שינה',
                 style: const TextStyle(color: AppTheme.text)),
+          ]),
+        ),
+        const PopupMenuItem(
+          value: 'radio',
+          child: Row(children: [
+            Icon(Icons.radio, color: AppTheme.text, size: 20),
+            SizedBox(width: 10),
+            Text('רדיו מהשיר הזה', style: TextStyle(color: AppTheme.text)),
           ]),
         ),
         const PopupMenuItem(
@@ -306,13 +363,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
               child: ListView(
                 padding: const EdgeInsets.only(top: 8),
                 children: [
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(12, 4, 12, 8),
-                    child: Text('הבא בתור',
-                        style: TextStyle(
-                            color: AppTheme.text,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14)),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                    child: Row(
+                      children: [
+                        Text(_stationMode ? 'התחנה שלך' : 'הבא בתור',
+                            style: const TextStyle(
+                                color: AppTheme.text,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14)),
+                        if (_buildingStation) ...[
+                          const SizedBox(width: 10),
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: AppTheme.accent),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                   ..._upNext.map((v) =>
                       VideoListTile(video: v, onTap: () => _playVideo(v))),
@@ -508,7 +578,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   _upNext.isNotEmpty ? () => _playVideo(_upNext.first) : null),
               _btn(Icons.forward_10, () => _seekRelative(10)),
               _likeButton(),
-              _btn(Icons.fullscreen, () => _controller.enterFullScreen()),
+              if (!widget.musicMode)
+                _btn(Icons.fullscreen, () => _controller.enterFullScreen()),
             ],
           ),
         ],
