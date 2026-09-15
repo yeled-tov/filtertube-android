@@ -23,6 +23,9 @@ on:
     paths-ignore:
       - 'flutter_app/**'
       - '.github/workflows/flutter.yml'
+      # פריסת השרת היא workflow נפרד. בלי השורה הזו כל נגיעה בו הייתה
+      # מפעילה בנייה שלמה ומוציאה ללקוחות שחרור חדש עם קוד זהה.
+      - '.github/workflows/deploy-functions.yml'
       - '**/*.md'
   workflow_dispatch:
 
