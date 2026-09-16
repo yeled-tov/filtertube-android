@@ -17,6 +17,7 @@ import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Favorite
@@ -49,6 +50,7 @@ import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.forLevel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * הקטגוריות שנחשבות "מוזיקה" ב-FilterMusic.
@@ -77,6 +79,7 @@ private enum class MusicTab(val label: String, val icon: ImageVector) {
     // הורדות הן חלק מהספרייה ולא מקום אחר: זה עדיין "מה ששלי", רק שהוא
     // כבר על המכשיר. לשונית נפרדת אילצה לזכור בשתי רשימות שונות איפה שיר
     // נמצא, וגזלה רבע מסרגל הניווט בשביל הבחנה שאינה מעניינת את המאזין.
+    MIXES("מיקסים", Icons.AutoMirrored.Rounded.QueueMusic),
     LIBRARY("ספריה", Icons.Rounded.LibraryMusic),
 }
 
@@ -122,6 +125,7 @@ fun FilterMusicScreen(
     var menuFor by remember { mutableStateOf<Video?>(null) }
     // הערוצים המוזיקליים המאושרים — החיפוש ברשת מוגבל אליהם.
     var searchChannels by remember { mutableStateOf<List<Channel>>(emptyList()) }
+    var mixes by remember { mutableStateOf<List<com.filtertube.app.data.Mix>>(emptyList()) }
 
     LaunchedEffect(Unit) {
         val channels = runCatching {
@@ -172,6 +176,28 @@ fun FilterMusicScreen(
             .sortedByDescending { it.youtubeChannelId in favorites }
         downloads = runCatching { store.downloads() }.getOrNull().orEmpty()
             .filter { it.localUri.isNotBlank() }
+
+        // ── המיקסים ───────────────────────────────────────────────────────
+        // נבנים מהנתונים שכבר בזיכרון, על תהליכון רקע: זו עבודת מיון וסינון
+        // על אלפי פריטים, ועל תהליכון ה-UI היא הייתה מקפיאה את המעבר ללשונית.
+        mixes = withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val byId = channels.associateBy { it.youtubeChannelId }
+            val profile = com.filtertube.app.data.TasteProfile.build(
+                likes = likes,
+                history = history,
+                subscriptions = emptyList(),
+                searchTerms = emptyList(),
+                categoryOf = { byId[it]?.category },
+            )
+            com.filtertube.app.data.MixBuilder.build(
+                pool = feed,
+                likes = likes,
+                history = history,
+                profile = profile,
+                categoryOf = { byId[it]?.category },
+                channelName = { byId[it]?.name },
+            )
+        }
         loading = false
     }
 
@@ -216,6 +242,7 @@ fun FilterMusicScreen(
                     },
                     onMenu = { menuFor = it },
                 )
+                tab == MusicTab.MIXES -> MusicMixes(mixes, activeId, onPlay, onMenu = { menuFor = it })
                 tab == MusicTab.SEARCH -> MusicSearch(
                     feed + likes + history, searchChannels, activeId, onPlay,
                     onMenu = { menuFor = it },
@@ -577,6 +604,78 @@ private fun MusicSearch(
                         onMenu = { onMenu(song) },
                     ) { onPlay(results, results.indexOf(song)) }
                 }
+            }
+        }
+    }
+}
+
+// ── מיקסים ───────────────────────────────────────────────────────────────
+/**
+ * רשימות ההשמעה שנבנות מהטעם.
+ *
+ * כל מיקס הוא קובייה שבנויה מהכריכות שבתוכו, ולחיצה עליה פותחת אותו.
+ * המיקסים עצמם נבנים ב-MixBuilder; כאן רק התצוגה.
+ */
+@Composable
+private fun MusicMixes(
+    mixes: List<com.filtertube.app.data.Mix>,
+    activeId: String?,
+    onPlay: (List<Video>, Int) -> Unit,
+    onMenu: (Video) -> Unit,
+) {
+    var open by remember { mutableStateOf<String?>(null) }
+
+    if (mixes.isEmpty()) {
+        EmptyState(
+            "המיקסים נבנים ממה שתשמע.\nתן לזה כמה שירים והם יופיעו כאן מעצמם.",
+        )
+        return
+    }
+
+    open?.let { id ->
+        val mix = mixes.firstOrNull { it.id == id }
+        if (mix != null) {
+            MusicCollection(
+                title = mix.title,
+                songs = mix.songs,
+                activeId = activeId,
+                onPlay = onPlay,
+                onMenu = onMenu,
+                onBack = { open = null },
+            )
+            return
+        }
+    }
+
+    LazyColumn(
+        contentPadding = PaddingValues(
+            start = MusicDim.screenPadding, end = MusicDim.screenPadding,
+            top = 6.dp, bottom = 24.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Text(
+                "נבנה ממה שאתה שומע — מתעדכן מעצמו",
+                color = ThemeState.subtext,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(bottom = 2.dp),
+            )
+        }
+        items(mixes.chunked(2)) { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                row.forEach { mix ->
+                    MosaicTile(
+                        title = mix.title,
+                        subtitle = mix.subtitle,
+                        images = mix.songs.map { it.thumbnailUrl },
+                        icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                        tint = ThemeState.accent,
+                        modifier = Modifier.weight(1f),
+                        onClick = { open = mix.id },
+                    )
+                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }

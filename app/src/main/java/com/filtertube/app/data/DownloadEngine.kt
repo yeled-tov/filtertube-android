@@ -191,7 +191,10 @@ object DownloadEngine {
                     task.status = "מוריד"
                     val uri = downloadFile(s, task)
                     // רק עכשיו הסרטון באמת זמין לניגון מקומי.
-                    LibraryStore(s.context).setDownloadLocalUri(task.video.id, uri)
+                    // fallback: אם הרשומה איננה, היא נוצרת כאן מהסרטון עצמו
+                    // במקום שההורדה תיעלם בשקט.
+                    LibraryStore(s.context)
+                        .setDownloadLocalUri(task.video.id, uri, fallback = task.video)
                     task.progress = 100; task.status = "הושלם"
                     Diagnostics.log("DOWNLOAD ${task.video.id}: נשמר ב-$uri")
                     return uri

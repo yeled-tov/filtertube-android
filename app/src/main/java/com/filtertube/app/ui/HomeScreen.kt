@@ -62,7 +62,8 @@ import com.filtertube.app.data.YouTubeRepository
 import com.filtertube.app.playback.Playback
 import com.filtertube.app.data.categoryLabelHe
 import com.filtertube.app.data.forLevel
-import com.filtertube.app.data.personalizeFeed
+import com.filtertube.app.data.FeedRanker
+import com.filtertube.app.data.TasteProfile
 import com.filtertube.app.data.sortedCategories
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -124,12 +125,9 @@ fun HomeScreen(
                     return@launch
                 }
 
-                // מיון ~2,500 סרטונים + קריאת ההיסטוריה מהדיסק. scope כאן הוא
-                // rememberCoroutineScope, כלומר Dispatchers.Main — בלי המעבר
-                // הזה כל רענון של מסך הבית עושה את העבודה על תהליכון ה-UI.
-                val ordered = withContext(Dispatchers.Default) {
-                    sanitizeFeed(personalizeFeed(videos, store.localHistory()))
-                }
+                // rankFeed עצמו עובר ל-Dispatchers.Default: הדירוג של ~2,500
+                // סרטונים וקריאת הספרייה מהדיסק לא יכולים לרוץ על תהליכון ה-UI.
+                val ordered = rankFeed(context, videos, store)
 
                 // הפיד מוצג *מיד*. העשרת המטא-דאטה היא שיפור, לא תנאי:
                 // כשהיא הייתה חוסמת את ההצגה, מסך הבית חיכה לעד 6 קריאות רשת
@@ -186,11 +184,7 @@ fun HomeScreen(
         runCatching { channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel, settings.userGender) }
         val cached = FeedCache.loadFeed(context)
         if (!cached.isNullOrEmpty()) {
-            state = HomeState.Success(
-                withContext(Dispatchers.Default) {
-                    sanitizeFeed(personalizeFeed(cached, store.localHistory()))
-                },
-            )
+            state = HomeState.Success(rankFeed(context, cached, store))
         }
         refresh(showSpinner = cached.isNullOrEmpty())
     }
@@ -369,6 +363,38 @@ fun HomeScreen(
 }
 
 /** A stale cache or a repeated upstream item must never create duplicate LazyColumn keys. */
+/**
+ * בונה את פרופיל הטעם ומדרג את הפיד.
+ *
+ * הכל מקומי: לייקים, היסטוריה, מנויים וחיפושים אחרונים כבר במכשיר, ולכן
+ * הדירוג עובד גם בלי רשת ולא עולה ולו בקשה אחת.
+ */
+private suspend fun rankFeed(
+    context: android.content.Context,
+    videos: List<Video>,
+    store: LibraryStore,
+): List<Video> = withContext(Dispatchers.Default) {
+    val settings = com.filtertube.app.data.SettingsStore(context)
+    val categories = runCatching {
+        com.filtertube.app.data.ChannelsRepository.getCachedChannelsFast(context)
+            .associate { it.youtubeChannelId to it.category }
+    }.getOrDefault(emptyMap())
+
+    val profile = TasteProfile.build(
+        likes = store.likes() + store.youtubeLikes(),
+        history = store.localHistory(),
+        subscriptions = store.subscriptions().map { it.channelId },
+        searchTerms = settings.getSearchHistory(),
+        categoryOf = { categories[it] },
+    )
+    FeedRanker.rank(
+        videos = sanitizeFeed(videos),
+        profile = profile,
+        categoryOf = { categories[it] },
+        watchedIds = store.watchedIds(),
+    )
+}
+
 private fun sanitizeFeed(videos: List<Video>): List<Video> =
     videos.asSequence()
         .filter { it.id.isNotBlank() }
