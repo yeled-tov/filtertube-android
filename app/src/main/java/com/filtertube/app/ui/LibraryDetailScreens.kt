@@ -103,7 +103,7 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
             }.getOrDefault(emptyList()),
         )
     }
-    val (title, videos) = remember(type, refreshKey, musicSource) {
+    val (title, rawVideos) = remember(type, refreshKey, musicSource) {
         when (type) {
             "likes" -> "אהבתי" to (if (musicSource) store.musicLikes() else store.youtubeLikes())
             "ytlikes" -> "אהבתי ביוטיוב" to store.youtubeLikes()
@@ -115,9 +115,10 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
             else -> "אוסף" to emptyList()
         }
     }
-    @Suppress("NAME_SHADOWING")
-    val videos = remember(videos, com.filtertube.app.data.LibraryBadges.blocked) {
-        videos.filter { it.id !in com.filtertube.app.data.LibraryBadges.blocked }
+    // סרטונים שהמשתמש חסם לעצמו לא מוצגים באף אוסף — "אל תציג לי את זה
+    // יותר" חייב להיות נכון גם בספרייה, לא רק בבית ובחיפוש.
+    val videos = remember(rawVideos, com.filtertube.app.data.LibraryBadges.blocked) {
+        rawVideos.filter { it.id !in com.filtertube.app.data.LibraryBadges.blocked }
     }
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar("$title (${videos.size})", onBack)
