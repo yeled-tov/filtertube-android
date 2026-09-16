@@ -821,6 +821,12 @@ private fun MusicLibrary(
         if (likes.isNotEmpty()) {
             item {
                 BigAction("הורד את מה שאהבת (אודיו)", Icons.Rounded.Download, Modifier.fillMaxWidth()) {
+                    if (!com.filtertube.app.data.DownloadEngine.canDownload(context)) {
+                        android.widget.Toast.makeText(
+                            context, "הורדות הן פיצ'ר פרימיום. ראה הגדרות → FilterTube Premium", android.widget.Toast.LENGTH_LONG,
+                        ).show()
+                        return@BigAction
+                    }
                     scope.launch {
                         android.widget.Toast.makeText(
                             context, "מוסיף ${likes.size} לתור ההורדות…",

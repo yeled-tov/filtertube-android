@@ -162,6 +162,12 @@ fun MusicPlayerScreen(
             // מורידים בדיוק את מה שמתנגן, ברגע שמחליטים שרוצים אותו.
             IconButton(onClick = {
                 if (downloaded || downloading) return@IconButton
+                if (!com.filtertube.app.data.DownloadEngine.canDownload(context)) {
+                    android.widget.Toast.makeText(
+                        context, "הורדות הן פיצ'ר פרימיום. ראה הגדרות → FilterTube Premium", android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                    return@IconButton
+                }
                 downloading = true
                 scope.launch {
                     val ok = com.filtertube.app.data.DownloadEngine.enqueueByVideo(

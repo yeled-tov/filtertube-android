@@ -88,6 +88,10 @@ object DownloadEngine {
      * הקטגוריה נלקחת מהמטמון המקומי ולא מהרשת: הורדה לא אמורה לחכות לרשת
      * כדי לדעת מה מותר, ואם המטמון ריק נשארת ההגדרה הגלובלית של המשתמש.
      */
+    /** האם למשתמש יש הרשאה להוריד. ה-UI קורא לזה כדי להסביר במקום לשתוק. */
+    fun canDownload(context: Context): Boolean =
+        SettingsStore(context.applicationContext).premiumActive
+
     fun audioOnlyFor(context: Context, video: Video): Boolean {
         val settings = SettingsStore(context.applicationContext)
         val category = runCatching {
@@ -137,6 +141,19 @@ object DownloadEngine {
             audioUrl = null
         }
 
+        // ── שער הפרימיום, כאן ולא רק אצל הקוראים ──────────────────────────
+        // הבדיקה הייתה מפוזרת על מסכי ה-UI, ולכן כל מסלול הורדה חדש נולד
+        // פרוץ כברירת מחדל: כשנוספו כפתורי ההורדה ב-FilterMusic הם פשוט לא
+        // ידעו שצריך לבדוק. אותו לקח בדיוק כמו מדיניות האודיו למעלה — שער
+        // שיושב במעבר עצמו לא יכול להישכח, כי כל המסלולים עוברים בו.
+        //
+        // ה-UI ממשיך לבדוק לפני הקריאה כדי להציג הסבר; זה כאן הוא הרשת
+        // האחרונה, לא ההודעה.
+        if (!settings.premiumActive) {
+            Diagnostics.log("DOWNLOAD ${video.id}: נחסם — הורדות דורשות פרימיום")
+            return
+        }
+
         // ── הרישום בספרייה, כאן ולא אצל הקוראים ───────────────────────────
         // קודם addDownload נקרא ממקום אחד בלבד — מסך הנגן של FilterTube.
         // כל שאר המסלולים (תפריט הפעולות, FilterMusic, הורדה מרוכזת) הורידו
@@ -176,6 +193,7 @@ object DownloadEngine {
         isAudio: Boolean,
         fromMusic: Boolean = false,
     ): Boolean {
+        if (!SettingsStore(context.applicationContext).premiumActive) return false
         val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull() ?: return false
         val v = video.copy(
             title = data.title.ifBlank { video.title },

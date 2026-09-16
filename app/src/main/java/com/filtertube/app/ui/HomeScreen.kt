@@ -685,6 +685,16 @@ fun VideoActionMenu(video: Video, onDismiss: () -> Unit, musicMode: Boolean = fa
                     if (musicMode) "הורד שיר (אודיו)" else "הורד סרטון",
                     Icons.Rounded.Download,
                 ) {
+                    // הבדיקה כאן היא בשביל ההסבר: השער עצמו יושב בתוך
+                    // DownloadEngine, אבל בלי ההודעה הזו הלחיצה פשוט לא
+                    // עושה כלום ונראית כמו תקלה.
+                    if (!DownloadEngine.canDownload(context)) {
+                        onDismiss()
+                        android.widget.Toast.makeText(
+                            context, "הורדות הן פיצ'ר פרימיום. ראה הגדרות → FilterTube Premium", android.widget.Toast.LENGTH_LONG,
+                        ).show()
+                        return@VideoAction
+                    }
                     busy = true
                     scope.launch {
                         val ok = DownloadEngine.enqueueByVideo(
