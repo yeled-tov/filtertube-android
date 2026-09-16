@@ -88,11 +88,16 @@ fun LibraryScreen(
 
     var version by remember { mutableStateOf(0) }
     val likes = remember(version) { store.likes() }
-    // ── ההורדות של FilterTube בלבד ────────────────────────────────────────
-    // מה שהורד מתוך FilterMusic נספר ומוצג שם, בספרייה של המוזיקה. שתי
-    // הרשימות נשמרות יחד במכשיר, אבל המשתמש הוריד אותן משתי אפליקציות
-    // שונות ומצפה למצוא כל אחת במקום שממנו הוריד אותה.
-    val downloads = remember(version) { store.downloads().filter { !it.fromMusic } }
+    // ── כאן רואים את הכל ──────────────────────────────────────────────────
+    // קודם הרשימה סוננה ל"מה שלא הורד מ-FilterMusic", ו-FilterMusic הציגה
+    // רק את שלה. התוצאה: מי שהוריד שיר משם ובא לחפש אותו כאן לא מצא אותו,
+    // וזה נראה בדיוק כמו הורדה שנכשלה.
+    //
+    // הספרייה של FilterTube היא הספרייה של האפליקציה כולה, ולכן היא מציגה
+    // הכל — ואילו FilterMusic ממשיכה להציג רק את שלה, כי שם זו קבוצה בתוך
+    // מסך מוזיקה. ככה שום הורדה לא נעלמת, וההפרדה נשמרת במקום שבו היא
+    // באמת עוזרת.
+    val downloads = remember(version) { store.downloads() }
     val playlists = remember(version) { store.playlists() }
     var ytLikes by remember { mutableStateOf(store.youtubeLikes()) }
     var subs by remember { mutableStateOf(store.subscriptions()) }

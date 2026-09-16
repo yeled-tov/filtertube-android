@@ -239,9 +239,14 @@ class SettingsStore(context: Context) {
         get() = prefs.getInt(KEY_CROSSFADE, 0).coerceIn(0, 12)
         set(value) = prefs.edit().putInt(KEY_CROSSFADE, value.coerceIn(0, 12)).apply()
 
-    /** מצב נושא: 0 = לפי המערכת, 1 = כהה, 2 = בהיר. */
+    /**
+     * מצב נושא: 0 = לפי המערכת, 1 = כהה, 2 = בהיר.
+     *
+     * ברירת המחדל היא בהיר: אפליקציה שנפתחת כהה במכשיר שמוגדר בהיר נראית
+     * כאילו משהו השתבש, ורוב המשתמשים לא מחפשים את ההגדרה כדי לתקן.
+     */
     var themeMode: Int
-        get() = prefs.getInt(KEY_THEME_MODE, 1)
+        get() = prefs.getInt(KEY_THEME_MODE, 2)
         set(value) = prefs.edit().putInt(KEY_THEME_MODE, value).apply()
 
     /** התראות על סרטון חדש בערוץ מאושר (בדיקת רקע תקופתית). */

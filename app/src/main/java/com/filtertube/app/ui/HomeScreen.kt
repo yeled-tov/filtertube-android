@@ -9,6 +9,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Download
@@ -307,12 +309,25 @@ fun HomeScreen(
                             Text("אין סרטונים בקטגוריה זו", color = ThemeState.subtext, fontSize = 14.sp)
                         }
                     } else {
-                        LazyColumn(
+                        val listState = rememberLazyListState()
+                        com.filtertube.app.ui.theme.TopPullRefresh(
+                            isRefreshing = refreshing,
+                            atTop = {
+                                listState.firstVisibleItemIndex == 0 &&
+                                    listState.firstVisibleItemScrollOffset == 0
+                            },
+                            scrolling = listState.isScrollInProgress,
+                            onRefresh = { refresh(showSpinner = false) },
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
                         ) {
-                            items(displayed, key = { it.id }) { video ->
-                                VideoRow(video, onClick = { onVideoClick(video) })
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
+                            ) {
+                                items(displayed, key = { it.id }) { video ->
+                                    VideoRow(video, onClick = { onVideoClick(video) })
+                                }
                             }
                         }
                     }
@@ -387,8 +402,11 @@ private suspend fun rankFeed(
         searchTerms = settings.getSearchHistory(),
         categoryOf = { categories[it] },
     )
+    // סרטונים שהמשתמש חסם לעצמו יוצאים כאן, לפני הדירוג: אין טעם לדרג
+    // משהו שלא יוצג, והסינון במקום אחד מבטיח שלא נשכח מסך.
+    val blocked = store.blockedIds()
     FeedRanker.rank(
-        videos = sanitizeFeed(videos),
+        videos = sanitizeFeed(videos).filter { it.id !in blocked },
         profile = profile,
         categoryOf = { categories[it] },
         watchedIds = store.watchedIds(),
@@ -682,9 +700,25 @@ fun VideoActionMenu(video: Video, onDismiss: () -> Unit, musicMode: Boolean = fa
                 }
                 VideoAction("הוסף לפלייליסט", Icons.AutoMirrored.Rounded.PlaylistAdd) { playlistOpen = true }
                 VideoAction("דווח על הסרטון", Icons.Rounded.Flag) { reportOpen = true }
-                VideoAction("הסר סרטון", Icons.Rounded.Delete) {
-                    store.removeVideo(video); onDismiss()
-                    android.widget.Toast.makeText(context, "הסרטון הוסר מהספרייה", android.widget.Toast.LENGTH_SHORT).show()
+                // ── "הסר" הפך ל"אל תציג לי" ───────────────────────────
+                // הפעולה הקודמת הסירה את הסרטון מהאוספים בלבד, והפיד ממשיך
+                // להגיע מהרשת — כלומר הסרטון חזר להופיע מיד אחרי הרענון
+                // הבא. מבחינת המשתמש זה פשוט לא עשה כלום.
+                //
+                // עכשיו הוא נכנס לרשימת החסומים האישית, ונעלם גם מהבית,
+                // מהחיפוש ומהמיקסים. השחרור יושב בהגדרות הסינון, מאחורי
+                // קוד ההורים.
+                VideoAction("אל תציג לי את זה יותר", Icons.Rounded.Block) {
+                    scope.launch {
+                        store.blockVideo(video)
+                        LibraryBadges.refreshBlocked(context)
+                    }
+                    onDismiss()
+                    android.widget.Toast.makeText(
+                        context,
+                        "הסרטון לא יוצג יותר. לשחרור — הגדרות סינון.",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
                 }
             }
         },
@@ -744,7 +778,17 @@ private fun ReportVideoDialog(video: Video, onDismiss: () -> Unit) {
                 scope.launch {
                     val ok = BugReport.submit("דיווח על סרטון ${video.id}\nכותרת: ${video.title}", reason.trim())
                     sending = false; onDismiss()
-                    android.widget.Toast.makeText(context, if (ok) "הדיווח נשלח" else "שליחת הדיווח נכשלה", android.widget.Toast.LENGTH_SHORT).show()
+                    // ── למה זה נכשל ───────────────────────────────────
+                    // השרת דורש חשבון עם אימייל מאומת. "שליחת הדיווח נכשלה"
+                    // לא אמר את זה, ולכן נראה כמו תקלה במקום כמו תנאי.
+                    val verified = com.google.firebase.auth.FirebaseAuth.getInstance()
+                        .currentUser?.isEmailVerified == true
+                    val message = when {
+                        ok -> "הדיווח נשלח"
+                        !verified -> "כדי לדווח צריך חשבון עם אימייל מאומת"
+                        else -> "שליחת הדיווח נכשלה — בדוק את החיבור לאינטרנט"
+                    }
+                    android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
                 }
             }) { Text(if (sending) "שולח…" else "שלח") }
         },

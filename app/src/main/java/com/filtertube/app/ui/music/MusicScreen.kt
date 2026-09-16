@@ -140,9 +140,12 @@ fun FilterMusicScreen(
 
         // distinctBy חובה ולא נוי: מפתח כפול ב-LazyColumn מפיל את המסך,
         // ואותו סרטון יכול להופיע פעמיים בפיד אחרי רענון.
+        val blocked = runCatching { store.blockedIds() }.getOrDefault(emptySet())
         fun List<Video>.musicOnly() =
-            filter { musicChannels.approves(it) && !it.isShort && it.id.isNotBlank() }
-                .distinctBy { it.id }
+            filter {
+                musicChannels.approves(it) && !it.isShort && it.id.isNotBlank() &&
+                    it.id !in blocked
+            }.distinctBy { it.id }
 
         feed = runCatching { FeedCache.loadFeed(context) }.getOrNull().orEmpty().musicOnly()
         // ── מה נחשב "אהבתי" ב-FilterMusic ──────────────────────────────

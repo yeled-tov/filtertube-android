@@ -90,6 +90,7 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
             emptyList()
         } else {
             localPool.asSequence()
+                .filter { it.id !in com.filtertube.app.data.LibraryBadges.blocked }
                 .filter { it.title.contains(q, true) || it.channelName.contains(q, true) }
                 .distinctBy { it.id }
                 .take(6)
@@ -235,7 +236,12 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
             ) {
-                items(s.videos, key = { it.id }) { video ->
+                // החסומים יוצאים גם מהחיפוש: "אל תציג לי את זה יותר" חייב
+                // להיות נכון בכל מסך, אחרת הוא רק מזיז את הסרטון למקום אחר.
+                items(
+                    s.videos.filter { it.id !in com.filtertube.app.data.LibraryBadges.blocked },
+                    key = { it.id },
+                ) { video ->
                     VideoRow(video, onClick = { onVideoClick(video) })
                 }
             }

@@ -170,6 +170,45 @@ class LibraryStore(context: Context) {
         }
     }
 
+    // ── סרטונים שהמשתמש חסם לעצמו ────────────────────────────────────────
+    /**
+     * חסימה אישית של סרטון.
+     *
+     * ## מה זה ומה זה לא
+     * זו אינה הרשימה הלבנה. הרשימה הלבנה קובעת מה *מותר* להיכנס לאפליקציה,
+     * וזו קובעת מה המשתמש לא רוצה לראות מתוך מה שכבר מותר. שתיהן מסננות,
+     * אבל רק אחת מהן היא מדיניות — ולכן רק אחת מהן מוגנת בקוד הורים.
+     *
+     * החסימה אישית ומקומית: היא לא מסירה את הסרטון לאף אחד אחר, ולא מדווחת
+     * לשום מקום. הסרטון פשוט מפסיק להופיע בבית, בחיפוש, במיקסים ובספרייה.
+     *
+     * ## למה נשמר הסרטון ולא רק המזהה
+     * כדי שמסך "מה חסמתי" יוכל להראות כותרת ותמונה. רשימה של מזהים בני
+     * 11 תווים אינה משהו שאפשר להחליט לפיו מה לשחרר.
+     */
+    fun blockedVideos(): List<Video> = videos(KEY_BLOCKED)
+
+    fun blockedIds(): Set<String> = blockedVideos().mapTo(HashSet()) { it.id }
+
+    fun isBlocked(videoId: String): Boolean = blockedIds().contains(videoId)
+
+    /** חוסם, ובנוסף מסיר מכל האוספים — אחרת הסרטון נשאר בספרייה כ"רוח". */
+    fun blockVideo(video: Video) {
+        if (video.id.isBlank()) return
+        val current = blockedVideos().toMutableList()
+        current.removeAll { it.id == video.id }
+        current.add(0, video)
+        while (current.size > BLOCKED_CAP) current.removeAt(current.lastIndex)
+        if (saveVideos(KEY_BLOCKED, current)) queueCloudBackup()
+        removeVideo(video)
+    }
+
+    fun unblockVideo(videoId: String) {
+        val current = blockedVideos()
+        val filtered = current.filterNot { it.id == videoId }
+        if (filtered.size != current.size && saveVideos(KEY_BLOCKED, filtered)) queueCloudBackup()
+    }
+
     fun playlists(): List<Playlist> = AccountDataGuard.withLock {
         if (!sessionMatches()) return@withLock emptyList()
         prefs.getString(KEY_PLAYLISTS, null)?.let {
@@ -426,6 +465,9 @@ class LibraryStore(context: Context) {
         private const val KEY_PLAYLISTS = "playlists"
         private const val KEY_YT_LIKES = "youtube_likes"
         private const val KEY_MUSIC_LIKES = "youtube_music_likes"
+        private const val KEY_BLOCKED = "blocked_videos"
+        /** תקרה: רשימה שגדלה בלי גבול מאטה כל סינון של הפיד. */
+        private const val BLOCKED_CAP = 500
         private const val KEY_SUBS = "youtube_subscriptions"
         private const val KEY_HISTORY = "youtube_history"
         private const val KEY_RECS = "youtube_recommendations"

@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AdminPanelSettings
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Shield
@@ -457,13 +458,47 @@ private fun FilterSettingsSheet(
     var shorts by remember { mutableStateOf(shortsEnabled) }
     var gender by remember { mutableStateOf(userGender) }
     var audioOnly by remember { mutableStateOf(settings.audioOnlyMode) }
+    var showBlocked by remember { mutableStateOf(false) }
+    val store = remember { com.filtertube.app.data.LibraryStore(context) }
+    var blocked by remember { mutableStateOf(store.blockedVideos()) }
+    val scope = rememberCoroutineScope()
     SettingsSheet("הגדרות סינון", onDismiss) {
         Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 LevelRow(1, "מחמיר", "מוזיקה כאודיו בלבד · ״דתי לייט״ מוסתר", level) { level = 1; onFilterLevelChange(1) }
                 LevelRow(2, "רגיל", "הכל כווידאו · ״דתי לייט״ מוסתר", level) { level = 2; onFilterLevelChange(2) }
                 LevelRow(3, "דתי לייט", "כולל ״דתי לייט״ (אודיו בלבד)", level) { level = 3; onFilterLevelChange(3) }
 
-                HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(color = ThemeState.divider, modifier = Modifier.padding(vertical = 8.dp))
+
+                // ── מה שהמשתמש חסם לעצמו ──────────────────────────────────
+                // כאן ולא בספרייה, ובכוונה: המסך הזה כבר מאחורי קוד ההורים,
+                // ולכן שחרור סרטון חסום דורש את הקוד בלי שום מנגנון נוסף.
+                // ילד יכול לחסום לעצמו מה שירצה; לפתוח בחזרה — רק מי שיודע
+                // את הקוד.
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .clickable { showBlocked = true }
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Block, null, tint = Tint.red, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("סרטונים שחסמתי", color = ThemeState.text,
+                            style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            if (blocked.isEmpty()) "עוד לא חסמת סרטונים"
+                            else "${blocked.size} סרטונים לא מוצגים",
+                            color = ThemeState.subtext, style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Rounded.KeyboardArrowRight, null,
+                        tint = ThemeState.divider, modifier = Modifier.size(20.dp),
+                    )
+                }
+
+                HorizontalDivider(color = ThemeState.divider, modifier = Modifier.padding(vertical = 8.dp))
 
                 // ── אודיו בלבד ────────────────────────────────────────────
                 // מעל רמות הסינון ולא בתוכן: זו בחירה שחלה על כל רמה, ומי
@@ -521,10 +556,88 @@ private fun FilterSettingsSheet(
                     )
                 }
 
-                HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(color = ThemeState.divider, modifier = Modifier.padding(vertical = 8.dp))
                 TextButton(onClick = onChangePassword) { Text("שנה קוד", color = ThemeState.subtext) }
         }
     }
+
+    if (showBlocked) {
+        BlockedVideosDialog(
+            videos = blocked,
+            onUnblock = { id ->
+                store.unblockVideo(id)
+                blocked = store.blockedVideos()
+                scope.launch { com.filtertube.app.data.LibraryBadges.refreshBlocked(context) }
+            },
+            onDismiss = { showBlocked = false },
+        )
+    }
+}
+
+/**
+ * מה שהמשתמש חסם לעצמו, ושחרור בחזרה.
+ *
+ * נפתח רק מתוך גיליון הסינון — שכבר עבר את קוד ההורים — ולכן אין כאן שער
+ * נוסף. החסימה עצמה זמינה לכל אחד מתפריט הסרטון; רק הביטול דורש קוד.
+ */
+@Composable
+private fun BlockedVideosDialog(
+    videos: List<com.filtertube.app.data.Video>,
+    onUnblock: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = ThemeState.surface,
+        title = {
+            Text("סרטונים שחסמתי (${videos.size})", color = ThemeState.text, fontSize = 17.sp)
+        },
+        text = {
+            if (videos.isEmpty()) {
+                Text(
+                    "לא חסמת אף סרטון.\nבלחיצה ארוכה על סרטון אפשר לבחור \"אל תציג לי את זה יותר\".",
+                    color = ThemeState.subtext, fontSize = 13.sp, lineHeight = 19.sp,
+                )
+            } else {
+                Column(modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                    videos.forEach { video ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            coil.compose.AsyncImage(
+                                model = video.thumbnailUrl,
+                                contentDescription = null,
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.size(64.dp, 36.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(ThemeState.bg2),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    video.title, color = ThemeState.text,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 2,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    video.channelName, color = ThemeState.subtext,
+                                    style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                                )
+                            }
+                            TextButton(onClick = { onUnblock(video.id) }) {
+                                Text("שחרר", color = ThemeState.accent, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("סגור", color = ThemeState.accent) }
+        },
+    )
 }
 
 @Composable

@@ -107,13 +107,17 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
         when (type) {
             "likes" -> "אהבתי" to (if (musicSource) store.musicLikes() else store.youtubeLikes())
             "ytlikes" -> "אהבתי ביוטיוב" to store.youtubeLikes()
-            // אותו פיצול כמו בספרייה: הורדות שיצאו לדרך מ-FilterMusic
-            // שייכות לספרייה של המוזיקה ולא לכאן.
-            "downloads" -> "הורדות" to store.downloads().filter { !it.fromMusic }
+            // כל ההורדות, כולל אלה שיצאו לדרך מ-FilterMusic: הספרייה של
+            // FilterTube היא של האפליקציה כולה, ושום הורדה לא נעלמת ממנה.
+            "downloads" -> "הורדות" to store.downloads()
             "history" -> "היסטוריה" to store.localHistory()   // היסטוריה מקומית — תמיד עובדת
             "recs" -> "מומלצים" to store.recommendations()
             else -> "אוסף" to emptyList()
         }
+    }
+    @Suppress("NAME_SHADOWING")
+    val videos = remember(videos, com.filtertube.app.data.LibraryBadges.blocked) {
+        videos.filter { it.id !in com.filtertube.app.data.LibraryBadges.blocked }
     }
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar("$title (${videos.size})", onBack)
