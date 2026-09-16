@@ -754,7 +754,8 @@ private fun DownloadDialog(context: Context, data: StreamData, videoId: String, 
     }
     // הורדה דרך המנוע המהיר (רב-חיבורי) — מוסיף לתור ב״מנהל הורדות״
     fun enqueueDl(url: String, isAudio: Boolean, audioUrl: String? = null) {
-        LibraryStore(context).addDownload(video)
+        // הרישום בספרייה עבר לתוך DownloadEngine.enqueue, כדי שכל המסלולים
+        // יירשמו ולא רק זה.
         com.filtertube.app.data.DownloadEngine.enqueue(
             context, video, url, isAudio, data.streamUserAgent, audioUrl,
         )

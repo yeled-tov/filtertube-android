@@ -122,6 +122,14 @@ object DownloadEngine {
             audioUrl = null
         }
 
+        // ── הרישום בספרייה, כאן ולא אצל הקוראים ───────────────────────────
+        // קודם addDownload נקרא ממקום אחד בלבד — מסך הנגן של FilterTube.
+        // כל שאר המסלולים (תפריט הפעולות, FilterMusic, הורדה מרוכזת) הורידו
+        // את הקובץ בלי לרשום אותו, ואז setDownloadLocalUri בסיום חיפש רשומה
+        // קיימת, לא מצא, ולא שמר כלום: הקובץ ירד למכשיר והאפליקציה לא ידעה
+        // עליו. כאן זה נרשם פעם אחת לכל מסלול, כי כאן כולם עוברים.
+        LibraryStore(ctx).addDownload(video)
+
         val task = DownloadTask(video, isAudio)
         active.add(0, task)
         while (active.size > 60) active.removeAt(active.lastIndex)

@@ -120,6 +120,8 @@ fun FilterMusicScreen(
     // התפריט הוא בדיוק זה של FilterTube, במצב מוזיקה: אותן פעולות, אותה
     // צורה, ורק ההורדה שונה — אודיו, ומסומנת כהורדת מוזיקה.
     var menuFor by remember { mutableStateOf<Video?>(null) }
+    // הערוצים המוזיקליים המאושרים — החיפוש ברשת מוגבל אליהם.
+    var searchChannels by remember { mutableStateOf<List<Channel>>(emptyList()) }
 
     LaunchedEffect(Unit) {
         val channels = runCatching {
@@ -128,9 +130,9 @@ fun FilterMusicScreen(
         // ApprovedChannels ולא סט מזהים: שיר שהועלה ע"י ערוץ ה-Topic של אמן
         // מאושר נשא מזהה שאינו ברשימה, ולכן נפל כאן בשקט — הוא לא הוצג אפור
         // אלא פשוט לא הופיע, ו"אהבתי" ב-FilterMusic נראה חסר בלי שום הסבר.
-        val musicChannels = com.filtertube.app.data.ApprovedChannels(
-            channels.filter { it.category in MUSIC_CATEGORIES },
-        )
+        val musicOnlyChannels = channels.filter { it.category in MUSIC_CATEGORIES }
+        searchChannels = musicOnlyChannels
+        val musicChannels = com.filtertube.app.data.ApprovedChannels(musicOnlyChannels)
 
         // distinctBy חובה ולא נוי: מפתח כפול ב-LazyColumn מפיל את המסך,
         // ואותו סרטון יכול להופיע פעמיים בפיד אחרי רענון.
@@ -173,6 +175,18 @@ fun FilterMusicScreen(
         loading = false
     }
 
+    // ── רענון ההורדות ────────────────────────────────────────────────────
+    // הרשימה נטענה פעם אחת בכניסה למסך, ולכן הורדה שהסתיימה *אחרי* הכניסה
+    // לא הופיעה עד יציאה וחזרה — וזה נראה בדיוק כמו הורדה שלא עבדה.
+    // active הוא רשימת-מצב, ולכן ספירת המושלמים בה מספיקה כטריגר.
+    val finishedCount = com.filtertube.app.data.DownloadEngine.active.count { it.progress >= 100 }
+    LaunchedEffect(finishedCount) {
+        if (finishedCount > 0) {
+            downloads = runCatching { store.downloads() }.getOrNull().orEmpty()
+                .filter { it.localUri.isNotBlank() }
+        }
+    }
+
     // ── זיהוי אופליין ─────────────────────────────────────────────────────
     // בלי חיבור, מסך בית שמנסה לנגן מיוטיוב הוא רק תסכול. הטאב מוחלף
     // אוטומטית להורדות — פעם אחת, כדי לא לחטוף למשתמש את הניווט בכל חזרה
@@ -202,8 +216,10 @@ fun FilterMusicScreen(
                     },
                     onMenu = { menuFor = it },
                 )
-                tab == MusicTab.SEARCH ->
-                    MusicSearch(feed + likes + history, activeId, onPlay, onMenu = { menuFor = it })
+                tab == MusicTab.SEARCH -> MusicSearch(
+                    feed + likes + history, searchChannels, activeId, onPlay,
+                    onMenu = { menuFor = it },
+                )
                 else -> MusicLibrary(
                     likes, history, downloads, online, activeId, onPlay,
                     onMenu = { menuFor = it },
@@ -487,18 +503,43 @@ private fun SongRow(songs: List<Video>, onPlay: (List<Video>, Int) -> Unit) {
 @Composable
 private fun MusicSearch(
     pool: List<Video>,
+    musicChannels: List<Channel>,
     activeId: String?,
     onPlay: (List<Video>, Int) -> Unit,
     onMenu: (Video) -> Unit,
 ) {
+    val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     val songs = remember(pool) { pool.distinctBy { it.id } }
-    // הסינון מתבצע על הרשימה שכבר בזיכרון: זה חיפוש בתוך המוזיקה המאושרת,
-    // לא בקשה חדשה ליוטיוב — ולכן הוא מיידי ועובד גם בלי רשת.
-    val results = remember(songs, query) {
+
+    // ── שני מקורות, בזה אחר זה ────────────────────────────────────────────
+    // הסינון המקומי מיידי ועובד בלי רשת, אבל הוא מוגבל למה שכבר נטען — ולכן
+    // שיר מערוץ מאושר שלא הופיע בפיד פשוט "לא נמצא". החיפוש ברשת משלים את
+    // החסר, ומגיע שנייה אחריו כדי שהתוצאות המקומיות כבר יהיו על המסך.
+    val local = remember(songs, query) {
         val q = query.trim()
         if (q.isBlank()) emptyList()
-        else songs.filter { it.title.contains(q, true) || it.channelName.contains(q, true) }.take(80)
+        else songs.filter { it.title.contains(q, true) || it.channelName.contains(q, true) }.take(40)
+    }
+    var remote by remember { mutableStateOf<List<Video>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+
+    LaunchedEffect(query, musicChannels) {
+        val q = query.trim()
+        remote = emptyList()
+        if (q.length < 2 || musicChannels.isEmpty()) { searching = false; return@LaunchedEffect }
+        // השהיה קצרה: בלעדיה כל הקשה שולחת בקשה נפרדת ליוטיוב.
+        kotlinx.coroutines.delay(450)
+        searching = true
+        val found = runCatching {
+            com.filtertube.app.data.SearchEngine.search(context, q, musicChannels).videos
+        }.getOrDefault(emptyList())
+        searching = false
+        remote = found
+    }
+
+    val results = remember(local, remote) {
+        (local + remote).distinctBy { it.id }.filter { !it.isShort }.take(80)
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -519,8 +560,15 @@ private fun MusicSearch(
                 unfocusedContainerColor = ThemeState.card,
             ),
         )
+        if (searching) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().height(2.dp),
+                color = ThemeState.accent, trackColor = ThemeState.divider,
+            )
+        }
         when {
             query.isBlank() -> EmptyState("חפש שיר או אמן מתוך המוזיקה המאושרת.")
+            results.isEmpty() && searching -> EmptyState("מחפש…")
             results.isEmpty() -> EmptyState("לא נמצאו תוצאות ל״$query״.")
             else -> LazyColumn {
                 items(results, key = { it.id }) { song ->
@@ -657,7 +705,9 @@ private fun MusicLibrary(
                         icon = icon,
                         tint = tint,
                         modifier = Modifier.weight(1f),
-                        onClick = { if (songs.isNotEmpty()) open = title },
+                        // גם כשריק: קובייה שנראית לחיצה ולא נלחצת היא תקלה
+                        // בעיני המשתמש. המסך שנפתח יסביר שאין בו כלום.
+                        onClick = { open = title },
                     )
                 }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
@@ -722,6 +772,10 @@ private fun MusicCollection(
             BigAction("ערבוב", Icons.Rounded.Shuffle, Modifier.weight(1f)) {
                 onPlay(songs.shuffled(), 0)
             }
+        }
+        if (songs.isEmpty()) {
+            EmptyState("עוד אין כאן שירים.")
+            return@Column
         }
         LazyVerticalGrid(
             columns = GridCells.Adaptive(MusicDim.cellMinWidth),
