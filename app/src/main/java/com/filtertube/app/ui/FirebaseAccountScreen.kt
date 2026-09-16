@@ -23,6 +23,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -687,6 +689,7 @@ private fun AccountField(
     keyboardType: KeyboardType,
     password: Boolean = false,
 ) {
+    var reveal by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -695,8 +698,21 @@ private fun AccountField(
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        // עין להצגת הסיסמה — סיסמה שמוקלדת בעיוור נכשלת שוב ושוב בלי שיהיה
+        // ברור אם הטעות בהקלדה או בסיסמה עצמה.
+        trailingIcon = if (!password) null else {
+            {
+                IconButton(onClick = { reveal = !reveal }) {
+                    Icon(
+                        if (reveal) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                        if (reveal) "הסתר סיסמה" else "הצג סיסמה",
+                        tint = ThemeState.subtext,
+                    )
+                }
+            }
+        },
         visualTransformation =
-            if (password) PasswordVisualTransformation()
+            if (password && !reveal) PasswordVisualTransformation()
             else androidx.compose.ui.text.input.VisualTransformation.None,
         shape = RoundedCornerShape(16.dp),
         colors = OutlinedTextFieldDefaults.colors(

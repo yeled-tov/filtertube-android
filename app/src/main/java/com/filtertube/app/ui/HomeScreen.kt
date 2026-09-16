@@ -300,9 +300,14 @@ fun HomeScreen(
                             )
                         }
                     }
-                    val displayed = remember(s.videos, selectedCategory, catByChannel) {
-                        if (selectedCategory == null) s.videos
-                        else s.videos.filter { catByChannel[it.channelId] == selectedCategory }
+                    // LibraryBadges.blocked במפתח: חסימה מסירה את הסרטון מהמסך
+                    // מיד, בלי להמתין לרענון. הפיד עצמו הוא תצלום שנטען פעם
+                    // אחת, ולכן בלי הסינון כאן הסרטון נשאר על המסך עד הרענון
+                    // הבא — וזה בדיוק מה שנראה כאילו ההסרה לא עבדה.
+                    val displayed = remember(s.videos, selectedCategory, catByChannel, LibraryBadges.blocked) {
+                        val visible = s.videos.filter { it.id !in LibraryBadges.blocked }
+                        if (selectedCategory == null) visible
+                        else visible.filter { catByChannel[it.channelId] == selectedCategory }
                     }
                     if (displayed.isEmpty()) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -656,6 +661,7 @@ fun VideoActionMenu(video: Video, onDismiss: () -> Unit, musicMode: Boolean = fa
     val store = remember { LibraryStore(context) }
     var playlistOpen by remember { mutableStateOf(false) }
     var reportOpen by remember { mutableStateOf(false) }
+    var blockConfirm by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
 
     AlertDialog(
@@ -708,24 +714,58 @@ fun VideoActionMenu(video: Video, onDismiss: () -> Unit, musicMode: Boolean = fa
                 // עכשיו הוא נכנס לרשימת החסומים האישית, ונעלם גם מהבית,
                 // מהחיפוש ומהמיקסים. השחרור יושב בהגדרות הסינון, מאחורי
                 // קוד ההורים.
-                VideoAction("אל תציג לי את זה יותר", Icons.Rounded.Block) {
-                    scope.launch {
-                        store.blockVideo(video)
-                        LibraryBadges.refreshBlocked(context)
-                    }
-                    onDismiss()
-                    android.widget.Toast.makeText(
-                        context,
-                        "הסרטון לא יוצג יותר. לשחרור — הגדרות סינון.",
-                        android.widget.Toast.LENGTH_LONG,
-                    ).show()
-                }
+                VideoAction("אל תציג לי את זה יותר", Icons.Rounded.Block) { blockConfirm = true }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("ביטול") } },
     )
     if (playlistOpen) PlaylistPicker(video, store, onDismiss = { playlistOpen = false })
     if (reportOpen) ReportVideoDialog(video, onDismiss = { reportOpen = false })
+
+    // ── אישור לפני חסימה ──────────────────────────────────────────────────
+    // חסימה היא פעולה שקשה לבטל: היא דורשת את קוד ההורים. פעולה כזו לא
+    // אמורה לקרות בהקשה אחת, וגם לא בלי שהמשתמש יודע מראש איך חוזרים ממנה.
+    if (blockConfirm) {
+        AlertDialog(
+            onDismissRequest = { blockConfirm = false },
+            containerColor = ThemeState.surface,
+            icon = { Icon(Icons.Rounded.Block, null, tint = ThemeState.accent) },
+            title = { Text("להסיר את הסרטון?", color = ThemeState.text, fontSize = 17.sp) },
+            text = {
+                Column {
+                    Text(
+                        video.title, color = ThemeState.subtext2, fontSize = 13.sp,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "הסרטון ייעלם ממסך הבית, מהחיפוש, מההיסטוריה ומהמיקסים.",
+                        color = ThemeState.text, fontSize = 13.5.sp, lineHeight = 19.sp,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "שחרור בחזרה אפשרי רק בהגדרות הסינון, עם קוד ההורים.",
+                        color = ThemeState.accent, fontSize = 12.5.sp, lineHeight = 18.sp,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        store.blockVideo(video)
+                        LibraryBadges.refresh(context)
+                    }
+                    blockConfirm = false
+                    onDismiss()
+                }) { Text("הסר", color = ThemeState.accent, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { blockConfirm = false }) {
+                    Text("ביטול", color = ThemeState.subtext2)
+                }
+            },
+        )
+    }
 }
 
 @Composable

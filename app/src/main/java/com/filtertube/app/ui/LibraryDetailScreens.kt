@@ -13,6 +13,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -103,7 +105,10 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
             }.getOrDefault(emptyList()),
         )
     }
-    val (title, rawVideos) = remember(type, refreshKey, musicSource) {
+    // libraryVersion: מונה נצפה שגדל בכל שינוי ברשימת ההורדות, כדי שפריט
+    // חדש יופיע ברגע שההורדה מתחילה ולא רק אחרי יציאה וחזרה למסך.
+    val downloadVersion = com.filtertube.app.data.DownloadEngine.libraryVersion
+    val (title, rawVideos) = remember(type, refreshKey, musicSource, downloadVersion) {
         when (type) {
             "likes" -> "אהבתי" to (if (musicSource) store.musicLikes() else store.youtubeLikes())
             "ytlikes" -> "אהבתי ביוטיוב" to store.youtubeLikes()
@@ -154,8 +159,52 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
                 }
             }
         }
-        if (videos.isEmpty()) EmptyHint(if (type == "history") "עדיין לא צפית בכלום" else "האוסף ריק")
-        else LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)) {
+        // ── מה שיורד ברגע זה ──────────────────────────────────────────────
+        // בתוך הטאב ולא במסך נפרד: המשתמש לחץ "הורד" וצופה שההורדה תופיע
+        // *כאן*. פס התקדמות במקום אחר הוא מסך אחר, לא משוב.
+        val running = com.filtertube.app.data.DownloadEngine.active
+            .filter { it.progress < 100 && it.status != "נכשל" }
+        if (type == "downloads" && running.isNotEmpty()) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+                Text(
+                    "מוריד עכשיו · ${running.size}",
+                    color = ThemeState.subtext, fontSize = 12.sp,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+                running.take(5).forEach { task ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                task.video.title, color = ThemeState.text, fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            CompositionLocalProvider(
+                                LocalLayoutDirection provides LayoutDirection.Ltr,
+                            ) {
+                                LinearProgressIndicator(
+                                    progress = { task.progress / 100f },
+                                    modifier = Modifier.fillMaxWidth().height(3.dp),
+                                    color = ThemeState.accent,
+                                    trackColor = ThemeState.divider,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text(task.status, color = ThemeState.subtext, fontSize = 11.sp)
+                    }
+                }
+            }
+            HorizontalDivider(color = ThemeState.divider)
+        }
+
+        if (videos.isEmpty() && running.isEmpty()) {
+            EmptyHint(if (type == "history") "עדיין לא צפית בכלום" else "האוסף ריק")
+        } else LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)) {
             items(videos, key = { it.id }) { v ->
                 // ── אפור = הערוץ לא ברשימה המאושרת ────────────────────────
                 // הרשימה שלמה בכוונה: "אהבתי" חתוך בלי שום רמז שחסר בו משהו

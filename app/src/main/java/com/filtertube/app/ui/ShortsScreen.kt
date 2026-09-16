@@ -43,7 +43,9 @@ import coil.compose.AsyncImage
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.FeedCache
 import com.filtertube.app.data.SettingsStore
+import com.filtertube.app.data.Diagnostics
 import com.filtertube.app.data.StreamRepository
+import com.filtertube.app.data.defaultTrackIndex
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeRepository
 import com.filtertube.app.data.forLevel
@@ -189,9 +191,24 @@ fun ShortsPlayerScreen(onBack: () -> Unit) {
         val item = withContext(Dispatchers.IO) {
             runCatching {
                 val data = StreamRepository.getStream(video.id)
-                // אותו בונה של הנגן הראשי: הוא בוחר את האיכות המתאימה
-                // ומצרף את זרם האודיו כשצריך.
-                com.filtertube.app.playback.Playback.buildItem(data, video.id, audio = false)
+                // ── למה 1440 ולא ברירת המחדל ──────────────────────────
+                // ברירת המחדל בוחרת את הזרם הטוב ביותר שגובהו עד 720. בסרטון
+                // רוחבי זה בדיוק 720p. אבל שורט הוא סרטון **אנכי**, ו"גובה"
+                // אצלו הוא הצלע הארוכה — כלומר תקרה של 720 נותנת וידאו של
+                // 405 פיקסלים רוחב, שנמתח על מסך מלא. זו הסיבה שאותו סרטון
+                // נראה חד בנגן הרגיל ומטושטש בשורטס.
+                //
+                // 1440 על הצלע הארוכה = כ-810 פיקסלים רוחב, שזה מה שמסך
+                // טלפון באמת מציג.
+                val index = data.defaultTrackIndex(preferred = 1440)
+                val track = data.tracks.getOrNull(index)
+                Diagnostics.log(
+                    "SHORTS ${video.id}: נבחר ${track?.height ?: 0}p · " +
+                        if (track?.audioUrl.isNullOrEmpty()) "משולב" else "ממוזג עם אודיו נפרד",
+                )
+                com.filtertube.app.playback.Playback.buildItem(
+                    data, video.id, audio = false, qualityIndex = index,
+                )
             }.getOrNull()
         }
         if (item != null) itemCache[video.id] = item

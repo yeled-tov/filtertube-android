@@ -97,7 +97,11 @@ fun LibraryScreen(
     // הכל — ואילו FilterMusic ממשיכה להציג רק את שלה, כי שם זו קבוצה בתוך
     // מסך מוזיקה. ככה שום הורדה לא נעלמת, וההפרדה נשמרת במקום שבו היא
     // באמת עוזרת.
-    val downloads = remember(version) { store.downloads() }
+    // המונה של DownloadEngine נכלל במפתח, כדי שהקובייה תתעדכן ברגע
+    // שההורדה מתחילה ולא רק אחרי יציאה וחזרה למסך.
+    val downloads = remember(version, com.filtertube.app.data.DownloadEngine.libraryVersion) {
+        store.downloads()
+    }
     val playlists = remember(version) { store.playlists() }
     var ytLikes by remember { mutableStateOf(store.youtubeLikes()) }
     var subs by remember { mutableStateOf(store.subscriptions()) }

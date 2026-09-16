@@ -29,6 +29,8 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.WorkspacePremium
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -425,17 +427,39 @@ private fun ChangePasswordDialog(settings: SettingsStore, onDone: () -> Unit, on
     )
 }
 
+/**
+ * שדה קוד עם עין להצגה.
+ *
+ * ## למה זה נדרש
+ * קוד שמוקלד בעיוור נכשל בהקלדה שנייה ושלישית, והמשתמש לא יודע אם טעה
+ * בספרה או שהקוד עצמו שגוי. העין מפרידה בין שתי השאלות האלה.
+ *
+ * ברירת המחדל נשארת מוסתרת — זו עדיין סיסמה, ומי שמקליד אותה ליד ילד
+ * אמור להחליט בעצמו מתי לחשוף אותה.
+ */
 @Composable
 private fun PwField(value: String, onValueChange: (String) -> Unit, label: String) {
+    var visible by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = value, onValueChange = onValueChange,
         label = { Text(label, color = ThemeState.subtext) },
         singleLine = true,
-        visualTransformation = PasswordVisualTransformation(),
+        visualTransformation =
+            if (visible) androidx.compose.ui.text.input.VisualTransformation.None
+            else PasswordVisualTransformation(),
+        trailingIcon = {
+            IconButton(onClick = { visible = !visible }) {
+                Icon(
+                    if (visible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                    if (visible) "הסתר קוד" else "הצג קוד",
+                    tint = ThemeState.subtext,
+                )
+            }
+        },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = ThemeState.text, unfocusedTextColor = ThemeState.text,
-            focusedBorderColor = Color(0xFFFFAA00), unfocusedBorderColor = Color(0xFF333333),
+            focusedBorderColor = Tint.amber, unfocusedBorderColor = ThemeState.divider,
         ),
     )
 }

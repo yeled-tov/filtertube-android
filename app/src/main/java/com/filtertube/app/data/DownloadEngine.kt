@@ -47,6 +47,21 @@ object DownloadEngine {
     /** רשימת ההורדות הפעילות/האחרונות — נצפית במסך מנהל ההורדות (Compose). */
     val active = mutableStateListOf<DownloadTask>()
 
+    /**
+     * מונה שגדל בכל שינוי ברשימת ההורדות השמורה.
+     *
+     * ## למה זה נדרש
+     * הרשימה נשמרת ב-SharedPreferences, ולמסך אין שום דרך לדעת שהיא
+     * השתנתה — ולכן הוא קרא אותה פעם אחת בכניסה, והורדה חדשה הופיעה רק
+     * אחרי יציאה וחזרה. זה בדיוק מה שנראה כמו "לוקח לזה זמן להסתנכרן".
+     *
+     * מונה נצפה הוא הדרך הקצרה: כל מסך שקורא אותו נבנה מחדש כשהוא זז.
+     */
+    var libraryVersion by mutableStateOf(0)
+        private set
+
+    private fun bumpLibrary() { libraryVersion++ }
+
     private data class Spec(
         val url: String, val fileName: String, val ua: String?,
         val connections: Int, val isAudio: Boolean, val context: Context,
@@ -129,6 +144,7 @@ object DownloadEngine {
         // קיימת, לא מצא, ולא שמר כלום: הקובץ ירד למכשיר והאפליקציה לא ידעה
         // עליו. כאן זה נרשם פעם אחת לכל מסלול, כי כאן כולם עוברים.
         LibraryStore(ctx).addDownload(video)
+        bumpLibrary()
 
         val task = DownloadTask(video, isAudio)
         active.add(0, task)
@@ -195,6 +211,7 @@ object DownloadEngine {
                     // במקום שההורדה תיעלם בשקט.
                     LibraryStore(s.context)
                         .setDownloadLocalUri(task.video.id, uri, fallback = task.video)
+                    bumpLibrary()
                     task.progress = 100; task.status = "הושלם"
                     Diagnostics.log("DOWNLOAD ${task.video.id}: נשמר ב-$uri")
                     return uri
