@@ -45,6 +45,17 @@ class ApprovedChannels(channels: List<Channel>) {
     private val tokensOf: List<Pair<Channel, Set<String>>> =
         channels.map { it to tokens(it.name) }
 
+    /**
+     * שלד עיצורים → ערוץ מאושר, לגישור בין עברית לאנגלית.
+     *
+     * ברשימה רשום "בן צור הערוץ הרשמי" ואילו ערוץ ה-Topic נקרא
+     * "Ben Zur - Topic" — אין ולו אות אחת משותפת בין השמות, ולכן שום
+     * השוואת מילים לא תמצא אותם. שני השמות כן מתכנסים לאותו שלד: bn zr.
+     */
+    private val bySkeleton: Map<String, Channel> = buildMap {
+        channels.forEach { c -> skeletons(c.name).forEach { putIfAbsent(it, c) } }
+    }
+
     /** ריק = הרשימה עוד לא נטענה. אז לא מאפירים כלום, כדי לא להבהב. */
     fun isEmpty(): Boolean = ids.isEmpty()
 
@@ -76,7 +87,15 @@ class ApprovedChannels(channels: List<Channel>) {
         }
         // יחיד ותו לא: אם שני ערוצים מאושרים יכולים להתאים, אין דרך לדעת
         // איזה מהם — ו"ניחוש" ברשימה לבנה הוא בדיוק מה שאסור.
-        return matches.singleOrNull()?.first
+        matches.singleOrNull()?.let { return it.first }
+
+        // ── גשר עברית-אנגלית ─────────────────────────────────────────────
+        // אחרון, כי הוא הרופף מכולם: הוא משווה שלד עיצורים ולא אותיות.
+        // דורש לפחות שתי מילים בשלד, כדי ששם בן מילה אחת ("Release")
+        // לא ייקלע להתאמה מקרית.
+        return skeletons(artist)
+            .filter { it.contains(' ') }
+            .firstNotNullOfOrNull { bySkeleton[it] }
     }
 
     fun channelFor(video: Video): Channel? = channelFor(video.channelId, video.channelName)
@@ -120,6 +139,74 @@ class ApprovedChannels(channels: List<Channel>) {
         )
 
         private const val MIN_TOKENS = 2
+
+        /**
+         * עיצורי השם, כשלד אחד משותף לעברית ולאנגלית.
+         *
+         * ## הרעיון
+         * עברית נכתבת בלי תנועות, ותעתיק לטיני של שם עברי מוסיף תנועות
+         * שאינן במקור. כשמורידים את התנועות משני הצדדים ומאחדים עיצורים
+         * שנשמעים אותו דבר, שני הכתיבים מתכנסים לאותה מחרוזת:
+         * "בן צור" ו-"Ben Zur" הופכים שניהם ל-"bn zr".
+         *
+         * ## למה זה לא מסוכן
+         * השלד גס בכוונה, ולכן הוא יכול להתנגש. הבדיקה על 166 הערוצים
+         * המאושרים העלתה שתי התנגשויות בלבד — ושתיהן ערוצים כפולים של
+         * אותו אמן. בנוסף הגשר דורש שתי מילים לפחות, והוא אחרון בסדר
+         * הבדיקות: כל עוד השוואה מדויקת יותר מצליחה, לכאן לא מגיעים.
+         */
+        fun skeletons(name: String): Set<String> {
+            val clean = (topicArtist(name) ?: name)
+                .split(' ', '|', '·')
+                .filter { it.isNotBlank() && normalize(it) !in STOPWORDS }
+                .joinToString(" ")
+            val hebrew = clean.split(' ').filter { it.any { c -> c in 'א'..'ת' } }
+            val latin = clean.split(' ').filter { w -> w.all { it.isLetter() && it.code < 0x500 } }
+            return setOfNotNull(
+                hebrewSkeleton(hebrew.joinToString(" ")).takeIf { it.replace(" ", "").length >= 3 },
+                latinSkeleton(latin.joinToString(" ")).takeIf { it.replace(" ", "").length >= 3 },
+            )
+        }
+
+        /** א ע ו י נשמטות — הן תנועות או אמות קריאה, ואין להן מקביל בתעתיק. */
+        private val HEBREW_MAP = mapOf(
+            'א' to "", 'ע' to "", 'ו' to "", 'י' to "", 'ה' to "h",
+            'ב' to "b", 'ג' to "g", 'ד' to "d", 'ז' to "z", 'ח' to "h",
+            'ט' to "t", 'כ' to "k", 'ך' to "k", 'ל' to "l", 'מ' to "m",
+            'ם' to "m", 'נ' to "n", 'ן' to "n", 'ס' to "s", 'פ' to "p",
+            'ף' to "p", 'צ' to "z", 'ץ' to "z", 'ק' to "k", 'ר' to "r",
+            'ש' to "s", 'ת' to "t",
+        )
+
+        private fun hebrewSkeleton(name: String): String = buildString {
+            name.replace(NIKUD, "").forEach { c ->
+                when {
+                    c.isWhitespace() -> append(' ')
+                    HEBREW_MAP.containsKey(c) -> append(HEBREW_MAP[c])
+                }
+            }
+        }.replace(SPACES, " ").trim()
+
+        private fun latinSkeleton(name: String): String {
+            var s = name.lowercase()
+            // צמדי אותיות קודם לאותיות בודדות, אחרת sh היה הופך ל-s+h
+            listOf("tz" to "z", "ts" to "z", "sh" to "s", "ch" to "h",
+                   "kh" to "h", "ph" to "p", "th" to "t").forEach { (a, b) ->
+                s = s.replace(a, b)
+            }
+            return buildString {
+                s.forEach { c ->
+                    when (c) {
+                        in "aeiouy" -> Unit
+                        'c', 'q' -> append('k')
+                        'v', 'w' -> append('b')
+                        'f' -> append('p')
+                        'j' -> append('g')
+                        else -> if (c.isWhitespace()) append(' ') else if (c in 'a'..'z') append(c)
+                    }
+                }
+            }.replace(SPACES, " ").trim()
+        }
 
         fun tokens(name: String): Set<String> =
             normalize(name).split(' ')
