@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.LiveTv
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Person
@@ -538,7 +539,7 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
             }
         }
         Spacer(Modifier.height(10.dp))
-        Row(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             // הסמל האמיתי של הערוץ. אות בודדת לא מזהה כלום, ובשם עברי היא
             // גם נראית כמו תקלה. ChannelAvatars מושך אותם דרך NewPipe פעם
             // אחת לכל ערוץ ושומר לתמיד.
@@ -586,13 +587,26 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+            // ── שלוש הנקודות ──────────────────────────────────────────
+            // התפריט היה קיים רק בלחיצה ארוכה, וזו מחווה שאי אפשר לראות.
+            // מי שלא ניסה אותה במקרה לא ידע שיש כאן בכלל תפריט. הכפתור
+            // אינו מחליף את הלחיצה הארוכה — הוא רק מה שמסגיר שהיא קיימת.
+            IconButton(
+                onClick = { showActions = true },
+                modifier = Modifier.size(30.dp),
+            ) {
+                Icon(
+                    Icons.Rounded.MoreVert, "פעולות לסרטון",
+                    tint = ThemeState.subtext, modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
     if (showActions) VideoActionMenu(video, onDismiss = { showActions = false })
 }
 
 @Composable
-private fun VideoActionMenu(video: Video, onDismiss: () -> Unit) {
+fun VideoActionMenu(video: Video, onDismiss: () -> Unit, musicMode: Boolean = false) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val store = remember { LibraryStore(context) }
@@ -602,7 +616,7 @@ private fun VideoActionMenu(video: Video, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("פעולות לסרטון", color = ThemeState.text) },
+        title = { Text(if (musicMode) "פעולות לשיר" else "פעולות לסרטון", color = ThemeState.text) },
         text = {
             Column {
                 VideoAction("הבא בתור", Icons.AutoMirrored.Rounded.QueueMusic) {
@@ -613,10 +627,19 @@ private fun VideoActionMenu(video: Video, onDismiss: () -> Unit) {
                         android.widget.Toast.makeText(context, if (immediate) "נוסף לתור הבא" else "נשמר לתור הבא", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
-                VideoAction("הורד סרטון", Icons.Rounded.Download) {
+                // ב-FilterMusic ההורדה היא תמיד אודיו ומסומנת כהורדת מוזיקה:
+                // זו אפליקציית מוזיקה, והורדת וידאו ממנה הייתה קובץ לצפייה
+                // מחוץ לכל סינון. הסימון הוא גם מה שמפריד בין רשימות ההורדות
+                // של שתי האפליקציות.
+                VideoAction(
+                    if (musicMode) "הורד שיר (אודיו)" else "הורד סרטון",
+                    Icons.Rounded.Download,
+                ) {
                     busy = true
                     scope.launch {
-                        val ok = DownloadEngine.enqueueByVideo(context, video, isAudio = false)
+                        val ok = DownloadEngine.enqueueByVideo(
+                            context, video, isAudio = musicMode, fromMusic = musicMode,
+                        )
                         busy = false; onDismiss()
                         android.widget.Toast.makeText(context, if (ok) "ההורדה התחילה" else "לא ניתן להתחיל הורדה", android.widget.Toast.LENGTH_SHORT).show()
                     }

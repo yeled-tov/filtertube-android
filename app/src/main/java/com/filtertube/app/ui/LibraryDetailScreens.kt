@@ -107,7 +107,9 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
         when (type) {
             "likes" -> "אהבתי" to (if (musicSource) store.musicLikes() else store.youtubeLikes())
             "ytlikes" -> "אהבתי ביוטיוב" to store.youtubeLikes()
-            "downloads" -> "הורדות" to store.downloads()
+            // אותו פיצול כמו בספרייה: הורדות שיצאו לדרך מ-FilterMusic
+            // שייכות לספרייה של המוזיקה ולא לכאן.
+            "downloads" -> "הורדות" to store.downloads().filter { !it.fromMusic }
             "history" -> "היסטוריה" to store.localHistory()   // היסטוריה מקומית — תמיד עובדת
             "recs" -> "מומלצים" to store.recommendations()
             else -> "אוסף" to emptyList()

@@ -8,12 +8,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
@@ -21,6 +27,7 @@ import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,9 +65,16 @@ fun MusicPlayerScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val store = remember { LibraryStore(context) }
+    val scope = rememberCoroutineScope()
     var showQueue by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
     var liked by remember(ui.mediaId) {
         mutableStateOf(ui.mediaId?.let { store.isLiked(it) } == true)
+    }
+    // מתאפס לכל שיר: "כבר הורד" הוא מצב של השיר הנוכחי ולא של המסך.
+    var downloading by remember(ui.mediaId) { mutableStateOf(false) }
+    var downloaded by remember(ui.mediaId) {
+        mutableStateOf(ui.mediaId?.let { store.downloadedVideo(it) != null } == true)
     }
     var repeatMode by remember { mutableStateOf(controller?.repeatMode ?: Player.REPEAT_MODE_OFF) }
     var shuffle by remember { mutableStateOf(controller?.shuffleModeEnabled == true) }
@@ -142,6 +156,40 @@ fun MusicPlayerScreen(
                     fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
+            // ── הורדה ─────────────────────────────────────────────────
+            // עד עכשיו הדרך היחידה להוריד שיר מ-FilterMusic הייתה כפתור
+            // "הורד את כל מה שאהבת" בלשונית ההורדות — הכל או כלום. כאן
+            // מורידים בדיוק את מה שמתנגן, ברגע שמחליטים שרוצים אותו.
+            IconButton(onClick = {
+                if (downloaded || downloading) return@IconButton
+                downloading = true
+                scope.launch {
+                    val ok = com.filtertube.app.data.DownloadEngine.enqueueByVideo(
+                        context, current, isAudio = true, fromMusic = true,
+                    )
+                    downloading = false
+                    downloaded = ok
+                    android.widget.Toast.makeText(
+                        context,
+                        if (ok) "ההורדה התחילה — יופיע בספרייה" else "לא ניתן להתחיל הורדה",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }) {
+                when {
+                    downloading -> CircularProgressIndicator(
+                        color = ThemeState.accent,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    downloaded -> Icon(
+                        Icons.Rounded.DownloadDone, "כבר הורד", tint = ThemeState.accent,
+                    )
+                    else -> Icon(
+                        Icons.Rounded.Download, "הורד שיר", tint = ThemeState.subtext2,
+                    )
+                }
+            }
             IconButton(onClick = {
                 val id = ui.mediaId ?: return@IconButton
                 liked = store.toggleLike(current)
@@ -152,6 +200,17 @@ fun MusicPlayerScreen(
                     "אהבתי", tint = if (liked) ThemeState.accent else ThemeState.subtext2,
                 )
             }
+            IconButton(onClick = { menuOpen = true }) {
+                Icon(Icons.Rounded.MoreVert, "פעולות לשיר", tint = ThemeState.subtext2)
+            }
+        }
+
+        if (menuOpen) {
+            com.filtertube.app.ui.VideoActionMenu(
+                video = current,
+                onDismiss = { menuOpen = false },
+                musicMode = true,
+            )
         }
 
         Spacer(Modifier.height(gapM))

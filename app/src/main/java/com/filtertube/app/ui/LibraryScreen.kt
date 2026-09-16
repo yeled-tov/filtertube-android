@@ -1,7 +1,5 @@
 package com.filtertube.app.ui
 import com.filtertube.app.ThemeState
-import com.filtertube.app.ui.theme.GroupCard
-import com.filtertube.app.ui.theme.GroupRow
 import com.filtertube.app.ui.theme.Tint
 
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -89,7 +87,11 @@ fun LibraryScreen(
 
     var version by remember { mutableStateOf(0) }
     val likes = remember(version) { store.likes() }
-    val downloads = remember(version) { store.downloads() }
+    // ── ההורדות של FilterTube בלבד ────────────────────────────────────────
+    // מה שהורד מתוך FilterMusic נספר ומוצג שם, בספרייה של המוזיקה. שתי
+    // הרשימות נשמרות יחד במכשיר, אבל המשתמש הוריד אותן משתי אפליקציות
+    // שונות ומצפה למצוא כל אחת במקום שממנו הוריד אותה.
+    val downloads = remember(version) { store.downloads().filter { !it.fromMusic } }
     val playlists = remember(version) { store.playlists() }
     var ytLikes by remember { mutableStateOf(store.youtubeLikes()) }
     var subs by remember { mutableStateOf(store.subscriptions()) }
@@ -445,34 +447,59 @@ fun LibraryScreen(
         //
         // "היסטוריה" ו"מומלצים" ירדו לשורות טקסט מתחת: הן שימושיות, אבל הן לא
         // אוסף שהמשתמש *בונה* — הן נוצרות מאליהן, ולכן לא צריכות את אותו משקל.
+        // ── הכל קוביות ────────────────────────────────────────────────────
+        // קודם ישבו כאן שלוש קוביות ומתחתן שש שורות, וההבדל בגודל אמר "אלה
+        // חשובים יותר". בפועל זו הייתה הבחנה שלי ולא של מי שמשתמש: גם
+        // "ערוצים מאושרים" וגם "הבקשות שלי" הם יעדים שנכנסים אליהם, לא
+        // הערות שוליים. רשת אחידה נותנת לכולם את אותו משקל ואת אותו שטח
+        // הקשה, וגם נסרקת מהר יותר מרשימה — העין קופצת בין תמונות, לא
+        // קוראת שורות.
+        //
+        // Adaptive ולא מספר עמודות קבוע: במסך צר שתיים, ברחב שלוש.
         item {
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                LibTile("אהבתי", likes.size + ytLikes.size, Icons.Rounded.Favorite, Tint.red) { onOpenCollection("likes") }
-                LibTile("הורדות", downloads.size, Icons.Rounded.Download, Tint.green) { onOpenCollection("downloads") }
-                LibTile("מנויים", subs.size, Icons.Rounded.Subscriptions, Tint.violet) { onOpenSubscriptions() }
-            }
-            Spacer(Modifier.height(14.dp))
-            // "ערוצים מאושרים" חי כאן ולא בתפריט צף שמסתתר מאחורי אווטאר במסך
-            // הבית. הספרייה היא "התוכן שלי", ומעקב אחרי ערוץ הוא בדיוק זה —
-            // ממש ליד "מנויים", שהוא אותו רעיון בצד של יוטיוב.
-            // שתי קבוצות ולא שש שורות רצופות: הראשונה היא "מה מאושר ומה
-            // ביקשתי", השנייה היא "מה נאסף עליי מאליו". קודם כל השורות היו
-            // כרטיסים נפרדים באותו משקל, וההבחנה הזו לא נראתה בכלל.
-            GroupCard {
-                GroupRow(Icons.Rounded.Tv, ThemeState.accent, "ערוצים מאושרים",
-                    trailingText = "$channelCount") { onOpenChannels() }
+            val tiles = listOf(
+                LibTileSpec("אהבתי", likes.size + ytLikes.size, Icons.Rounded.Favorite, Tint.red) {
+                    onOpenCollection("likes")
+                },
+                LibTileSpec("הורדות", downloads.size, Icons.Rounded.Download, Tint.green) {
+                    onOpenCollection("downloads")
+                },
+                LibTileSpec("מנויים", subs.size, Icons.Rounded.Subscriptions, Tint.violet) {
+                    onOpenSubscriptions()
+                },
+                LibTileSpec("ערוצים מאושרים", channelCount, Icons.Rounded.Tv, ThemeState.accent) {
+                    onOpenChannels()
+                },
                 // הבקשות יושבות ליד "ערוצים מאושרים" בכוונה: זו אותה שאלה
                 // משני צדדיה — מה כבר מאושר, ומה ביקשתי שיאושר.
-                GroupRow(Icons.Rounded.Inbox, Tint.amber, "הבקשות שלי", last = true) { onOpenMyRequests() }
-            }
-            Spacer(Modifier.height(10.dp))
-            GroupCard {
-                GroupRow(Icons.Rounded.History, Tint.orange, "היסטוריית צפייה",
-                    trailingText = "${localHist.size}") { onOpenCollection("history") }
-                GroupRow(Icons.Rounded.Recommend, Tint.teal, "מומלצים מיוטיוב",
-                    trailingText = "${recs.size}") { onOpenCollection("recs") }
+                LibTileSpec("הבקשות שלי", -1, Icons.Rounded.Inbox, Tint.amber) {
+                    onOpenMyRequests()
+                },
+                LibTileSpec("היסטוריה", localHist.size, Icons.Rounded.History, Tint.orange) {
+                    onOpenCollection("history")
+                },
+                LibTileSpec("מומלצים", recs.size, Icons.Rounded.Recommend, Tint.teal) {
+                    onOpenCollection("recs")
+                },
                 // FilterTube יודעת לנגן גם מה שכבר על הטלפון, לא רק מה שהורידה.
-                GroupRow(Icons.Rounded.PhoneAndroid, Tint.blue, "במכשיר שלי", last = true) { onOpenDeviceMedia() }
+                LibTileSpec("במכשיר שלי", -1, Icons.Rounded.PhoneAndroid, Tint.blue) {
+                    onOpenDeviceMedia()
+                },
+            )
+            // רשת ידנית ולא LazyVerticalGrid: אנחנו כבר בתוך LazyColumn,
+            // ורשת עצלה מקוננת בתוך רשימה עצלה באותו כיוון גלילה אינה חוקית.
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                tiles.chunked(2).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        row.forEach { LibTile(it.title, it.count, it.icon, it.tint, it.onClick) }
+                        // תא ריק כדי שקובייה בודדת בשורה אחרונה לא תימתח
+                        // לרוחב כפול ותיראה כמו פריט אחר לגמרי.
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
             }
         }
 
@@ -516,6 +543,15 @@ fun LibraryScreen(
     }
 }
 
+/** תיאור קובייה אחת ברשת הספרייה. */
+private data class LibTileSpec(
+    val title: String,
+    val count: Int,
+    val icon: ImageVector,
+    val tint: Color,
+    val onClick: () -> Unit,
+)
+
 @Composable
 private fun RowScope.LibTile(title: String, count: Int, icon: ImageVector, accent: Color, onClick: () -> Unit) {
     Column(
@@ -533,7 +569,12 @@ private fun RowScope.LibTile(title: String, count: Int, icon: ImageVector, accen
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
-            Text("$count פריטים", color = ThemeState.subtext, style = MaterialTheme.typography.labelSmall)
+            // מונה שלילי = לקובייה אין מספר (למשל "במכשיר שלי", שנספר רק
+            // אחרי סריקה). שורה ריקה במקומו שומרת על גובה אחיד ברשת.
+            Text(
+                if (count >= 0) "$count פריטים" else " ",
+                color = ThemeState.subtext, style = MaterialTheme.typography.labelSmall,
+            )
         }
     }
 }

@@ -146,7 +146,12 @@ object DownloadEngine {
      * לא היה שווה כלום: אפשר היה להאזין בלבד, אבל להוריד את הווידאו המלא
      * ולצפות בו מגלריית המכשיר.
      */
-    suspend fun enqueueByVideo(context: Context, video: Video, isAudio: Boolean): Boolean {
+    suspend fun enqueueByVideo(
+        context: Context,
+        video: Video,
+        isAudio: Boolean,
+        fromMusic: Boolean = false,
+    ): Boolean {
         val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull() ?: return false
         val v = video.copy(
             title = data.title.ifBlank { video.title },
@@ -155,6 +160,7 @@ object DownloadEngine {
             // מזהה הערוץ מהזרם ולא מהרשומה: פריט שהגיע מהיסטוריה או מחיפוש
             // יכול להגיע בלי מזהה, ובלי מזהה אין קטגוריה ואין מדיניות.
             channelId = video.channelId.ifBlank { data.channelId },
+            fromMusic = fromMusic || video.fromMusic,
         )
         @Suppress("NAME_SHADOWING")
         val isAudio = isAudio || audioOnlyFor(context, v)
