@@ -19,6 +19,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -37,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filtertube.app.ThemeState
+import com.filtertube.app.ui.theme.MosaicTile
 import com.filtertube.app.ui.theme.Tint
 import com.filtertube.app.data.Channel
 import com.filtertube.app.data.ChannelsRepository
@@ -551,32 +554,49 @@ private fun MusicLibrary(
     // הסימון נעשה ברגע ההורדה ולא נגזר מ"אודיו מול וידאו", כי גם בפילטר
     // טיוב יש קטגוריות שיורדות כאודיו בכפייה — ואז ההבחנה הזו שקרית.
     val mine = remember(downloads) { downloads.filter { it.fromMusic } }
-    val recent = history.take(60)
+    val recent = remember(history) { history.take(60) }
+
+    // ── קובייה נפתחת, לא הכל פרוש ─────────────────────────────────────────
+    // קודם שלושת האוספים נשפכו למסך אחד ארוך, ומי שחיפש שיר מסוים היה
+    // צריך לגלול דרך אוסף שלם כדי להגיע לבא אחריו. קובייה לכל אוסף נותנת
+    // את התמונה המלאה במסך אחד, והכניסה היא החלטה של המשתמש.
+    var open by remember { mutableStateOf<String?>(null) }
 
     if (likes.isEmpty() && recent.isEmpty() && mine.isEmpty() && active.isEmpty()) {
         EmptyState("הספרייה תתמלא ממה שתשמע ותסמן בלב.")
         return
     }
 
-    // ── כוורת ולא רשימה ───────────────────────────────────────────────────
-    // שורה ברוחב מלא לכל שיר בזבזה את רוב המסך על אוויר, והכריכה — הדבר
-    // היחיד שבאמת מזהה שיר במבט — הייתה 48dp בצד. ברשת נכנסים פי כמה שירים
-    // באותה גלילה, והכריכה היא הגיבור.
-    //
-    // Adaptive ולא Fixed(2): באותו קוד מסך צר מקבל שתי עמודות ומסך רחב
-    // שלוש או ארבע, בלי מספר קסם שנכון רק למכשיר אחד.
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(MusicDim.cellMinWidth),
+    val collections = listOf(
+        Triple("שירים שאהבתי", likes, Icons.Rounded.Favorite to Tint.red),
+        Triple("ההורדות שלי", mine, Icons.Rounded.Download to Tint.green),
+        Triple("הושמע לאחרונה", recent, Icons.Rounded.History to Tint.orange),
+    )
+
+    open?.let { title ->
+        val songs = collections.firstOrNull { it.first == title }?.second.orEmpty()
+        MusicCollection(
+            title = title,
+            songs = songs,
+            activeId = activeId,
+            onPlay = onPlay,
+            onMenu = onMenu,
+            onBack = { open = null },
+        )
+        return
+    }
+
+    LazyColumn(
         contentPadding = PaddingValues(
-            start = MusicDim.screenPadding, end = MusicDim.screenPadding, bottom = 24.dp,
+            start = MusicDim.screenPadding, end = MusicDim.screenPadding,
+            top = 6.dp, bottom = 24.dp,
         ),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (online == false) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            item {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = MusicDim.screenPadding)
+                    modifier = Modifier.fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp)).background(ThemeState.card)
                         .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -595,11 +615,9 @@ private fun MusicLibrary(
 
         // ── מה שמוריד עכשיו ───────────────────────────────────────────────
         if (active.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                NavigationTitle("מוריד עכשיו", label = "${active.size} פריטים")
-            }
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            item {
                 Column {
+                    NavigationTitle("מוריד עכשיו", label = "${active.size} פריטים")
                     active.take(4).forEach { task ->
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
@@ -627,35 +645,30 @@ private fun MusicLibrary(
             }
         }
 
-        // ── הורדות ────────────────────────────────────────────────────────
-        if (mine.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                NavigationTitle("הורדות", label = "${mine.size} שירים · זמין בלי רשת")
-            }
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    BigAction("נגן הכל", Icons.Rounded.PlayArrow, Modifier.weight(1f)) {
-                        onPlay(mine, 0)
-                    }
-                    BigAction("ערבוב", Icons.Rounded.Shuffle, Modifier.weight(1f)) {
-                        onPlay(mine.shuffled(), 0)
-                    }
+        // ── שלוש הקוביות ──────────────────────────────────────────────────
+        items(collections.chunked(2)) { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                row.forEach { (title, songs, look) ->
+                    val (icon, tint) = look
+                    MosaicTile(
+                        title = title,
+                        subtitle = "${songs.size} שירים",
+                        images = songs.map { it.thumbnailUrl },
+                        icon = icon,
+                        tint = tint,
+                        modifier = Modifier.weight(1f),
+                        onClick = { if (songs.isNotEmpty()) open = title },
+                    )
                 }
-            }
-            items(mine, key = { "dl_${it.id}" }) { song ->
-                MusicCell(song, active = song.id == activeId, onMenu = { onMenu(song) }) {
-                    onPlay(mine, mine.indexOf(song))
-                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
 
-        // ── אהבתי ─────────────────────────────────────────────────────────
+        // הורדת כל האהובים — הפעולה היחידה שמתחילה הורדה מרוכזת, ולכן היא
+        // נשארת גלויה גם כשלא נכנסים לאף אוסף.
         if (likes.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                NavigationTitle("אהבתי", label = "${likes.size} שירים")
-            }
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                BigAction("הורד את הכל (אודיו)", Icons.Rounded.Download, Modifier.fillMaxWidth()) {
+            item {
+                BigAction("הורד את מה שאהבת (אודיו)", Icons.Rounded.Download, Modifier.fillMaxWidth()) {
                     scope.launch {
                         android.widget.Toast.makeText(
                             context, "מוסיף ${likes.size} לתור ההורדות…",
@@ -669,19 +682,59 @@ private fun MusicLibrary(
                     }
                 }
             }
-            items(likes, key = { "like_${it.id}" }) { song ->
-                MusicCell(song, active = song.id == activeId, onMenu = { onMenu(song) }) {
-                    onPlay(likes, likes.indexOf(song))
-                }
+        }
+    }
+}
+
+/** אוסף אחד פרוש ככוורת, עם דרך חזרה. */
+@Composable
+private fun MusicCollection(
+    title: String,
+    songs: List<Video>,
+    activeId: String?,
+    onPlay: (List<Video>, Int) -> Unit,
+    onMenu: (Video) -> Unit,
+    onBack: () -> Unit,
+) {
+    androidx.activity.compose.BackHandler(onBack = onBack)
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = MusicDim.screenPadding),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, "חזרה לספרייה", tint = ThemeState.text)
+            }
+            Text(
+                title, color = ThemeState.text,
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.weight(1f),
+            )
+            Text("${songs.size}", color = ThemeState.subtext,
+                style = MaterialTheme.typography.bodyMedium)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .padding(horizontal = MusicDim.screenPadding, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            BigAction("נגן הכל", Icons.Rounded.PlayArrow, Modifier.weight(1f)) { onPlay(songs, 0) }
+            BigAction("ערבוב", Icons.Rounded.Shuffle, Modifier.weight(1f)) {
+                onPlay(songs.shuffled(), 0)
             }
         }
-
-        // ── הושמע לאחרונה ─────────────────────────────────────────────────
-        if (recent.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) { NavigationTitle("הושמע לאחרונה") }
-            items(recent, key = { "hist_${it.id}" }) { song ->
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(MusicDim.cellMinWidth),
+            contentPadding = PaddingValues(
+                start = MusicDim.screenPadding, end = MusicDim.screenPadding,
+                top = 8.dp, bottom = 24.dp,
+            ),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            items(songs, key = { it.id }) { song ->
                 MusicCell(song, active = song.id == activeId, onMenu = { onMenu(song) }) {
-                    onPlay(recent, recent.indexOf(song))
+                    onPlay(songs, songs.indexOf(song))
                 }
             }
         }

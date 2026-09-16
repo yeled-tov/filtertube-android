@@ -1,5 +1,6 @@
 package com.filtertube.app.ui
 import com.filtertube.app.ThemeState
+import com.filtertube.app.ui.theme.MosaicTile
 import com.filtertube.app.ui.theme.Tint
 
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -99,10 +100,16 @@ fun LibraryScreen(
     var recs by remember { mutableStateOf(store.recommendations()) }
     val localHist = remember(version) { store.localHistory() }   // היסטוריית צפייה מקומית
     var channelCount by remember { mutableStateOf(0) }
+    // סמלי הערוצים המאושרים הראשונים — לפסיפס של הקובייה.
+    var channelArt by remember { mutableStateOf<List<String>>(emptyList()) }
     LaunchedEffect(Unit) {
-        channelCount = runCatching {
-            com.filtertube.app.data.ChannelsRepository.getCachedChannelsFast(context).size
-        }.getOrDefault(0)
+        val cached = runCatching {
+            com.filtertube.app.data.ChannelsRepository.getCachedChannelsFast(context)
+        }.getOrDefault(emptyList())
+        channelCount = cached.size
+        channelArt = cached.take(8).mapNotNull {
+            com.filtertube.app.data.ChannelAvatars.avatar(it.youtubeChannelId)
+        }
     }
     val loggedIn = accountStore.isLoggedIn   // מחושב מחדש בכל composition (מתעדכן בחזרה מהתחברות)
 
@@ -447,44 +454,49 @@ fun LibraryScreen(
         //
         // "היסטוריה" ו"מומלצים" ירדו לשורות טקסט מתחת: הן שימושיות, אבל הן לא
         // אוסף שהמשתמש *בונה* — הן נוצרות מאליהן, ולכן לא צריכות את אותו משקל.
-        // ── הכל קוביות ────────────────────────────────────────────────────
+        // ── הכל קוביות, וכל קובייה בנויה ממה שיש בתוכה ────────────────────
         // קודם ישבו כאן שלוש קוביות ומתחתן שש שורות, וההבדל בגודל אמר "אלה
         // חשובים יותר". בפועל זו הייתה הבחנה שלי ולא של מי שמשתמש: גם
-        // "ערוצים מאושרים" וגם "הבקשות שלי" הם יעדים שנכנסים אליהם, לא
-        // הערות שוליים. רשת אחידה נותנת לכולם את אותו משקל ואת אותו שטח
-        // הקשה, וגם נסרקת מהר יותר מרשימה — העין קופצת בין תמונות, לא
-        // קוראת שורות.
+        // "ערוצים מאושרים" וגם "הבקשות שלי" הם יעדים שנכנסים אליהם.
         //
-        // Adaptive ולא מספר עמודות קבוע: במסך צר שתיים, ברחב שלוש.
+        // וגם: אייקון של לב אומר "אהבתי" אבל לא אומר *מה* אהבת. הכריכות של
+        // הפריטים הראשונים עונות על זה במבט, והקובייה מפסיקה להיות תווית.
         item {
+            val allLikes = remember(likes, ytLikes) { (likes + ytLikes).distinctBy { it.id } }
             val tiles = listOf(
-                LibTileSpec("אהבתי", likes.size + ytLikes.size, Icons.Rounded.Favorite, Tint.red) {
-                    onOpenCollection("likes")
-                },
-                LibTileSpec("הורדות", downloads.size, Icons.Rounded.Download, Tint.green) {
-                    onOpenCollection("downloads")
-                },
-                LibTileSpec("מנויים", subs.size, Icons.Rounded.Subscriptions, Tint.violet) {
-                    onOpenSubscriptions()
-                },
-                LibTileSpec("ערוצים מאושרים", channelCount, Icons.Rounded.Tv, ThemeState.accent) {
-                    onOpenChannels()
-                },
+                LibTileSpec(
+                    "סרטונים שאהבתי", allLikes.size, Icons.Rounded.Favorite, Tint.red,
+                    allLikes.map { it.thumbnailUrl },
+                ) { onOpenCollection("likes") },
+                LibTileSpec(
+                    "ההורדות שלי", downloads.size, Icons.Rounded.Download, Tint.green,
+                    downloads.map { it.thumbnailUrl },
+                ) { onOpenCollection("downloads") },
+                LibTileSpec(
+                    "מנויים", subs.size, Icons.Rounded.Subscriptions, Tint.violet,
+                    subs.map { it.thumbnailUrl },
+                ) { onOpenSubscriptions() },
+                LibTileSpec(
+                    "ערוצים מאושרים", channelCount, Icons.Rounded.Tv, ThemeState.accent,
+                    channelArt,
+                ) { onOpenChannels() },
                 // הבקשות יושבות ליד "ערוצים מאושרים" בכוונה: זו אותה שאלה
                 // משני צדדיה — מה כבר מאושר, ומה ביקשתי שיאושר.
-                LibTileSpec("הבקשות שלי", -1, Icons.Rounded.Inbox, Tint.amber) {
-                    onOpenMyRequests()
-                },
-                LibTileSpec("היסטוריה", localHist.size, Icons.Rounded.History, Tint.orange) {
-                    onOpenCollection("history")
-                },
-                LibTileSpec("מומלצים", recs.size, Icons.Rounded.Recommend, Tint.teal) {
-                    onOpenCollection("recs")
-                },
+                LibTileSpec(
+                    "הבקשות שלי", -1, Icons.Rounded.Inbox, Tint.amber, emptyList(),
+                ) { onOpenMyRequests() },
+                LibTileSpec(
+                    "היסטוריית צפייה", localHist.size, Icons.Rounded.History, Tint.orange,
+                    localHist.map { it.thumbnailUrl },
+                ) { onOpenCollection("history") },
+                LibTileSpec(
+                    "מומלצים מיוטיוב", recs.size, Icons.Rounded.Recommend, Tint.teal,
+                    recs.map { it.thumbnailUrl },
+                ) { onOpenCollection("recs") },
                 // FilterTube יודעת לנגן גם מה שכבר על הטלפון, לא רק מה שהורידה.
-                LibTileSpec("במכשיר שלי", -1, Icons.Rounded.PhoneAndroid, Tint.blue) {
-                    onOpenDeviceMedia()
-                },
+                LibTileSpec(
+                    "במכשיר שלי", -1, Icons.Rounded.PhoneAndroid, Tint.blue, emptyList(),
+                ) { onOpenDeviceMedia() },
             )
             // רשת ידנית ולא LazyVerticalGrid: אנחנו כבר בתוך LazyColumn,
             // ורשת עצלה מקוננת בתוך רשימה עצלה באותו כיוון גלילה אינה חוקית.
@@ -494,7 +506,17 @@ fun LibraryScreen(
             ) {
                 tiles.chunked(2).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        row.forEach { LibTile(it.title, it.count, it.icon, it.tint, it.onClick) }
+                        row.forEach { spec ->
+                            MosaicTile(
+                                title = spec.title,
+                                subtitle = if (spec.count >= 0) "${spec.count} פריטים" else "",
+                                images = spec.images,
+                                icon = spec.icon,
+                                tint = spec.tint,
+                                modifier = Modifier.weight(1f),
+                                onClick = spec.onClick,
+                            )
+                        }
                         // תא ריק כדי שקובייה בודדת בשורה אחרונה לא תימתח
                         // לרוחב כפול ותיראה כמו פריט אחר לגמרי.
                         if (row.size == 1) Spacer(Modifier.weight(1f))
@@ -546,38 +568,13 @@ fun LibraryScreen(
 /** תיאור קובייה אחת ברשת הספרייה. */
 private data class LibTileSpec(
     val title: String,
+    /** שלילי = לקובייה אין מונה (למשל "במכשיר שלי", שנספר רק אחרי סריקה). */
     val count: Int,
     val icon: ImageVector,
     val tint: Color,
+    val images: List<String>,
     val onClick: () -> Unit,
 )
-
-@Composable
-private fun RowScope.LibTile(title: String, count: Int, icon: ImageVector, accent: Color, onClick: () -> Unit) {
-    Column(
-        modifier = Modifier.weight(1f).height(104.dp).clip(RoundedCornerShape(14.dp))
-            .background(ThemeState.card).clickable(onClick = onClick).padding(14.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Box(modifier = Modifier.size(40.dp).clip(CircleShape).background(accent.copy(alpha = 0.18f)),
-            contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = accent, modifier = Modifier.size(22.dp))
-        }
-        Column {
-            Text(
-                title, color = ThemeState.text,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
-            // מונה שלילי = לקובייה אין מספר (למשל "במכשיר שלי", שנספר רק
-            // אחרי סריקה). שורה ריקה במקומו שומרת על גובה אחיד ברשת.
-            Text(
-                if (count >= 0) "$count פריטים" else " ",
-                color = ThemeState.subtext, style = MaterialTheme.typography.labelSmall,
-            )
-        }
-    }
-}
 
 @Composable
 private fun CreatePlaylistDialog(onCreate: (String) -> Unit, onDismiss: () -> Unit) {
