@@ -5,8 +5,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -89,6 +91,7 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
         mutableStateOf(com.filtertube.app.data.ApprovedChannels(emptyList()))
     }
     var requestFor by remember { mutableStateOf<Video?>(null) }
+    var showGreyDetail by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         approved = com.filtertube.app.data.ApprovedChannels(
             runCatching {
@@ -124,10 +127,16 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
                 SourceTab("יוטיוב מיוזיק ($musicCount)", musicSource) { musicSource = true }
             }
             if (greyed > 0) {
+                // לחיצה על השורה פותחת את הפירוט. בלי זה "למה זה אפור" הוא
+                // שאלה שאי אפשר לענות עליה מהמסך — רואים שהשיר אפור אבל לא
+                // איזה ערוץ העלה אותו ומה המזהה שלו.
                 Text(
-                    "$greyed באפור — מערוצים שלא אושרו. לחיצה עליהם שולחת בקשה להוסיף.",
+                    "$greyed באפור — מערוצים שלא אושרו. לחיצה עליהם שולחת בקשה להוסיף." +
+                        "  ·  הקש כאן לפירוט",
                     color = ThemeState.subtext2, fontSize = 12.sp, lineHeight = 17.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 2.dp)
+                        .clickable { showGreyDetail = true },
                 )
             }
         }
@@ -165,6 +174,74 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
             prefillUrl = "https://www.youtube.com/channel/${target.channelId}",
         )
     }
+
+    if (showGreyDetail) {
+        GreyChannelsDialog(
+            rows = approved.unapproved(videos),
+            onDismiss = { showGreyDetail = false },
+        )
+    }
+}
+
+/**
+ * מי בדיוק אפור, ולמה.
+ *
+ * ## למה זה קיים
+ * "הרבה שירים מערוצים מאושרים מוצגים אפור" היא תלונה שאי אפשר לחקור בלי
+ * לדעת מה *באמת* כתוב על הפריטים האלה. מסך שמראה רק אפור אינו מספר אם
+ * הערוץ הוא ערוץ Topic אוטומטי, ערוץ עם שם שונה במעט, או ערוץ שפשוט אינו
+ * ברשימה. שלוש הסיבות נראות זהות למשתמש ודורשות שלושה תיקונים שונים.
+ *
+ * השם והמזהה מוצגים כטקסט שניתן להעתיק, כך שאפשר לשלוח אותם ולתקן לפי
+ * נתונים במקום לפי ניחוש.
+ */
+@Composable
+private fun GreyChannelsDialog(
+    rows: List<Triple<String, String, Int>>,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val report = remember(rows) {
+        rows.joinToString("\n") { (name, id, count) -> "$count · $name · $id" }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = ThemeState.surface,
+        title = {
+            Text("ערוצים שאינם מאושרים (${rows.size})", color = ThemeState.text, fontSize = 17.sp)
+        },
+        text = {
+            Column(modifier = Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
+                Text(
+                    "אלה הערוצים שהעלו את הפריטים האפורים. אם ערוץ כאן אמור " +
+                        "להיות מאושר — שלח את הרשימה ואפשר לתקן לפי המזהה.",
+                    color = ThemeState.subtext, fontSize = 12.sp, lineHeight = 17.sp,
+                )
+                Spacer(Modifier.height(10.dp))
+                rows.forEach { (name, id, count) ->
+                    Text(
+                        name.ifBlank { "(ללא שם)" },
+                        color = ThemeState.text, fontSize = 13.5.sp, fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        "$count פריטים · ${id.ifBlank { "ללא מזהה" }}",
+                        color = ThemeState.subtext, fontSize = 11.5.sp,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val clip = context.getSystemService(android.content.ClipboardManager::class.java)
+                clip?.setPrimaryClip(android.content.ClipData.newPlainText("ערוצים אפורים", report))
+                android.widget.Toast.makeText(context, "הועתק", android.widget.Toast.LENGTH_SHORT).show()
+            }) { Text("העתק", color = ThemeState.accent) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("סגור", color = ThemeState.subtext2) }
+        },
+    )
 }
 
 /** מתג מקור בתוך מסך אוסף — למשל לייקים של FilterTube מול לייקים של יוטיוב. */
