@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.Swipe
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.CloudDone
@@ -98,6 +99,7 @@ fun SettingsScreen(
     var showNotify by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var showShare by remember { mutableStateOf(false) }
+    var showGestures by remember { mutableStateOf(false) }
     var showCloud by remember { mutableStateOf(false) }
     val isAdmin = FirebaseAuth.getInstance().currentUser?.email
         ?.equals("ywldyld@gmail.com", ignoreCase = true) == true
@@ -152,6 +154,8 @@ fun SettingsScreen(
         GroupCard {
             GroupRow(Icons.Rounded.GraphicEq, Tint.green, "נגן ושמע",
                 subtitle = "עיצוב הנגן ואיכות") { showPlayerAudio = true }
+            GroupRow(Icons.Rounded.Swipe, Tint.violet, "מחוות בנגן",
+                subtitle = "החלקה להחלפת שיר ולסגירת הנגן") { showGestures = true }
             GroupRow(Icons.Rounded.Download, Tint.teal, "מנהל הורדות",
                 subtitle = "הורדת לייקים · מהירות · הורדות במקביל", last = true) { onOpenDownloads() }
         }
@@ -187,6 +191,7 @@ fun SettingsScreen(
 
 
     if (showShare) ShareAppSheet { showShare = false }
+    if (showGestures) GestureSheet { showGestures = false }
 
     gateTarget?.let { target ->
         FilterGateDialog(
@@ -920,6 +925,100 @@ private fun NotificationsDialog(settings: SettingsStore, onDismiss: () -> Unit) 
 }
 
 // ── עדכונים ──────────────────────────────────────────────────────────────
+/**
+ * מחוות בנגן — ארבעה מתגים, שניים לכל נגן.
+ *
+ * ## למה לא מתג אחד לשניהם
+ * הנגן של FilterMusic והנגן של FilterTube הם שני שימושים שונים. במוזיקה
+ * החלקה היא הדרך הטבעית להחליף שיר — המסך ממילא לא מציג כלום שצריך לגעת
+ * בו. בווידאו אותה תנועה עוברת מעל תמונה שהמשתמש דווקא מסתכל בה, ויש מי
+ * שירצה אותה שם ומי שלא. מתג אחד היה מכריח לוותר על אחד בשביל השני.
+ *
+ * ## למה הן דולקות כברירת מחדל
+ * מחווה שאי אפשר לגלות במקרה שווה מעט מאוד: אף אחד לא נכנס להגדרות כדי
+ * להדליק משהו שהוא לא יודע שקיים. מי שתנועה מקרית מפריעה לו יכבה כאן.
+ */
+@Composable
+private fun GestureSheet(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val settings = remember { SettingsStore(context) }
+    var musicTrack by remember { mutableStateOf(settings.musicSwipeTrack) }
+    var musicDismiss by remember { mutableStateOf(settings.musicSwipeDismiss) }
+    var videoTrack by remember { mutableStateOf(settings.videoSwipeTrack) }
+    var videoDismiss by remember { mutableStateOf(settings.videoSwipeDismiss) }
+
+    SettingsSheet("מחוות בנגן", onDismiss) {
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+            Text(
+                "השינוי נכנס לתוקף בפתיחה הבאה של הנגן.",
+                color = ThemeState.subtext2, fontSize = 11.5.sp,
+            )
+            Spacer(Modifier.height(16.dp))
+
+            Text("FilterMusic", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            GestureToggle(
+                title = "החלקה להחלפת שיר",
+                subtitle = "ימינה — השיר הבא · שמאלה — השיר הקודם",
+                checked = musicTrack,
+            ) { musicTrack = it; settings.musicSwipeTrack = it }
+            Spacer(Modifier.height(10.dp))
+            GestureToggle(
+                title = "החלקה למטה סוגרת את הנגן",
+                subtitle = "מושכים את המסך למטה במקום ללחוץ על החץ",
+                checked = musicDismiss,
+            ) { musicDismiss = it; settings.musicSwipeDismiss = it }
+
+            HorizontalDivider(color = ThemeState.divider, modifier = Modifier.padding(vertical = 18.dp))
+
+            Text("FilterTube", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            GestureToggle(
+                title = "החלקה להחלפת סרטון",
+                subtitle = "ימינה — הבא בתור · שמאלה — הקודם",
+                checked = videoTrack,
+            ) { videoTrack = it; settings.videoSwipeTrack = it }
+            Spacer(Modifier.height(10.dp))
+            GestureToggle(
+                title = "החלקה למטה מכווצת את הנגן",
+                subtitle = "הניגון ממשיך במיני-נגן שלמטה",
+                checked = videoDismiss,
+            ) { videoDismiss = it; settings.videoSwipeDismiss = it }
+
+            Spacer(Modifier.height(20.dp))
+            Text(
+                "דאבל-טאפ על הסרטון לדילוג של 10 שניות אחורה או קדימה עובד תמיד, " +
+                    "ואינו מושפע מהמתגים כאן.",
+                color = ThemeState.subtext2, fontSize = 11.sp, lineHeight = 16.sp,
+            )
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun GestureToggle(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(subtitle, color = ThemeState.subtext, fontSize = 11.sp, lineHeight = 15.sp)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White, checkedTrackColor = ThemeState.accent,
+                uncheckedThumbColor = ThemeState.subtext, uncheckedTrackColor = ThemeState.divider,
+            ),
+        )
+    }
+}
+
 /**
  * שיתוף האפליקציה — שלוש דרכים, כי "לשתף" זה לא דבר אחד.
  *

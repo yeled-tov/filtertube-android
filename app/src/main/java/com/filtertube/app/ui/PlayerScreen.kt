@@ -21,6 +21,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import com.filtertube.app.ui.theme.playerSwipeGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -460,7 +461,14 @@ private fun VideoSurface(controller: MediaController) {
     )
 }
 
-/** מחוות על משטח הוידאו: טאפ יחיד (להצגת בקרים), דאבל-טאפ לדילוג, החלקה למטה למזעור הנגן. */
+/**
+ * מחוות על משטח הוידאו: טאפ יחיד (להצגת בקרים), דאבל-טאפ לדילוג, החלקה
+ * ימינה/שמאלה לסרטון הבא/הקודם בתור, והחלקה למטה למזעור הנגן.
+ *
+ * שתי המחוות האחרונות נשלטות מההגדרות בנפרד מאלה של FilterMusic: צפייה
+ * בווידאו ושמיעת מוזיקה הן שני שימושים שונים, ומי שרוצה מחווה באחד לא
+ * בהכרח רוצה אותה בשני.
+ */
 @Composable
 private fun VideoGestures(
     controller: MediaController,
@@ -469,6 +477,8 @@ private fun VideoGestures(
     onSingleTap: (() -> Unit)? = null,
     onSwipeDown: (() -> Unit)? = null,
 ) {
+    val gestureContext = androidx.compose.ui.platform.LocalContext.current
+    val settings = remember { com.filtertube.app.data.SettingsStore(gestureContext) }
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
     var feedback by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(feedback) { if (feedback != null) { kotlinx.coroutines.delay(800); feedback = null } }
@@ -488,14 +498,21 @@ private fun VideoGestures(
                     },
                 )
             }
-            .pointerInput(onSwipeDown) {
-                val cb = onSwipeDown ?: return@pointerInput
-                var total = 0f
-                detectVerticalDragGestures(
-                    onDragEnd = { if (total > 180f) cb(); total = 0f },
-                    onVerticalDrag = { _, dy -> total += dy },
-                )
-            },
+            .playerSwipeGestures(
+                tracksEnabled = settings.videoSwipeTrack,
+                dismissEnabled = settings.videoSwipeDismiss && onSwipeDown != null,
+                onNext = {
+                    if (controller.hasNextMediaItem()) {
+                        controller.seekToNextMediaItem(); feedback = "⏭ הבא"
+                    }
+                },
+                onPrevious = {
+                    if (controller.hasPreviousMediaItem()) {
+                        controller.seekToPreviousMediaItem(); feedback = "⏮ הקודם"
+                    }
+                },
+                onDismiss = { onSwipeDown?.invoke() },
+            ),
     ) {
         feedback?.let {
             Text(it, color = ThemeState.text, fontSize = 16.sp, fontWeight = FontWeight.Bold,

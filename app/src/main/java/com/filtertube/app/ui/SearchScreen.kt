@@ -74,13 +74,17 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
         channels = runCatching {
             ChannelsRepository.getChannels(context).forLevel(settings.filterLevel, settings.userGender)
         }.getOrNull().orEmpty()
-        localPool = runCatching {
-            val store = com.filtertube.app.data.LibraryStore(context)
-            (
-                com.filtertube.app.data.FeedCache.loadFeed(context).orEmpty() +
-                    store.likes() + store.localHistory() + store.downloads()
-                ).distinctBy { it.id }
-        }.getOrDefault(emptyList())
+        // על IO ולא על תהליכון ה-UI: שלוש הקריאות האלה מפענחות JSON של מאות
+        // פריטים, ובמסך חיפוש זה קורה בדיוק ברגע שהמשתמש מתחיל להקליד.
+        localPool = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val store = com.filtertube.app.data.LibraryStore(context)
+                (
+                    com.filtertube.app.data.FeedCache.loadFeed(context).orEmpty() +
+                        store.likes() + store.localHistory() + store.downloads()
+                    ).distinctBy { it.id }
+            }.getOrDefault(emptyList())
+        }
     }
 
     /** התאמות מיידיות מהמאגר המקומי — מוצגות מעל ההצעות בזמן ההקלדה. */

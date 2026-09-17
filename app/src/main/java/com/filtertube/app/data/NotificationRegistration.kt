@@ -7,7 +7,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
@@ -17,7 +16,10 @@ object NotificationRegistration {
     private const val TAG = "NotificationRegistration"
     private const val API =
         "https://europe-west1-filter-tube-52d8e.cloudfunctions.net/registerNotificationToken"
-    private val http = OkHttpClient()
+    // נגזר מהלקוח המשותף ולא מופע חדש: מופע נפרד מחזיק מאגר חיבורים
+    // ומאגר תהליכונים משלו, ופותח חיבור TLS חדש גם כשכבר יש אחד פתוח
+    // לאותו מארח.
+    private val http = Http.newBuilder().build()
 
     suspend fun registerIfPossible() = withContext(Dispatchers.IO) {
         val user = FirebaseAuth.getInstance().currentUser?.takeIf { it.isEmailVerified } ?: return@withContext

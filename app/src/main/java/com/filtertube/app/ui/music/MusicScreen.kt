@@ -159,12 +159,17 @@ fun FilterMusicScreen(
         //
         // musicOnly הוא מה שמפריד: שיעור תורה שסומן בלב לא ייכנס לכאן גם
         // אם הוא ברשימת הלייקים, כי הערוץ שלו אינו ערוץ מוזיקה.
-        likes = (
+        // הקריאות לספרייה עוברות ל-IO: הן פותחות SharedPreferences ומפענחות
+        // JSON של מאות פריטים, ועל תהליכון ה-UI זה בדיוק מה שנראה כמו
+        // לשונית שנתקעת לרגע בכניסה אליה.
+        likes = withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching { store.musicLikes() }.getOrNull().orEmpty() +
                 runCatching { store.youtubeLikes() }.getOrNull().orEmpty() +
                 runCatching { store.likes() }.getOrNull().orEmpty()
-            ).musicOnly()
-        history = runCatching { store.localHistory() }.getOrNull().orEmpty().musicOnly()
+        }.musicOnly()
+        history = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { store.localHistory() }.getOrNull().orEmpty()
+        }.musicOnly()
         favorites = runCatching { settings.favoriteArtists }.getOrNull().orEmpty()
         // הסמלים של הערוצים — נמשכים בהדרגה ונשמרים לתמיד. בלעדיהם עיגול
         // האמן ריק, וזו בדיוק התלונה על "אות באנגלית במקום התמונה".
@@ -177,8 +182,9 @@ fun FilterMusicScreen(
         // גשר ה-Topic: ערוץ Topic אינו מוצג כאמן נפרד אלא נספר לאמן שלו.
         artists = channels.filter { it.category in MUSIC_CATEGORIES }
             .sortedByDescending { it.youtubeChannelId in favorites }
-        downloads = runCatching { store.downloads() }.getOrNull().orEmpty()
-            .filter { it.localUri.isNotBlank() }
+        downloads = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { store.downloads() }.getOrNull().orEmpty()
+        }.filter { it.localUri.isNotBlank() }
 
         // ── המיקסים ───────────────────────────────────────────────────────
         // נבנים מהנתונים שכבר בזיכרון, על תהליכון רקע: זו עבודת מיון וסינון
@@ -211,8 +217,9 @@ fun FilterMusicScreen(
     val finishedCount = com.filtertube.app.data.DownloadEngine.active.count { it.progress >= 100 }
     LaunchedEffect(finishedCount) {
         if (finishedCount > 0) {
-            downloads = runCatching { store.downloads() }.getOrNull().orEmpty()
-                .filter { it.localUri.isNotBlank() }
+            downloads = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { store.downloads() }.getOrNull().orEmpty()
+            }.filter { it.localUri.isNotBlank() }
         }
     }
 

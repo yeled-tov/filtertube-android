@@ -10,7 +10,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
@@ -30,7 +29,8 @@ object FirebaseBilling {
         "https://europe-west1-filter-tube-52d8e.cloudfunctions.net/billingStatus"
     private const val TRIAL_STATUS =
         "https://europe-west1-filter-tube-52d8e.cloudfunctions.net/trialStatus"
-    private val client = OkHttpClient()
+    // נגזר מהלקוח המשותף — ראה Http: מופע נפרד לא חולק חיבורים פתוחים.
+    private val client = Http.newBuilder().build()
 
     data class Result(val ok: Boolean, val message: String, val url: String? = null)
     private data class UserToken(val uid: String, val token: String)

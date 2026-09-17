@@ -1,9 +1,12 @@
 package com.filtertube.app.ui.music
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -11,15 +14,12 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Repeat
-import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
@@ -34,6 +34,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.MediaItem
@@ -41,9 +43,12 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.LibraryStore
+import com.filtertube.app.data.SettingsStore
+import com.filtertube.app.ui.theme.playerSwipeGestures
 import com.filtertube.app.data.Video
 import com.filtertube.app.ui.PlayerUiState
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 /**
  * נגן FilterMusic — פריסת YouTube Music / Metrolist.
@@ -66,6 +71,18 @@ fun MusicPlayerScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val store = remember { LibraryStore(context) }
     val scope = rememberCoroutineScope()
+    val settings = remember { SettingsStore(context) }
+    val swipeTracks = remember { settings.musicSwipeTrack }
+    val swipeDismiss = remember { settings.musicSwipeDismiss }
+
+    // ── משוב למחווה ───────────────────────────────────────────────────────
+    // התוכן זז עם האצבע, וחוזר למקומו בקפיץ כשמשחררים. בלי זה המחווה
+    // מרגישה כמו הימור: או שמשהו קרה או שלא, ואין שום סימן באמצע.
+    //
+    // Animatable ולא state רגיל: הערך נקרא **רק בתוך offset{}**, כלומר
+    // בשלב הפריסה ולא בקומפוזיציה. גרירה מזיזה את המסך בלי לבנות מחדש את
+    // הכריכה, הכותרת והבקרים שישים פעם בשנייה.
+    val shift = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
     var showQueue by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var liked by remember(ui.mediaId) {
@@ -101,7 +118,18 @@ fun MusicPlayerScreen(
     // התלונה "לא רואים כפתור עצירה, לא רואים את התור, התמונה תופסת הכול".
     //
     // עכשיו הגובה הפנוי ידוע, והכריכה מקבלת את מה שנשאר ולא יותר.
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize().background(ThemeState.bg)
+            .playerSwipeGestures(
+                tracksEnabled = swipeTracks,
+                dismissEnabled = swipeDismiss,
+                onNext = { controller?.seekToNextMediaItem() },
+                onPrevious = { controller?.seekToPreviousMediaItem() },
+                onDismiss = onCollapse,
+                onDrag = { x, y -> scope.launch { shift.snapTo(Offset(x, y)) } },
+                onDragFinished = { scope.launch { shift.animateTo(Offset.Zero) } },
+            ),
+    ) {
     val compact = maxHeight < 680.dp
     val sidePad = if (compact) 18.dp else MusicDim.playerPadding
     val gapL = if (compact) 14.dp else 28.dp
@@ -110,6 +138,7 @@ fun MusicPlayerScreen(
 
     Column(
         modifier = Modifier.fillMaxSize()
+            .offset { IntOffset(shift.value.x.roundToInt(), shift.value.y.roundToInt()) }
             .statusBarsPadding().navigationBarsPadding(),
     ) {
         Row(
