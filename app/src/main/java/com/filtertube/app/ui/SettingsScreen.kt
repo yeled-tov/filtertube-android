@@ -155,7 +155,7 @@ fun SettingsScreen(
             GroupRow(Icons.Rounded.GraphicEq, Tint.green, "נגן ושמע",
                 subtitle = "עיצוב הנגן ואיכות") { showPlayerAudio = true }
             GroupRow(Icons.Rounded.Swipe, Tint.violet, "מחוות בנגן",
-                subtitle = "החלקה להחלפת שיר ולסגירת הנגן") { showGestures = true }
+                subtitle = "החלפת שיר, סגירת הנגן, והמיני-נגן") { showGestures = true }
             GroupRow(Icons.Rounded.Download, Tint.teal, "מנהל הורדות",
                 subtitle = "הורדת לייקים · מהירות · הורדות במקביל", last = true) { onOpenDownloads() }
         }
@@ -946,6 +946,8 @@ private fun GestureSheet(onDismiss: () -> Unit) {
     var musicDismiss by remember { mutableStateOf(settings.musicSwipeDismiss) }
     var videoTrack by remember { mutableStateOf(settings.videoSwipeTrack) }
     var videoDismiss by remember { mutableStateOf(settings.videoSwipeDismiss) }
+    var miniSwipe by remember { mutableStateOf(settings.miniPlayerSwipe) }
+    var miniRestart by remember { mutableStateOf(settings.miniSwipeRightRestarts) }
 
     SettingsSheet("מחוות בנגן", onDismiss) {
         Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
@@ -959,7 +961,7 @@ private fun GestureSheet(onDismiss: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             GestureToggle(
                 title = "החלקה להחלפת שיר",
-                subtitle = "ימינה — השיר הבא · שמאלה — השיר הקודם",
+                subtitle = "שמאלה — השיר הבא · ימינה — השיר הקודם",
                 checked = musicTrack,
             ) { musicTrack = it; settings.musicSwipeTrack = it }
             Spacer(Modifier.height(10.dp))
@@ -975,7 +977,7 @@ private fun GestureSheet(onDismiss: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             GestureToggle(
                 title = "החלקה להחלפת סרטון",
-                subtitle = "ימינה — הבא בתור · שמאלה — הקודם",
+                subtitle = "שמאלה — הבא בתור · ימינה — הקודם",
                 checked = videoTrack,
             ) { videoTrack = it; settings.videoSwipeTrack = it }
             Spacer(Modifier.height(10.dp))
@@ -984,6 +986,28 @@ private fun GestureSheet(onDismiss: () -> Unit) {
                 subtitle = "הניגון ממשיך במיני-נגן שלמטה",
                 checked = videoDismiss,
             ) { videoDismiss = it; settings.videoSwipeDismiss = it }
+
+            HorizontalDivider(color = ThemeState.divider, modifier = Modifier.padding(vertical = 18.dp))
+
+            // ── המיני-נגן ─────────────────────────────────────────────────
+            // המחוות כאן היו קיימות בקוד מהיום הראשון, אבל לא היה להן שום
+            // מתג במסך — כלומר אי אפשר היה לכבות אותן, ומי שהחליק בטעות
+            // ועצר את הניגון לא יכול היה לעשות עם זה כלום.
+            Text("המיני-נגן", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            GestureToggle(
+                title = "החלקה על המיני-נגן",
+                subtitle = "שמאלה — הבא · ימינה — הקודם · גרירה למטה עוצרת לגמרי",
+                checked = miniSwipe,
+            ) { miniSwipe = it; settings.miniPlayerSwipe = it }
+            if (miniSwipe) {
+                Spacer(Modifier.height(10.dp))
+                GestureToggle(
+                    title = "החלקה ימינה מתחילה את השיר מחדש",
+                    subtitle = "במקום לעבור לשיר הקודם",
+                    checked = miniRestart,
+                ) { miniRestart = it; settings.miniSwipeRightRestarts = it }
+            }
 
             Spacer(Modifier.height(20.dp))
             Text(

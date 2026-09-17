@@ -256,7 +256,7 @@ class SettingsStore(context: Context) {
     // כל נגן נשלט בנפרד, ואף אחד לא צריך לכבות מחווה שהוא כן רוצה כדי
     // להיפטר מאחת שהוא לא.
 
-    /** FilterMusic: החלקה ימינה = השיר הבא, שמאלה = הקודם. */
+    /** FilterMusic: החלקה שמאלה = השיר הבא, ימינה = הקודם. */
     var musicSwipeTrack: Boolean
         get() = prefs.getBoolean(KEY_MUSIC_SWIPE_TRACK, true)
         set(value) = prefs.edit().putBoolean(KEY_MUSIC_SWIPE_TRACK, value).apply()
@@ -266,7 +266,7 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_MUSIC_SWIPE_DISMISS, true)
         set(value) = prefs.edit().putBoolean(KEY_MUSIC_SWIPE_DISMISS, value).apply()
 
-    /** FilterTube: החלקה ימינה/שמאלה מעבירה לסרטון הבא/הקודם בתור. */
+    /** FilterTube: החלקה שמאלה/ימינה מעבירה לסרטון הבא/הקודם בתור. */
     var videoSwipeTrack: Boolean
         get() = prefs.getBoolean(KEY_VIDEO_SWIPE_TRACK, true)
         set(value) = prefs.edit().putBoolean(KEY_VIDEO_SWIPE_TRACK, value).apply()

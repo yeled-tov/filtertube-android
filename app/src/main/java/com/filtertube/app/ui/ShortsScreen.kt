@@ -77,7 +77,10 @@ fun ShortsScreen(onOpenShort: () -> Unit, onSearch: () -> Unit) {
         if (showSpinner) state = ShortsState.Loading
         scope.launch {
             try {
-                val channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
+                // גם המגדר, לא רק הרמה: זה היה מסך ה*יחיד* שסינן לפי רמה
+                // בלבד, ולכן שורטס הציג ערוצים שכל שאר האפליקציה הסתירה.
+                val channels = ChannelsRepository.getChannels(context)
+                    .forLevel(settings.filterLevel, settings.userGender)
                 val shorts = YouTubeRepository.fetchShorts(channels)
                 if (shorts.isNotEmpty()) {
                     FeedCache.saveShorts(context, shorts)
