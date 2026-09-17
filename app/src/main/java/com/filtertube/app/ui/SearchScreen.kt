@@ -10,10 +10,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.NorthWest
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.NorthWest
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -64,10 +64,42 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
     var searching by remember { mutableStateOf("") }
     var showRequest by remember { mutableStateOf(false) }
 
+    // ── מאגר מקומי לתוצאות מיידיות ────────────────────────────────────────
+    // הפיד השמור והספרייה כבר במכשיר, ולכן אפשר להראות סרטון מתאים באותו
+    // רגע שמקלידים — בלי רשת ובלי המתנה. זה מה שהופך את החיפוש לתחושה של
+    // "הוא כבר יודע מה אני רוצה" במקום טופס שממלאים ושולחים.
+    var localPool by remember { mutableStateOf<List<Video>>(emptyList()) }
+
     LaunchedEffect(Unit) {
         channels = runCatching {
             ChannelsRepository.getChannels(context).forLevel(settings.filterLevel, settings.userGender)
         }.getOrNull().orEmpty()
+        // על IO ולא על תהליכון ה-UI: שלוש הקריאות האלה מפענחות JSON של מאות
+        // פריטים, ובמסך חיפוש זה קורה בדיוק ברגע שהמשתמש מתחיל להקליד.
+        localPool = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val store = com.filtertube.app.data.LibraryStore(context)
+                (
+                    com.filtertube.app.data.FeedCache.loadFeed(context).orEmpty() +
+                        store.likes() + store.localHistory() + store.downloads()
+                    ).distinctBy { it.id }
+            }.getOrDefault(emptyList())
+        }
+    }
+
+    /** התאמות מיידיות מהמאגר המקומי — מוצגות מעל ההצעות בזמן ההקלדה. */
+    val instant = remember(localPool, query) {
+        val q = query.trim()
+        if (q.length < 2) {
+            emptyList()
+        } else {
+            localPool.asSequence()
+                .filter { it.id !in com.filtertube.app.data.LibraryBadges.blocked }
+                .filter { it.title.contains(q, true) || it.channelName.contains(q, true) }
+                .distinctBy { it.id }
+                .take(6)
+                .toList()
+        }
     }
 
     // השלמה אוטומטית: קודם שמות ערוצים מאושרים (מיידי, מקומי), ואז הצעות יוטיוב.
@@ -139,11 +171,11 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
                 onValueChange = { query = it; state = SearchState.Idle },
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("חפש בערוצים המאושרים...", color = ThemeState.subtext) },
-                leadingIcon = { Icon(Icons.Default.Search, null, tint = ThemeState.subtext) },
+                leadingIcon = { Icon(Icons.Rounded.Search, null, tint = ThemeState.subtext) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
                         IconButton(onClick = { query = ""; state = SearchState.Idle }) {
-                            Icon(Icons.Default.Close, "נקה", tint = ThemeState.subtext)
+                            Icon(Icons.Rounded.Close, "נקה", tint = ThemeState.subtext)
                         }
                     }
                 },
@@ -170,14 +202,21 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
                     onPick = { query = it; runSearch(it) },
                     onRemove = { settings.removeSearchQuery(it); history = settings.getSearchHistory() },
                     onClear = { settings.clearSearchHistory(); history = emptyList() },
-                ) else SuggestionsList(suggestions, query) { picked -> query = picked; runSearch(picked) }
+                ) else InstantResults(
+                    videos = instant,
+                    suggestions = suggestions,
+                    query = query,
+                    onVideoClick = onVideoClick,
+                    onPickSuggestion = { picked -> query = picked; runSearch(picked) },
+                    onSearchAll = { runSearch(query) },
+                )
             is SearchState.Loading -> CenteredLoading("מחפש \"$searching\"…")
             is SearchState.Empty -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.padding(24.dp),
                 ) {
-                    Icon(Icons.Default.Search, null, tint = ThemeState.subtext, modifier = Modifier.size(44.dp))
+                    Icon(Icons.Rounded.Search, null, tint = ThemeState.subtext, modifier = Modifier.size(44.dp))
                     Spacer(Modifier.height(12.dp))
                     Text("לא נמצאו סרטונים ל\"$query\"", color = ThemeState.text, fontSize = 15.sp,
                         fontWeight = FontWeight.Bold)
@@ -201,7 +240,12 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
             ) {
-                items(s.videos, key = { it.id }) { video ->
+                // החסומים יוצאים גם מהחיפוש: "אל תציג לי את זה יותר" חייב
+                // להיות נכון בכל מסך, אחרת הוא רק מזיז את הסרטון למקום אחר.
+                items(
+                    s.videos.filter { it.id !in com.filtertube.app.data.LibraryBadges.blocked },
+                    key = { it.id },
+                ) { video ->
                     VideoRow(video, onClick = { onVideoClick(video) })
                 }
             }
@@ -210,39 +254,87 @@ fun SearchScreen(onVideoClick: (Video) -> Unit) {
 }
 
 /**
- * הצעות השלמה — לא תוצאות חיפוש.
+ * תוצאות מיידיות בזמן הקלדה, ומעליהן ההצעות.
  *
- * בלי הכותרת והחץ הרשימה הזו נראתה כמו רשימת התוצאות עצמה, והמשתמש חשב
- * שהחיפוש כבר רץ ושהלחיצה שלו לא עושה כלום.
+ * ## למה סרטון ולא רק טקסט
+ * הצעת השלמה היא מילה שצריך ללחוץ עליה, לחכות, ורק אז לראות אם התכוונת
+ * לזה. כשהתוצאה עצמה כבר על המסך — עם התמונה ועם שם הערוץ — אין שלב
+ * ביניים: מקלידים שתי אותיות ולוחצים על השיר. זה מה שנבנה קודם ב-FilterMusic,
+ * וזה עובד מספיק טוב כדי שיהיה גם כאן.
+ *
+ * המאגר מקומי (הפיד השמור והספרייה), ולכן זה מיידי ועובד גם בלי רשת. מה
+ * שלא נמצא בו מגיע מהחיפוש המלא — ולכן שורת "חפש את הכל" נשארת תמיד.
  */
 @Composable
-private fun SuggestionsList(suggestions: List<String>, query: String, onPick: (String) -> Unit) {
-    if (suggestions.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("מקליד…", color = ThemeState.subtext, fontSize = 13.sp)
-        }
-        return
-    }
-    Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            "הצעות — הקש כדי לחפש",
-            color = ThemeState.subtext2, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        )
-        LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
-            items(suggestions) { s ->
+private fun InstantResults(
+    videos: List<Video>,
+    suggestions: List<String>,
+    query: String,
+    onVideoClick: (Video) -> Unit,
+    onPickSuggestion: (String) -> Unit,
+    onSearchAll: () -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 96.dp),
+    ) {
+        if (videos.isNotEmpty()) {
+            item {
+                Text(
+                    "מהספרייה שלך",
+                    color = ThemeState.subtext,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(start = 18.dp, top = 12.dp, bottom = 4.dp),
+                )
+            }
+            items(videos, key = { "inst_${it.id}" }) { video ->
+                VideoRow(video, onClick = { onVideoClick(video) })
+            }
+            item {
+                // הדרך לחיפוש המלא נשארת גלויה: התוצאות המיידיות הן קיצור
+                // דרך למה שכבר במכשיר, לא תחליף לחיפוש עצמו.
                 Row(
-                    modifier = Modifier.fillMaxWidth().clickable { onPick(s) }
-                        .padding(horizontal = 16.dp, vertical = 13.dp),
+                    modifier = Modifier.fillMaxWidth()
+                        .clickable(onClick = onSearchAll)
+                        .padding(horizontal = 18.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.Search, null, tint = ThemeState.subtext, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(14.dp))
-                    Text(s, color = ThemeState.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    Icon(
-                        Icons.Default.NorthWest, "חפש את זה",
-                        tint = ThemeState.subtext, modifier = Modifier.size(16.dp),
+                    Icon(Icons.Rounded.Search, null, tint = ThemeState.accent,
+                        modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "חפש \"$query\" בכל הערוצים המאושרים",
+                        color = ThemeState.accent,
+                        style = MaterialTheme.typography.titleSmall,
                     )
+                }
+                HorizontalDivider(color = ThemeState.divider)
+            }
+        }
+        if (suggestions.isNotEmpty()) {
+            item {
+                Text(
+                    "הצעות",
+                    color = ThemeState.subtext,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(start = 18.dp, top = 12.dp, bottom = 4.dp),
+                )
+            }
+            items(suggestions, key = { "sug_$it" }) { suggestion ->
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .clickable { onPickSuggestion(suggestion) }
+                        .padding(horizontal = 18.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Search, null, tint = ThemeState.subtext,
+                        modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text(suggestion, color = ThemeState.text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f))
+                    Icon(Icons.Rounded.NorthWest, null, tint = ThemeState.subtext,
+                        modifier = Modifier.size(15.dp))
                 }
             }
         }
@@ -259,7 +351,7 @@ private fun SearchHistory(
     if (history.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Search, null, tint = Color(0xFF444444), modifier = Modifier.size(48.dp))
+                Icon(Icons.Rounded.Search, null, tint = Color(0xFF444444), modifier = Modifier.size(48.dp))
                 Spacer(Modifier.height(12.dp))
                 Text("חפש סרטונים בערוצים המאושרים", color = ThemeState.subtext, fontSize = 14.sp)
             }
@@ -280,11 +372,11 @@ private fun SearchHistory(
                     modifier = Modifier.fillMaxWidth().clickable { onPick(q) }.padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.History, null, tint = ThemeState.subtext, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Rounded.History, null, tint = ThemeState.subtext, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(12.dp))
                     Text(q, color = ThemeState.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
                     IconButton(onClick = { onRemove(q) }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Close, "הסר", tint = Color(0xFF666666), modifier = Modifier.size(18.dp))
+                        Icon(Icons.Rounded.Close, "הסר", tint = Color(0xFF666666), modifier = Modifier.size(18.dp))
                     }
                 }
             }

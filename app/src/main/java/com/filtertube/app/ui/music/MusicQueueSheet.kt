@@ -6,9 +6,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DragHandle
-import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -74,12 +74,12 @@ fun MusicQueueSheet(
                     controller.shuffleModeEnabled = !controller.shuffleModeEnabled
                 }) {
                     Icon(
-                        Icons.Default.Shuffle, "ערבוב",
+                        Icons.Rounded.Shuffle, "ערבוב",
                         tint = if (controller.shuffleModeEnabled) ThemeState.accent else ThemeState.subtext2,
                     )
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, "סגור", tint = ThemeState.text)
+                    Icon(Icons.Rounded.Close, "סגור", tint = ThemeState.text)
                 }
             }
 
@@ -110,7 +110,7 @@ fun MusicQueueSheet(
                                         queue = queue.toMutableList().apply { removeAt(index) }
                                     }) {
                                         Icon(
-                                            Icons.Default.Close, "הסר מהתור",
+                                            Icons.Rounded.Close, "הסר מהתור",
                                             tint = ThemeState.subtext, modifier = Modifier.size(18.dp),
                                         )
                                     }
@@ -121,7 +121,7 @@ fun MusicQueueSheet(
                                     .padding(horizontal = 10.dp),
                             ) {
                                 Icon(
-                                    Icons.Default.DragHandle, "גרור",
+                                    Icons.Rounded.DragHandle, "גרור",
                                     tint = ThemeState.subtext, modifier = Modifier.size(22.dp),
                                 )
                             }

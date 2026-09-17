@@ -15,7 +15,10 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.channel.ChannelInfo
+import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo
+import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs
 import org.schabi.newpipe.extractor.search.SearchInfo
+import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.util.concurrent.TimeUnit
 
 /**
@@ -95,6 +98,64 @@ object ChannelAdmin {
                 null
             }
         }
+    }
+
+    /** סרטון בתצוגה המקדימה — מספיק כדי להבין מה יש בערוץ, בלי לפתוח אותו. */
+    data class PreviewVideo(
+        val id: String,
+        val title: String,
+        val thumbnail: String?,
+        val durationSec: Long,
+    )
+
+    /** מה שהמנהל רואה לפני שהוא מאשר: הערוץ עצמו, וגם מה באמת מתפרסם בו. */
+    data class Preview(
+        val resolved: Resolved,
+        val subscribers: Long,
+        val description: String,
+        val videos: List<PreviewVideo>,
+    )
+
+    /**
+     * תצוגה מקדימה של ערוץ — הפרטים שלו והסרטונים האחרונים בו.
+     *
+     * בקשת הוספה מגיעה עם שם וקישור בלבד, ומהם אי אפשר לדעת מה מתפרסם בערוץ.
+     * אישור על סמך שם הוא בדיוק מה שהרשימה הלבנה אמורה למנוע, ולכן המסך הזה
+     * מביא את הסרטונים עצמם.
+     *
+     * החילוץ נעשה דרך [resolveChannel] ואז שליפה נוספת של הערוץ: זו אמנם בקשת
+     * רשת שנייה, אבל היא רצה פעם אחת בלחיצה ידנית של המנהל, לא בלולאה.
+     * **לא זורק** — ערוץ שנפתח אך לא ניתן למשוך ממנו סרטונים יחזור עם רשימה
+     * ריקה, כדי שהמנהל עדיין יוכל לדחות או לפתוח ביוטיוב.
+     */
+    suspend fun previewChannel(input: String, max: Int = 12): Preview? = withContext(Dispatchers.IO) {
+        val resolved = resolveChannel(input) ?: return@withContext null
+        val info = runCatching { ChannelInfo.getInfo(ServiceList.YouTube, resolved.url) }.getOrNull()
+            ?: return@withContext Preview(resolved, -1L, "", emptyList())
+
+        val subscribers = runCatching { info.subscriberCount }.getOrDefault(-1L)
+        val description = runCatching { info.description ?: "" }.getOrDefault("")
+        val videos = runCatching {
+            val tab = info.tabs.firstOrNull { it.contentFilters.contains(ChannelTabs.VIDEOS) }
+                ?: info.tabs.firstOrNull()
+                ?: return@runCatching emptyList<PreviewVideo>()
+            ChannelTabInfo.getInfo(ServiceList.YouTube, tab).relatedItems
+                .filterIsInstance<StreamInfoItem>()
+                .take(max)
+                .mapNotNull { item ->
+                    val id = Regex("(?:v=|/shorts/|youtu\\.be/)([\\w-]{11})").find(item.url ?: "")
+                        ?.groupValues?.get(1) ?: return@mapNotNull null
+                    PreviewVideo(
+                        id = id,
+                        title = item.name ?: "",
+                        thumbnail = runCatching { item.thumbnails?.maxByOrNull { it.height }?.url }.getOrNull()
+                            ?: "https://i.ytimg.com/vi/$id/mqdefault.jpg",
+                        durationSec = runCatching { item.duration }.getOrDefault(0L),
+                    )
+                }
+        }.getOrDefault(emptyList())
+
+        Preview(resolved, subscribers, description, videos)
     }
 
     private fun normalizeChannelUrl(input: String): String = when {

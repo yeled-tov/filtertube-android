@@ -22,7 +22,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddCircleOutline
+import androidx.compose.material.icons.rounded.AddCircleOutline
 import coil.compose.AsyncImage
 import com.filtertube.app.ThemeState
 import com.filtertube.app.data.Channel
@@ -72,7 +72,7 @@ fun ChannelsBrowseScreen(onBack: () -> Unit, onOpenChannel: (String, String) -> 
                     .padding(horizontal = 12.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Default.AddCircleOutline, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Icon(Icons.Rounded.AddCircleOutline, null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(5.dp))
                 Text("בקש ערוץ", color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
             }
@@ -261,7 +261,7 @@ fun ChannelRequestDialog(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
-                                Icons.Default.AddCircleOutline, null,
+                                Icons.Rounded.AddCircleOutline, null,
                                 tint = ThemeState.accent, modifier = Modifier.size(22.dp),
                             )
                             Spacer(Modifier.width(10.dp))

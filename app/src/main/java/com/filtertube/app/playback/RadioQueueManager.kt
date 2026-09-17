@@ -7,6 +7,7 @@ import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.Diagnostics
 import com.filtertube.app.data.PlaybackPriority
 import com.filtertube.app.data.FeedCache
+import com.filtertube.app.data.forLevel
 import com.filtertube.app.data.InnerTube
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.StreamRepository
@@ -184,9 +185,22 @@ object RadioQueueManager {
             val preferredQuality = settings.preferredQuality
 
             val channels = ChannelsRepository.getCachedChannelsFast(context)
-            val allowedIds = channels.map { it.youtubeChannelId }.toHashSet()
+            // ── מה מותר להיכנס לתור ───────────────────────────────────────
+            // forLevel ולא הרשימה הגולמית. בלעדיו תור הרדיו יכול היה למשוך
+            // ערוץ "דתי לייט" גם ברמה 1 או 2, ולהתעלם לגמרי מבחירת המגדר —
+            // וזה המסלול שמנגן **אוטומטית**, בלי שהמשתמש בוחר כל פריט.
+            // כלומר בדיוק המקום שבו פריצה כזו הכי לא נראית.
+            val allowedIds = channels
+                .forLevel(level, settings.userGender)
+                .mapTo(HashSet()) { it.youtubeChannelId }
+            // catById נשאר מהרשימה המלאה: הוא מכריע אם התוכן מוגבל לאודיו,
+            // וקטגוריה חסרה הייתה מבטלת את ההגבלה במקום להחמיר בה.
             val catById = channels.associate { it.youtubeChannelId to it.category }
             val currentCat = catById[currentVideo.channelId]
+            // סרטון שהמשתמש חסם לעצמו לא חוזר דרך הדלת האחורית של התור.
+            val blocked = runCatching {
+                com.filtertube.app.data.LibraryStore(context).blockedIds()
+            }.getOrNull().orEmpty()
 
             // 1. טעינת related סרטונים מ-InnerTube ברקע
             val relatedRaw = runCatching { InnerTube.related(currentVideo.id) }.getOrNull().orEmpty()
@@ -197,12 +211,17 @@ object RadioQueueManager {
             val relatedIds = relatedRaw.map { it.id }.toHashSet()
 
             // 2. טעינת feed מקומי
+            // הפיד גם הוא עובר את אותו מסנן: הוא תצלום שנשמר בדיסק ברמת
+            // הסינון ששררה כשנטען, ורמה שהשתנתה מאז לא משנה אותו למפרע.
             val feed = runCatching { FeedCache.loadFeed(context) }.getOrNull().orEmpty()
             val combined = (relatedRaw + feed).distinctBy { it.id }
 
             // דירוג Candidates לפי עדיפות, related, וסגנון
             val candidates = combined
-                .filter { !it.isShort && it.id != currentVideo.id }
+                .filter {
+                    !it.isShort && it.id != currentVideo.id &&
+                        it.channelId in allowedIds && it.id !in blocked
+                }
                 .map { v ->
                     var score = 0
                     val vCat = catById[v.channelId]

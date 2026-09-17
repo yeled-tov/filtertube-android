@@ -8,9 +8,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.LiveTv
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.rounded.LiveTv
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -115,7 +115,7 @@ fun LiveScreen(onVideoClick: (Video) -> Unit, onBack: () -> Unit) {
                 onValueChange = { query = it; if (it.isBlank()) { searched = false; results = emptyList() } },
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("חפש שידור חי בערוצים המאושרים…", color = ThemeState.subtext) },
-                leadingIcon = { Icon(Icons.Default.Search, null, tint = ThemeState.subtext) },
+                leadingIcon = { Icon(Icons.Rounded.Search, null, tint = ThemeState.subtext) },
                 singleLine = true, shape = RoundedCornerShape(18.dp), colors = fieldColors,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { runSearch() }),
@@ -127,7 +127,7 @@ fun LiveScreen(onVideoClick: (Video) -> Unit, onBack: () -> Unit) {
                 Text("שידורים פעילים מכל הערוצים המאושרים", color = ThemeState.subtext, fontSize = 12.sp,
                     modifier = Modifier.weight(1f))
                 IconButton(onClick = { refreshLive(force = true) }, enabled = !autoLoading) {
-                    Icon(Icons.Default.Refresh, "רענן שידורים חיים", tint = ThemeState.accent)
+                    Icon(Icons.Rounded.Refresh, "רענן שידורים חיים", tint = ThemeState.accent)
                 }
             }
         }
@@ -161,7 +161,7 @@ fun LiveScreen(onVideoClick: (Video) -> Unit, onBack: () -> Unit) {
             }
             else -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
-                    Icon(Icons.Default.LiveTv, null, tint = ThemeState.subtext, modifier = Modifier.size(46.dp))
+                    Icon(Icons.Rounded.LiveTv, null, tint = ThemeState.subtext, modifier = Modifier.size(46.dp))
                     Spacer(Modifier.height(12.dp))
                     Text(
                         "אין כרגע שידורים חיים פעילים בערוצים המאושרים.\nלחץ על רענון כדי לבדוק שוב.",

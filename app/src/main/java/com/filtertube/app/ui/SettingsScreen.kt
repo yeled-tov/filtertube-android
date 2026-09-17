@@ -12,19 +12,29 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.AdminPanelSettings
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.FilterAlt
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.SystemUpdate
-import androidx.compose.material.icons.filled.WorkspacePremium
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.AdminPanelSettings
+import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.Swipe
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.CloudDone
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.FilterAlt
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.WorkspacePremium
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,6 +43,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -43,6 +54,11 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.filtertube.app.BuildConfig
 import com.filtertube.app.ThemeState
+import com.filtertube.app.ui.theme.GroupCard
+import com.filtertube.app.ui.theme.GroupHeader
+import com.filtertube.app.ui.theme.GroupRow
+import com.filtertube.app.ui.theme.Tint
+import com.filtertube.app.data.AppShare
 import com.filtertube.app.data.CloudSync
 import com.filtertube.app.data.FirebaseAccount
 import com.filtertube.app.data.GoogleAuth
@@ -82,6 +98,8 @@ fun SettingsScreen(
     var showUpdate by remember { mutableStateOf(false) }
     var showNotify by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
+    var showShare by remember { mutableStateOf(false) }
+    var showGestures by remember { mutableStateOf(false) }
     var showCloud by remember { mutableStateOf(false) }
     val isAdmin = FirebaseAuth.getInstance().currentUser?.email
         ?.equals("ywldyld@gmail.com", ignoreCase = true) == true
@@ -90,53 +108,90 @@ fun SettingsScreen(
         modifier = Modifier.fillMaxSize().background(ThemeState.bg)
             .verticalScroll(rememberScrollState()),
     ) {
+        // כותרת גדולה בלי קו מפריד: הקו סימן גבול שכבר מסומן ע"י המרווח,
+        // והוא רק הוסיף עוד קו למסך שכולו קווים.
         Text(
-            "הגדרות", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = ThemeState.text,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 12.dp),
+            "הגדרות",
+            style = MaterialTheme.typography.displaySmall,
+            color = ThemeState.text,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 34.dp, bottom = 6.dp),
         )
-        HorizontalDivider(color = ThemeState.divider)
 
-        Spacer(Modifier.height(8.dp))
-        SettingsSectionHeader("חיבור ואימות")
-        SettingsRow(Icons.Default.AccountCircle, Color(0xFFFF0000), "חיבור ל-YouTube (אופציונלי)",
-            "רק לסנכרון לייקים, היסטוריה ומנויים ב-YouTube — לא החשבון של FilterTube") { onOpenYoutubeLogin() }
-        SettingsRow(Icons.Default.AccountCircle, Color(0xFF2563EB), "סנכרון ענן",
-            if (settings.cloudEmail.isNotBlank()) "מחובר: ${settings.cloudEmail}" else "החשבון נדרש בכניסה לאפליקציה") { showCloud = true }
-        SettingsRow(Icons.Default.WorkspacePremium, Color(0xFFFFC107), "FilterTube Premium",
-            "הורדות וניגון ברקע — ניסיון חינם 30 יום") { onOpenPremium() }
-
-        SettingsSectionHeader("סינון וניגון")
-        SettingsRow(Icons.Default.FilterAlt, Color(0xFFFFAA00), "הגדרות סינון 🔒",
-            "רמת סינון והצגת Shorts — מוגן בקוד") {
-            gateTarget = SettingsGateTarget.FILTER
+        // שיתוף יושב ראשון ולא בתחתית "על האפליקציה": זו הפעולה היחידה כאן
+        // שנעשית בשביל מישהו אחר, ומי שמחפש אותה מחפש אותה עכשיו — לא אחרי
+        // גלילה דרך שש קבוצות של הגדרות.
+        GroupHeader("שיתוף")
+        GroupCard {
+            GroupRow(Icons.Rounded.Share, Tint.blue, "שתף את FilterTube",
+                subtitle = "קישור להורדה · קוד QR · קובץ התקנה בבלוטות'", last = true) { showShare = true }
         }
-        SettingsRow(Icons.Default.MusicNote, Color(0xFF10B981), "נגן ושמע",
-            "עיצוב הנגן ואיכות") { showPlayerAudio = true }
 
-        SettingsSectionHeader("ניהול והצגה")
-        SettingsRow(Icons.Default.Download, Color(0xFF00BFA5), "מנהל הורדות",
-            "הורדת לייקים · מהירות · הורדות במקביל") { onOpenDownloads() }
-        SettingsRow(Icons.Default.Tune, Color(0xFF3B82F6), "הגדרות תצוגה",
-            "צבע ראשי · מצב כהה/בהיר · 120 הרץ") { showDisplay = true }
-        SettingsRow(Icons.Default.Notifications, Color(0xFFEC407A), "התראות",
-            "התראה על סרטון חדש בערוץ מאושר") { showNotify = true }
-        SettingsRow(Icons.Default.SystemUpdate, Color(0xFFA855F7), "עדכונים",
-            "בדוק והורד גרסה חדשה") { showUpdate = true }
-        SettingsRow(Icons.Default.Info, ThemeState.subtext2, "אודות",
-            "FilterTube — רק ערוצים מאושרים") { showAbout = true }
+        GroupHeader("חשבון")
+        GroupCard {
+            GroupRow(Icons.Rounded.AccountCircle, Tint.red, "חיבור ל-YouTube",
+                subtitle = "לסנכרון לייקים, היסטוריה ומנויים — לא החשבון של FilterTube") { onOpenYoutubeLogin() }
+            GroupRow(
+                Icons.Rounded.CloudDone, Tint.blue, "סנכרון ענן",
+                subtitle = if (settings.cloudEmail.isNotBlank()) {
+                    "מחובר: ${settings.cloudEmail}"
+                } else {
+                    "החשבון נדרש בכניסה לאפליקציה"
+                },
+            ) { showCloud = true }
+            GroupRow(Icons.Rounded.WorkspacePremium, Tint.gold, "FilterTube Premium",
+                subtitle = "הורדות וניגון ברקע — ניסיון חינם 30 יום", last = true) { onOpenPremium() }
+        }
+
+        GroupHeader("סינון והגנה")
+        GroupCard {
+            GroupRow(Icons.Rounded.Shield, Tint.amber, "הגדרות סינון",
+                subtitle = "רמת סינון והצגת Shorts", locked = true, last = true) {
+                gateTarget = SettingsGateTarget.FILTER
+            }
+        }
+
+        GroupHeader("ניגון ומדיה")
+        GroupCard {
+            GroupRow(Icons.Rounded.GraphicEq, Tint.green, "נגן ושמע",
+                subtitle = "עיצוב הנגן ואיכות") { showPlayerAudio = true }
+            GroupRow(Icons.Rounded.Swipe, Tint.violet, "מחוות בנגן",
+                subtitle = "החלפת שיר, סגירת הנגן, והמיני-נגן") { showGestures = true }
+            GroupRow(Icons.Rounded.Download, Tint.teal, "מנהל הורדות",
+                subtitle = "הורדת לייקים · מהירות · הורדות במקביל", last = true) { onOpenDownloads() }
+        }
+
+        GroupHeader("תצוגה והתראות")
+        GroupCard {
+            GroupRow(Icons.Rounded.Tune, Tint.violet, "הגדרות תצוגה",
+                subtitle = "צבע ראשי · מצב כהה/בהיר · 120 הרץ") { showDisplay = true }
+            GroupRow(Icons.Rounded.Notifications, Tint.pink, "התראות",
+                subtitle = "התראה על סרטון חדש בערוץ מאושר", last = true) { showNotify = true }
+        }
+
+        GroupHeader("על האפליקציה")
+        GroupCard {
+            GroupRow(Icons.Rounded.SystemUpdate, Tint.orange, "עדכונים",
+                subtitle = "בדוק והורד גרסה חדשה") { showUpdate = true }
+            GroupRow(Icons.Rounded.Info, ThemeState.subtext, "אודות",
+                subtitle = "FilterTube — רק ערוצים מאושרים", last = true) { showAbout = true }
+        }
 
         if (isAdmin) {
-            SettingsRow(Icons.Default.Speed, Color(0xFF00BFA5), "אבחון מהירות/עצירות",
-                "מה איטי או נתקע בניגון — ושליחה אליי") { onOpenDiag() }
-            SettingsRow(Icons.Default.AdminPanelSettings, Color(0xFFFFAA00), "ניהול ערוצים",
-                "הוספה/הסרה של ערוצים מהרשימה הלבנה") {
-                onOpenAdmin()
+            GroupHeader("ניהול")
+            GroupCard {
+                GroupRow(Icons.Rounded.AdminPanelSettings, Tint.amber, "ניהול ערוצים",
+                    subtitle = "הוספה/הסרה של ערוצים מהרשימה הלבנה") { onOpenAdmin() }
+                GroupRow(Icons.Rounded.Speed, Tint.teal, "אבחון מהירות/עצירות",
+                    subtitle = "מה איטי או נתקע בניגון — ושליחה אליי", last = true) { onOpenDiag() }
             }
         }
         // מרווח תחתון כדי שהפריט האחרון יהיה מעל סרגל הניווט הצף
         Spacer(Modifier.height(110.dp))
     }
 
+
+    if (showShare) ShareAppSheet { showShare = false }
+    if (showGestures) GestureSheet { showGestures = false }
 
     gateTarget?.let { target ->
         FilterGateDialog(
@@ -285,48 +340,6 @@ private fun SettingsSheet(title: String, onBack: () -> Unit, content: @Composabl
     }
 }
 
-@Composable
-private fun SettingsSectionHeader(title: String) {
-    Text(
-        title,
-        color = ThemeState.accent,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(start = 20.dp, end = 16.dp, top = 18.dp, bottom = 6.dp),
-    )
-}
-
-/**
- * שורת הגדרה כקלף.
- *
- * קודם השורות היו טקסט על הרקע, בלי שום גבול ביניהן. במסך ארוך זה נקרא
- * כרשימת מילים ולא כרשימת כפתורים: אין רמז ויזואלי לאן בדיוק אפשר להקיש
- * ואיפה נגמרת שורה אחת ומתחילה הבאה. הרקע והפינות המעוגלות הם בדיוק הרמז
- * הזה, וגם מגדירים את שטח ההקשה.
- */
-@Composable
-private fun SettingsRow(icon: ImageVector, accent: Color, title: String, subtitle: String, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 3.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(ThemeState.card)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(ThemeState.surface),
-            contentAlignment = Alignment.Center) { Icon(icon, null, tint = accent) }
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = ThemeState.text, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            Text(subtitle, color = ThemeState.subtext, fontSize = 12.sp)
-        }
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color(0xFF666666))
-    }
-}
-
-
 // ── שער סיסמה לסינון ─────────────────────────────────────────────────────
 @Composable
 private fun FilterGateDialog(settings: SettingsStore, onUnlock: () -> Unit, onDismiss: () -> Unit) {
@@ -338,7 +351,7 @@ private fun FilterGateDialog(settings: SettingsStore, onUnlock: () -> Unit, onDi
     var checking by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.Lock, null, tint = Color(0xFFFFAA00)) },
+        icon = { Icon(Icons.Rounded.Lock, null, tint = Color(0xFFFFAA00)) },
         title = { Text(if (isSetup) "קביעת קוד לחשבון ולהורים" else "הזן קוד הורים") },
         text = {
             Column {
@@ -436,17 +449,39 @@ private fun ChangePasswordDialog(settings: SettingsStore, onDone: () -> Unit, on
     )
 }
 
+/**
+ * שדה קוד עם עין להצגה.
+ *
+ * ## למה זה נדרש
+ * קוד שמוקלד בעיוור נכשל בהקלדה שנייה ושלישית, והמשתמש לא יודע אם טעה
+ * בספרה או שהקוד עצמו שגוי. העין מפרידה בין שתי השאלות האלה.
+ *
+ * ברירת המחדל נשארת מוסתרת — זו עדיין סיסמה, ומי שמקליד אותה ליד ילד
+ * אמור להחליט בעצמו מתי לחשוף אותה.
+ */
 @Composable
 private fun PwField(value: String, onValueChange: (String) -> Unit, label: String) {
+    var visible by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = value, onValueChange = onValueChange,
         label = { Text(label, color = ThemeState.subtext) },
         singleLine = true,
-        visualTransformation = PasswordVisualTransformation(),
+        visualTransformation =
+            if (visible) androidx.compose.ui.text.input.VisualTransformation.None
+            else PasswordVisualTransformation(),
+        trailingIcon = {
+            IconButton(onClick = { visible = !visible }) {
+                Icon(
+                    if (visible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                    if (visible) "הסתר קוד" else "הצג קוד",
+                    tint = ThemeState.subtext,
+                )
+            }
+        },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = ThemeState.text, unfocusedTextColor = ThemeState.text,
-            focusedBorderColor = Color(0xFFFFAA00), unfocusedBorderColor = Color(0xFF333333),
+            focusedBorderColor = Tint.amber, unfocusedBorderColor = ThemeState.divider,
         ),
     )
 }
@@ -469,13 +504,47 @@ private fun FilterSettingsSheet(
     var shorts by remember { mutableStateOf(shortsEnabled) }
     var gender by remember { mutableStateOf(userGender) }
     var audioOnly by remember { mutableStateOf(settings.audioOnlyMode) }
+    var showBlocked by remember { mutableStateOf(false) }
+    val store = remember { com.filtertube.app.data.LibraryStore(context) }
+    var blocked by remember { mutableStateOf(store.blockedVideos()) }
+    val scope = rememberCoroutineScope()
     SettingsSheet("הגדרות סינון", onDismiss) {
         Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 LevelRow(1, "מחמיר", "מוזיקה כאודיו בלבד · ״דתי לייט״ מוסתר", level) { level = 1; onFilterLevelChange(1) }
                 LevelRow(2, "רגיל", "הכל כווידאו · ״דתי לייט״ מוסתר", level) { level = 2; onFilterLevelChange(2) }
                 LevelRow(3, "דתי לייט", "כולל ״דתי לייט״ (אודיו בלבד)", level) { level = 3; onFilterLevelChange(3) }
 
-                HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(color = ThemeState.divider, modifier = Modifier.padding(vertical = 8.dp))
+
+                // ── מה שהמשתמש חסם לעצמו ──────────────────────────────────
+                // כאן ולא בספרייה, ובכוונה: המסך הזה כבר מאחורי קוד ההורים,
+                // ולכן שחרור סרטון חסום דורש את הקוד בלי שום מנגנון נוסף.
+                // ילד יכול לחסום לעצמו מה שירצה; לפתוח בחזרה — רק מי שיודע
+                // את הקוד.
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .clickable { showBlocked = true }
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Block, null, tint = Tint.red, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("סרטונים שחסמתי", color = ThemeState.text,
+                            style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            if (blocked.isEmpty()) "עוד לא חסמת סרטונים"
+                            else "${blocked.size} סרטונים לא מוצגים",
+                            color = ThemeState.subtext, style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Rounded.KeyboardArrowRight, null,
+                        tint = ThemeState.divider, modifier = Modifier.size(20.dp),
+                    )
+                }
+
+                HorizontalDivider(color = ThemeState.divider, modifier = Modifier.padding(vertical = 8.dp))
 
                 // ── אודיו בלבד ────────────────────────────────────────────
                 // מעל רמות הסינון ולא בתוכן: זו בחירה שחלה על כל רמה, ומי
@@ -533,10 +602,88 @@ private fun FilterSettingsSheet(
                     )
                 }
 
-                HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(color = ThemeState.divider, modifier = Modifier.padding(vertical = 8.dp))
                 TextButton(onClick = onChangePassword) { Text("שנה קוד", color = ThemeState.subtext) }
         }
     }
+
+    if (showBlocked) {
+        BlockedVideosDialog(
+            videos = blocked,
+            onUnblock = { id ->
+                store.unblockVideo(id)
+                blocked = store.blockedVideos()
+                scope.launch { com.filtertube.app.data.LibraryBadges.refreshBlocked(context) }
+            },
+            onDismiss = { showBlocked = false },
+        )
+    }
+}
+
+/**
+ * מה שהמשתמש חסם לעצמו, ושחרור בחזרה.
+ *
+ * נפתח רק מתוך גיליון הסינון — שכבר עבר את קוד ההורים — ולכן אין כאן שער
+ * נוסף. החסימה עצמה זמינה לכל אחד מתפריט הסרטון; רק הביטול דורש קוד.
+ */
+@Composable
+private fun BlockedVideosDialog(
+    videos: List<com.filtertube.app.data.Video>,
+    onUnblock: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = ThemeState.surface,
+        title = {
+            Text("סרטונים שחסמתי (${videos.size})", color = ThemeState.text, fontSize = 17.sp)
+        },
+        text = {
+            if (videos.isEmpty()) {
+                Text(
+                    "לא חסמת אף סרטון.\nבלחיצה ארוכה על סרטון אפשר לבחור \"אל תציג לי את זה יותר\".",
+                    color = ThemeState.subtext, fontSize = 13.sp, lineHeight = 19.sp,
+                )
+            } else {
+                Column(modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                    videos.forEach { video ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            coil.compose.AsyncImage(
+                                model = video.thumbnailUrl,
+                                contentDescription = null,
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.size(64.dp, 36.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(ThemeState.bg2),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    video.title, color = ThemeState.text,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 2,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    video.channelName, color = ThemeState.subtext,
+                                    style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                                )
+                            }
+                            TextButton(onClick = { onUnblock(video.id) }) {
+                                Text("שחרר", color = ThemeState.accent, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("סגור", color = ThemeState.accent) }
+        },
+    )
 }
 
 @Composable
@@ -646,7 +793,7 @@ private fun AboutDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.Info, null, tint = Color(0xFFFF0000)) },
+        icon = { Icon(Icons.Rounded.Info, null, tint = Color(0xFFFF0000)) },
         title = { Text("FilterTube") },
         text = {
             Column {
@@ -778,6 +925,236 @@ private fun NotificationsDialog(settings: SettingsStore, onDismiss: () -> Unit) 
 }
 
 // ── עדכונים ──────────────────────────────────────────────────────────────
+/**
+ * מחוות בנגן — ארבעה מתגים, שניים לכל נגן.
+ *
+ * ## למה לא מתג אחד לשניהם
+ * הנגן של FilterMusic והנגן של FilterTube הם שני שימושים שונים. במוזיקה
+ * החלקה היא הדרך הטבעית להחליף שיר — המסך ממילא לא מציג כלום שצריך לגעת
+ * בו. בווידאו אותה תנועה עוברת מעל תמונה שהמשתמש דווקא מסתכל בה, ויש מי
+ * שירצה אותה שם ומי שלא. מתג אחד היה מכריח לוותר על אחד בשביל השני.
+ *
+ * ## למה הן דולקות כברירת מחדל
+ * מחווה שאי אפשר לגלות במקרה שווה מעט מאוד: אף אחד לא נכנס להגדרות כדי
+ * להדליק משהו שהוא לא יודע שקיים. מי שתנועה מקרית מפריעה לו יכבה כאן.
+ */
+@Composable
+private fun GestureSheet(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val settings = remember { SettingsStore(context) }
+    var musicTrack by remember { mutableStateOf(settings.musicSwipeTrack) }
+    var musicDismiss by remember { mutableStateOf(settings.musicSwipeDismiss) }
+    var videoTrack by remember { mutableStateOf(settings.videoSwipeTrack) }
+    var videoDismiss by remember { mutableStateOf(settings.videoSwipeDismiss) }
+    var miniSwipe by remember { mutableStateOf(settings.miniPlayerSwipe) }
+    var miniRestart by remember { mutableStateOf(settings.miniSwipeRightRestarts) }
+
+    SettingsSheet("מחוות בנגן", onDismiss) {
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+            Text(
+                "השינוי נכנס לתוקף בפתיחה הבאה של הנגן.",
+                color = ThemeState.subtext2, fontSize = 11.5.sp,
+            )
+            Spacer(Modifier.height(16.dp))
+
+            Text("FilterMusic", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            GestureToggle(
+                title = "החלקה להחלפת שיר",
+                subtitle = "שמאלה — השיר הבא · ימינה — השיר הקודם",
+                checked = musicTrack,
+            ) { musicTrack = it; settings.musicSwipeTrack = it }
+            Spacer(Modifier.height(10.dp))
+            GestureToggle(
+                title = "החלקה למטה סוגרת את הנגן",
+                subtitle = "מושכים את המסך למטה במקום ללחוץ על החץ",
+                checked = musicDismiss,
+            ) { musicDismiss = it; settings.musicSwipeDismiss = it }
+
+            HorizontalDivider(color = ThemeState.divider, modifier = Modifier.padding(vertical = 18.dp))
+
+            Text("FilterTube", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            GestureToggle(
+                title = "החלקה להחלפת סרטון",
+                subtitle = "שמאלה — הבא בתור · ימינה — הקודם",
+                checked = videoTrack,
+            ) { videoTrack = it; settings.videoSwipeTrack = it }
+            Spacer(Modifier.height(10.dp))
+            GestureToggle(
+                title = "החלקה למטה מכווצת את הנגן",
+                subtitle = "הניגון ממשיך במיני-נגן שלמטה",
+                checked = videoDismiss,
+            ) { videoDismiss = it; settings.videoSwipeDismiss = it }
+
+            HorizontalDivider(color = ThemeState.divider, modifier = Modifier.padding(vertical = 18.dp))
+
+            // ── המיני-נגן ─────────────────────────────────────────────────
+            // המחוות כאן היו קיימות בקוד מהיום הראשון, אבל לא היה להן שום
+            // מתג במסך — כלומר אי אפשר היה לכבות אותן, ומי שהחליק בטעות
+            // ועצר את הניגון לא יכול היה לעשות עם זה כלום.
+            Text("המיני-נגן", color = ThemeState.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            GestureToggle(
+                title = "החלקה על המיני-נגן",
+                subtitle = "שמאלה — הבא · ימינה — הקודם · גרירה למטה עוצרת לגמרי",
+                checked = miniSwipe,
+            ) { miniSwipe = it; settings.miniPlayerSwipe = it }
+            if (miniSwipe) {
+                Spacer(Modifier.height(10.dp))
+                GestureToggle(
+                    title = "החלקה ימינה מתחילה את השיר מחדש",
+                    subtitle = "במקום לעבור לשיר הקודם",
+                    checked = miniRestart,
+                ) { miniRestart = it; settings.miniSwipeRightRestarts = it }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            Text(
+                "דאבל-טאפ על הסרטון לדילוג של 10 שניות אחורה או קדימה עובד תמיד, " +
+                    "ואינו מושפע מהמתגים כאן.",
+                color = ThemeState.subtext2, fontSize = 11.sp, lineHeight = 16.sp,
+            )
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun GestureToggle(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(subtitle, color = ThemeState.subtext, fontSize = 11.sp, lineHeight = 15.sp)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White, checkedTrackColor = ThemeState.accent,
+                uncheckedThumbColor = ThemeState.subtext, uncheckedTrackColor = ThemeState.divider,
+            ),
+        )
+    }
+}
+
+/**
+ * שיתוף האפליקציה — שלוש דרכים, כי "לשתף" זה לא דבר אחד.
+ *
+ * הקישור הוא לדף הורדה שאנחנו שולטים בו ולא לקובץ ישיר: קישור ששותף פעם
+ * אחת חי לנצח בהודעה של מישהו, והדף הוא מה שמאפשר להחליף את מה שהוא מפנה
+ * אליו בלי לרדוף אחרי כל ההודעות שכבר יצאו.
+ *
+ * הקוד והקובץ הם שתי הדרכים שבהן שיתוף באמת קורה מול אדם שנמצא מולך: אחד
+ * מצלם, ואחד מקבל את ה-APK עצמו כשאין אינטרנט בכלל.
+ */
+@Composable
+private fun ShareAppSheet(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val link = remember { AppShare.link() }
+    // הקוד נוצר פעם אחת ולא בכל רה-קומפוזיציה: זה חישוב של מטריצה ו-Bitmap
+    // בגודל מסך, ובלי remember הוא היה רץ מחדש בכל לחיצה על המסך.
+    val qr = remember(link) { AppShare.qrBitmap(content = link) }
+    var busy by remember { mutableStateOf(false) }
+
+    SettingsSheet("שתף את FilterTube", onDismiss) {
+        Column(
+            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "כל מי שמקבל את הקישור יכול להוריד את האפליקציה ולהתחיל משלו — " +
+                    "עם אותה רשימת ערוצים מאושרים, ורמת סינון שהוא בוחר בעצמו.",
+                color = ThemeState.subtext, fontSize = 12.5.sp, lineHeight = 18.sp,
+            )
+            Spacer(Modifier.height(16.dp))
+
+            if (qr != null) {
+                Box(
+                    modifier = Modifier.clip(RoundedCornerShape(20.dp))
+                        .background(Color.White).padding(14.dp),
+                ) {
+                    androidx.compose.foundation.Image(
+                        bitmap = qr.asImageBitmap(),
+                        contentDescription = "קוד QR להורדת FilterTube",
+                        modifier = Modifier.size(200.dp),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "מי שעומד מולך פשוט מצלם את הקוד",
+                    color = ThemeState.subtext2, fontSize = 11.5.sp,
+                )
+                Spacer(Modifier.height(18.dp))
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .background(ThemeState.card)
+                    .clickable {
+                        AppShare.copyLink(context)
+                        android.widget.Toast.makeText(context, "הקישור הועתק", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    link, color = ThemeState.text, fontSize = 12.5.sp,
+                    maxLines = 1, modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(8.dp))
+                Icon(Icons.Rounded.ContentCopy, "העתק", tint = ThemeState.subtext, modifier = Modifier.size(18.dp))
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Button(
+                onClick = { AppShare.shareLink(context) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = ThemeState.accent),
+            ) {
+                Icon(Icons.Rounded.Share, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("שתף קישור — וואטסאפ, SMS, מייל")
+            }
+
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        val ok = AppShare.shareApk(context)
+                        busy = false
+                        if (!ok) {
+                            android.widget.Toast.makeText(
+                                context, "לא הצלחתי להכין את קובץ ההתקנה", android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !busy,
+            ) {
+                Icon(Icons.Rounded.Bluetooth, null, tint = ThemeState.text, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("שלח את קובץ ההתקנה", color = ThemeState.text)
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "בלוטות' או שיתוף מהיר — עובד גם בלי אינטרנט אצל מי שמקבל. " +
+                    "הוא יצטרך לאשר התקנה ממקור לא מוכר, כמו בהתקנה הרגילה.",
+                color = ThemeState.subtext2, fontSize = 11.sp, lineHeight = 16.sp,
+            )
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
 @Composable
 private fun UpdateSheet(onDismiss: () -> Unit) {
     val context = LocalContext.current

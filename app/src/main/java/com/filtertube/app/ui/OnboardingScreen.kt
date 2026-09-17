@@ -16,14 +16,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Email
+import androidx.compose.material.icons.rounded.Face
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -71,6 +71,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
     var saving by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf("") }
     var level by remember { mutableStateOf(settings.filterLevel.coerceIn(1, 3)) }
+    var audioOnly by remember { mutableStateOf(settings.audioOnlyMode) }
     val selected = remember { mutableStateListOf<String>() }
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     LaunchedEffect(Unit) {
@@ -101,6 +102,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
                 settings.userEmail = user.email?.trim()?.lowercase().orEmpty()
                 settings.userGender = gender
                 settings.filterLevel = level.coerceIn(1, 3)
+                settings.audioOnlyMode = audioOnly
                 val accountStore = LibraryStore(context)
                 accountStore.replaceLocalSubscriptions(
                     accountStore.localSubscriptions() + selected,
@@ -184,7 +186,12 @@ fun OnboardingScreen(onDone: () -> Unit) {
                             saveError = ""
                         },
                     )
-                    1 -> StepLevel(level) { level = it }
+                    1 -> StepLevel(
+                        level = level,
+                        onLevel = { level = it },
+                        audioOnly = audioOnly,
+                        onAudioOnly = { audioOnly = it },
+                    )
                     2 -> StepArtists(channels, selected)
                     else -> StepWelcome(name)
                 }
@@ -254,7 +261,7 @@ private fun StepIdentity(
     onGender: (String) -> Unit,
 ) {
     StepHeader("בואו נתאים את FilterTube 👋", "החשבון מוכן. עכשיו נכיר אותך כדי להתאים את התוכן והסינון.")
-    OnbField(name, onName, "שם", Icons.Default.Person)
+    OnbField(name, onName, "שם", Icons.Rounded.Person)
     Spacer(Modifier.height(12.dp))
     Row(
         modifier = Modifier
@@ -265,7 +272,7 @@ private fun StepIdentity(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Default.Email, null, tint = ThemeState.accent)
+        Icon(Icons.Rounded.Email, null, tint = ThemeState.accent)
         Spacer(Modifier.width(12.dp))
         Column {
             Text("החשבון המחובר", color = ThemeState.subtext2, fontSize = 11.sp)
@@ -282,13 +289,92 @@ private fun StepIdentity(
 }
 
 @Composable
-private fun StepLevel(level: Int, onLevel: (Int) -> Unit) {
+private fun StepLevel(
+    level: Int,
+    onLevel: (Int) -> Unit,
+    audioOnly: Boolean,
+    onAudioOnly: (Boolean) -> Unit,
+) {
     StepHeader("רמת סינון 🛡️", "אפשר לשנות בכל רגע (עם קוד ההורים).")
-    LevelCard(1, "מחמיר", "מוזיקה נשמעת כאודיו בלבד · ערוצי ״דתי לייט״ מוסתרים", level == 1) { onLevel(1) }
+
+    LevelCard(
+        1, "מחמיר",
+        "כל התוכן מוצג כווידאו, ומוזיקה נשמעת כאודיו בלבד — בלי קליפים. " +
+            "ערוצי ״דתי לייט״ אינם מוצגים.",
+        level == 1,
+    ) { onLevel(1) }
     Spacer(Modifier.height(10.dp))
-    LevelCard(2, "רגיל", "הכל וידאו · ערוצי ״דתי לייט״ מוסתרים", level == 2) { onLevel(2) }
+    LevelCard(
+        2, "רגיל",
+        "כמו ״מחמיר״, אבל גם המוזיקה מוצגת כווידאו. " +
+            "ערוצי ״דתי לייט״ עדיין אינם מוצגים.",
+        level == 2,
+    ) { onLevel(2) }
     Spacer(Modifier.height(10.dp))
-    LevelCard(3, "דתי לייט", "ערוצי ״דתי לייט״ מוצגים ומתנגנים כאודיו", level == 3) { onLevel(3) }
+    LevelCard(
+        3, "דתי לייט",
+        "מוסיף שירים חילוניים — גברים בלבד — והם מתנגנים כאודיו בלבד, " +
+            "לעולם לא כווידאו.",
+        level == 3,
+    ) { onLevel(3) }
+
+    Spacer(Modifier.height(20.dp))
+
+    // ── אודיו בלבד ────────────────────────────────────────────────────────
+    // מוצג כאן ולא רק בהגדרות: זו החלטה שמשנה את כל האפליקציה, ומי שמתקין
+    // אותה בשביל ילד רוצה לקבל אותה עכשיו ולא לגלות אותה בעוד שבועיים.
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(ThemeState.card)
+            .border(
+                if (audioOnly) 2.dp else 1.dp,
+                if (audioOnly) ThemeState.accent else ThemeState.divider,
+                RoundedCornerShape(16.dp),
+            )
+            .clickable { onAudioOnly(!audioOnly) }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("הכל כאודיו 🎧", color = ThemeState.text, fontSize = 15.sp,
+                fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "בלי מסך בכלל — גם שיעורים, גם חדשות וגם מוזיקה יישמעו ולא " +
+                    "ייראו. חל על כל רמות הסינון, ואפשר לכבות בהגדרות.",
+                color = ThemeState.subtext, fontSize = 12.5.sp, lineHeight = 18.sp,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(
+            checked = audioOnly,
+            onCheckedChange = onAudioOnly,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = ThemeState.accent,
+            ),
+        )
+    }
+
+    Spacer(Modifier.height(18.dp))
+
+    // ── מי מסנן ───────────────────────────────────────────────────────────
+    // ההבטחה המרכזית של האפליקציה, ובדיוק במקום שבו שואלים אותה: אדם עבר
+    // על כל ערוץ ברשימה. זה לא סינון אוטומטי ולא ניחוש של מודל.
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            .background(ThemeState.accent.copy(alpha = 0.10f))
+            .padding(14.dp),
+    ) {
+        Text("👤", fontSize = 18.sp)
+        Spacer(Modifier.width(10.dp))
+        Text(
+            "כל ערוץ ברשימה נבדק ואושר ידנית על ידי אדם — לא על ידי בינה " +
+                "מלאכותית ולא באופן אוטומטי. מה שלא אושר, פשוט לא קיים " +
+                "באפליקציה.",
+            color = ThemeState.subtext2, fontSize = 12.5.sp, lineHeight = 18.sp,
+        )
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -306,7 +392,7 @@ private fun StepArtists(channels: List<Channel>, selected: MutableList<String>) 
         }
         return
     }
-    OnbField(query, { query = it }, "חיפוש זמר / ערוץ", Icons.Default.Search)
+    OnbField(query, { query = it }, "חיפוש זמר / ערוץ", Icons.Rounded.Search)
     Spacer(Modifier.height(16.dp))
     // קודם מוזיקה (הכי רלוונטי ל"זמרים"), ומסונן לפי החיפוש
     val ordered = channels
@@ -330,7 +416,7 @@ private fun StepWelcome(name: String) {
             modifier = Modifier.size(96.dp).clip(RoundedCornerShape(50))
                 .background(Brush.linearGradient(ThemeState.accentColors)),
             contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(52.dp)) }
+        ) { Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(52.dp)) }
         Spacer(Modifier.height(22.dp))
         Text(
             if (name.isNotBlank()) "הכל מוכן, $name!" else "הכל מוכן!",
@@ -344,10 +430,10 @@ private fun StepWelcome(name: String) {
             modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(20.dp))
-        PerkRow(Icons.Default.Download, "הורדות מהירות לצפייה לא־מקוונת")
-        PerkRow(Icons.Default.MusicNote, "ניגון ברקע ומסך כבוי")
-        PerkRow(Icons.Default.Shield, "סינון מותאם אישית עם קוד הורים")
-        PerkRow(Icons.Default.Face, "בית מותאם אישית לפי מה שאהבת")
+        PerkRow(Icons.Rounded.Download, "הורדות מהירות לצפייה לא־מקוונת")
+        PerkRow(Icons.Rounded.MusicNote, "ניגון ברקע ומסך כבוי")
+        PerkRow(Icons.Rounded.Shield, "סינון מותאם אישית עם קוד הורים")
+        PerkRow(Icons.Rounded.Face, "בית מותאם אישית לפי מה שאהבת")
     }
 }
 
@@ -406,7 +492,7 @@ private fun LevelCard(num: Int, title: String, sub: String, selected: Boolean, o
         }
         if (selected) {
             Box(modifier = Modifier.size(26.dp).clip(RoundedCornerShape(50)).background(ThemeState.accent), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(17.dp))
+                Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(17.dp))
             }
         }
     }
@@ -432,7 +518,7 @@ private fun ArtistChip(name: String, avatar: String?, selected: Boolean, onClick
         }
         Spacer(Modifier.width(8.dp))
         if (selected) {
-            Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(14.dp))
+            Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(14.dp))
             Spacer(Modifier.width(4.dp))
         }
         Text(name, color = if (selected) Color.White else ThemeState.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)

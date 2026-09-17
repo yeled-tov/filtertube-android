@@ -5,12 +5,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,9 +32,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.filtertube.app.data.LibraryStore
+import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.SubChannel
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeRepository
+import com.filtertube.app.data.forLevel
 
 /**
  * סרגל עליון אחיד עם כפתור חזרה לכל מסכי הפירוט.
@@ -47,7 +53,7 @@ fun DetailTopBar(title: String, onBack: () -> Unit, action: (@Composable () -> U
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = ThemeState.text)
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, "חזור", tint = ThemeState.text)
             }
             Text(title, color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -73,6 +79,7 @@ private fun EmptyHint(text: String) {
 fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     val store = remember { LibraryStore(context) }
+    val settings = remember { SettingsStore(context) }
     var refreshKey by remember { mutableStateOf(0) }
     // ── שני מקורות, ושניהם של יוטיוב ──────────────────────────────────
     // קודם המתג היה בין "אהבתי ב-FilterTube" ל"אהבתי ביוטיוב", ואלה נראו
@@ -82,32 +89,48 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
     var musicSource by remember { mutableStateOf(false) }
     // הרשימה המאושרת. ריקה = עוד לא נטענה, ואז לא מאפירים כלום: להראות את
     // כל הספרייה אפורה לרגע בכל כניסה גרוע מלא להאפיר בכלל.
-    var approvedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var requestFor by remember { mutableStateOf<Video?>(null) }
-    LaunchedEffect(Unit) {
-        approvedIds = runCatching {
-            com.filtertube.app.data.ChannelsRepository.getChannels(context)
-                .mapTo(HashSet()) { it.youtubeChannelId }
-        }.getOrDefault(emptySet())
+    var approved by remember {
+        mutableStateOf(com.filtertube.app.data.ApprovedChannels(emptyList()))
     }
-    val (title, videos) = remember(type, refreshKey, musicSource) {
+    var requestFor by remember { mutableStateOf<Video?>(null) }
+    var showGreyDetail by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        approved = com.filtertube.app.data.ApprovedChannels(
+            runCatching {
+                // forLevel ולא הרשימה הגולמית: בלעדיו שיר מקטגוריה שאינה
+                // מותרת ברמת הסינון הנוכחית הוצג כמאושר וניתן לניגון. זו
+                // הייתה פרצה שקטה — הרשימה הלבנה נאכפה בכל מסך אחר ולא כאן.
+                com.filtertube.app.data.ChannelsRepository.getChannels(context)
+                    .forLevel(settings.filterLevel, settings.userGender)
+            }.getOrDefault(emptyList()),
+        )
+    }
+    // libraryVersion: מונה נצפה שגדל בכל שינוי ברשימת ההורדות, כדי שפריט
+    // חדש יופיע ברגע שההורדה מתחילה ולא רק אחרי יציאה וחזרה למסך.
+    val downloadVersion = com.filtertube.app.data.DownloadEngine.libraryVersion
+    val (title, rawVideos) = remember(type, refreshKey, musicSource, downloadVersion) {
         when (type) {
             "likes" -> "אהבתי" to (if (musicSource) store.musicLikes() else store.youtubeLikes())
             "ytlikes" -> "אהבתי ביוטיוב" to store.youtubeLikes()
+            // כל ההורדות, כולל אלה שיצאו לדרך מ-FilterMusic: הספרייה של
+            // FilterTube היא של האפליקציה כולה, ושום הורדה לא נעלמת ממנה.
             "downloads" -> "הורדות" to store.downloads()
             "history" -> "היסטוריה" to store.localHistory()   // היסטוריה מקומית — תמיד עובדת
             "recs" -> "מומלצים" to store.recommendations()
             else -> "אוסף" to emptyList()
         }
     }
+    // סרטונים שהמשתמש חסם לעצמו לא מוצגים באף אוסף — "אל תציג לי את זה
+    // יותר" חייב להיות נכון גם בספרייה, לא רק בבית ובחיפוש.
+    val videos = remember(rawVideos, com.filtertube.app.data.LibraryBadges.blocked) {
+        rawVideos.filter { it.id !in com.filtertube.app.data.LibraryBadges.blocked }
+    }
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar("$title (${videos.size})", onBack)
         if (type == "likes") {
             val ytCount = remember(refreshKey) { store.youtubeLikes().size }
             val musicCount = remember(refreshKey) { store.musicLikes().size }
-            val greyed = videos.count {
-                approvedIds.isNotEmpty() && it.channelId.isNotBlank() && it.channelId !in approvedIds
-            }
+            val greyed = videos.count { !approved.isEmpty() && !approved.approves(it) }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -116,10 +139,16 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
                 SourceTab("יוטיוב מיוזיק ($musicCount)", musicSource) { musicSource = true }
             }
             if (greyed > 0) {
+                // לחיצה על השורה פותחת את הפירוט. בלי זה "למה זה אפור" הוא
+                // שאלה שאי אפשר לענות עליה מהמסך — רואים שהשיר אפור אבל לא
+                // איזה ערוץ העלה אותו ומה המזהה שלו.
                 Text(
-                    "$greyed באפור — מערוצים שלא אושרו. לחיצה עליהם שולחת בקשה להוסיף.",
+                    "$greyed באפור — מערוצים שלא אושרו. לחיצה עליהם שולחת בקשה להוסיף." +
+                        "  ·  הקש כאן לפירוט",
                     color = ThemeState.subtext2, fontSize = 12.sp, lineHeight = 17.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 2.dp)
+                        .clickable { showGreyDetail = true },
                 )
             }
         }
@@ -130,15 +159,59 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
                 }
             }
         }
-        if (videos.isEmpty()) EmptyHint(if (type == "history") "עדיין לא צפית בכלום" else "האוסף ריק")
-        else LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)) {
+        // ── מה שיורד ברגע זה ──────────────────────────────────────────────
+        // בתוך הטאב ולא במסך נפרד: המשתמש לחץ "הורד" וצופה שההורדה תופיע
+        // *כאן*. פס התקדמות במקום אחר הוא מסך אחר, לא משוב.
+        val running = com.filtertube.app.data.DownloadEngine.active
+            .filter { it.progress < 100 && it.status != "נכשל" }
+        if (type == "downloads" && running.isNotEmpty()) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+                Text(
+                    "מוריד עכשיו · ${running.size}",
+                    color = ThemeState.subtext, fontSize = 12.sp,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+                running.take(5).forEach { task ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                task.video.title, color = ThemeState.text, fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            CompositionLocalProvider(
+                                LocalLayoutDirection provides LayoutDirection.Ltr,
+                            ) {
+                                LinearProgressIndicator(
+                                    progress = { task.progress / 100f },
+                                    modifier = Modifier.fillMaxWidth().height(3.dp),
+                                    color = ThemeState.accent,
+                                    trackColor = ThemeState.divider,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text(task.status, color = ThemeState.subtext, fontSize = 11.sp)
+                    }
+                }
+            }
+            HorizontalDivider(color = ThemeState.divider)
+        }
+
+        if (videos.isEmpty() && running.isEmpty()) {
+            EmptyHint(if (type == "history") "עדיין לא צפית בכלום" else "האוסף ריק")
+        } else LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)) {
             items(videos, key = { it.id }) { v ->
                 // ── אפור = הערוץ לא ברשימה המאושרת ────────────────────────
                 // הרשימה שלמה בכוונה: "אהבתי" חתוך בלי שום רמז שחסר בו משהו
                 // הוא בלבול, בדיוק כמו שהיה במנויים. אבל אפור אינו דלת —
                 // הלחיצה מגיעה לטופס הבקשה ולא לנגן, ולכן אין מכאן שום דרך
                 // לסרטון מערוץ שלא אושר.
-                val ok = approvedIds.isEmpty() || v.channelId.isBlank() || v.channelId in approvedIds
+                val ok = approved.isEmpty() || approved.approves(v)
                 if (ok) {
                     VideoRow(v, onClick = { onVideoClick(v) })
                 } else {
@@ -157,6 +230,74 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
             prefillUrl = "https://www.youtube.com/channel/${target.channelId}",
         )
     }
+
+    if (showGreyDetail) {
+        GreyChannelsDialog(
+            rows = approved.unapproved(videos),
+            onDismiss = { showGreyDetail = false },
+        )
+    }
+}
+
+/**
+ * מי בדיוק אפור, ולמה.
+ *
+ * ## למה זה קיים
+ * "הרבה שירים מערוצים מאושרים מוצגים אפור" היא תלונה שאי אפשר לחקור בלי
+ * לדעת מה *באמת* כתוב על הפריטים האלה. מסך שמראה רק אפור אינו מספר אם
+ * הערוץ הוא ערוץ Topic אוטומטי, ערוץ עם שם שונה במעט, או ערוץ שפשוט אינו
+ * ברשימה. שלוש הסיבות נראות זהות למשתמש ודורשות שלושה תיקונים שונים.
+ *
+ * השם והמזהה מוצגים כטקסט שניתן להעתיק, כך שאפשר לשלוח אותם ולתקן לפי
+ * נתונים במקום לפי ניחוש.
+ */
+@Composable
+private fun GreyChannelsDialog(
+    rows: List<Triple<String, String, Int>>,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val report = remember(rows) {
+        rows.joinToString("\n") { (name, id, count) -> "$count · $name · $id" }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = ThemeState.surface,
+        title = {
+            Text("ערוצים שאינם מאושרים (${rows.size})", color = ThemeState.text, fontSize = 17.sp)
+        },
+        text = {
+            Column(modifier = Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
+                Text(
+                    "אלה הערוצים שהעלו את הפריטים האפורים. אם ערוץ כאן אמור " +
+                        "להיות מאושר — שלח את הרשימה ואפשר לתקן לפי המזהה.",
+                    color = ThemeState.subtext, fontSize = 12.sp, lineHeight = 17.sp,
+                )
+                Spacer(Modifier.height(10.dp))
+                rows.forEach { (name, id, count) ->
+                    Text(
+                        name.ifBlank { "(ללא שם)" },
+                        color = ThemeState.text, fontSize = 13.5.sp, fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        "$count פריטים · ${id.ifBlank { "ללא מזהה" }}",
+                        color = ThemeState.subtext, fontSize = 11.5.sp,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val clip = context.getSystemService(android.content.ClipboardManager::class.java)
+                clip?.setPrimaryClip(android.content.ClipData.newPlainText("ערוצים אפורים", report))
+                android.widget.Toast.makeText(context, "הועתק", android.widget.Toast.LENGTH_SHORT).show()
+            }) { Text("העתק", color = ThemeState.accent) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("סגור", color = ThemeState.subtext2) }
+        },
+    )
 }
 
 /** מתג מקור בתוך מסך אוסף — למשל לייקים של FilterTube מול לייקים של יוטיוב. */
@@ -195,19 +336,27 @@ fun SubscriptionsScreen(onOpenChannel: (String, String) -> Unit, onBack: () -> U
     val context = LocalContext.current
     val store = remember { LibraryStore(context) }
     val subs = remember { store.subscriptions() }
-    var approved by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val settings = remember { SettingsStore(context) }
+    var approved by remember {
+        mutableStateOf(com.filtertube.app.data.ApprovedChannels(emptyList()))
+    }
     var pending by remember { mutableStateOf<SubChannel?>(null) }
     // ערוצים שכבר נשלחה עליהם בקשה במסך הזה — כדי לא לשלוח פעמיים ברצף.
     var requested by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     LaunchedEffect(Unit) {
-        approved = runCatching {
-            com.filtertube.app.data.ChannelsRepository.getChannels(context)
-                .mapTo(HashSet()) { it.youtubeChannelId }
-        }.getOrDefault(emptySet())
+        approved = com.filtertube.app.data.ApprovedChannels(
+            runCatching {
+                // forLevel כמו בכל שאר האפליקציה. בלעדיו ערוץ מקטגוריה
+                // חסומה ברמה הנוכחית הוצג כמאושר וניתן לפתיחה מכאן.
+                com.filtertube.app.data.ChannelsRepository.getChannels(context)
+                    .forLevel(settings.filterLevel, settings.userGender)
+            }.getOrDefault(emptyList()),
+        )
     }
 
-    val approvedCount = subs.count { it.channelId in approved }
+    fun approves(sub: SubChannel) = approved.approves(sub.channelId, sub.title)
+    val approvedCount = subs.count { approves(it) }
     Column(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         DetailTopBar("המנויים שלי (${subs.size})", onBack)
         if (subs.isEmpty()) {
@@ -225,10 +374,10 @@ fun SubscriptionsScreen(onOpenChannel: (String, String) -> Unit, onBack: () -> U
                 items(subs, key = { it.channelId }) { sub ->
                     SubRow(
                         sub = sub,
-                        approved = sub.channelId in approved,
+                        approved = approves(sub),
                         requested = sub.channelId in requested,
                     ) {
-                        if (sub.channelId in approved) onOpenChannel(sub.channelId, sub.title)
+                        if (approves(sub)) onOpenChannel(sub.channelId, sub.title)
                         else pending = sub
                     }
                 }
@@ -280,7 +429,7 @@ private fun SubRow(
             } else {
                 Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(channelColor(sub.title)),
                     contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Person, null, tint = ThemeState.text)
+                    Icon(Icons.Rounded.Person, null, tint = ThemeState.text)
                 }
             }
         }

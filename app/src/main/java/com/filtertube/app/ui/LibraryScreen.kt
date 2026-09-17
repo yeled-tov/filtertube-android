@@ -1,5 +1,7 @@
 package com.filtertube.app.ui
 import com.filtertube.app.ThemeState
+import com.filtertube.app.ui.theme.MosaicTile
+import com.filtertube.app.ui.theme.Tint
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -11,19 +13,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Inbox
-import androidx.compose.material.icons.filled.Recommend
-import androidx.compose.material.icons.filled.Subscriptions
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.ThumbUp
-import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Inbox
+import androidx.compose.material.icons.rounded.Recommend
+import androidx.compose.material.icons.rounded.Subscriptions
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.ThumbUp
+import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -86,7 +88,20 @@ fun LibraryScreen(
 
     var version by remember { mutableStateOf(0) }
     val likes = remember(version) { store.likes() }
-    val downloads = remember(version) { store.downloads() }
+    // ── כאן רואים את הכל ──────────────────────────────────────────────────
+    // קודם הרשימה סוננה ל"מה שלא הורד מ-FilterMusic", ו-FilterMusic הציגה
+    // רק את שלה. התוצאה: מי שהוריד שיר משם ובא לחפש אותו כאן לא מצא אותו,
+    // וזה נראה בדיוק כמו הורדה שנכשלה.
+    //
+    // הספרייה של FilterTube היא הספרייה של האפליקציה כולה, ולכן היא מציגה
+    // הכל — ואילו FilterMusic ממשיכה להציג רק את שלה, כי שם זו קבוצה בתוך
+    // מסך מוזיקה. ככה שום הורדה לא נעלמת, וההפרדה נשמרת במקום שבו היא
+    // באמת עוזרת.
+    // המונה של DownloadEngine נכלל במפתח, כדי שהקובייה תתעדכן ברגע
+    // שההורדה מתחילה ולא רק אחרי יציאה וחזרה למסך.
+    val downloads = remember(version, com.filtertube.app.data.DownloadEngine.libraryVersion) {
+        store.downloads()
+    }
     val playlists = remember(version) { store.playlists() }
     var ytLikes by remember { mutableStateOf(store.youtubeLikes()) }
     var subs by remember { mutableStateOf(store.subscriptions()) }
@@ -94,10 +109,16 @@ fun LibraryScreen(
     var recs by remember { mutableStateOf(store.recommendations()) }
     val localHist = remember(version) { store.localHistory() }   // היסטוריית צפייה מקומית
     var channelCount by remember { mutableStateOf(0) }
+    // סמלי הערוצים המאושרים הראשונים — לפסיפס של הקובייה.
+    var channelArt by remember { mutableStateOf<List<String>>(emptyList()) }
     LaunchedEffect(Unit) {
-        channelCount = runCatching {
-            com.filtertube.app.data.ChannelsRepository.getCachedChannelsFast(context).size
-        }.getOrDefault(0)
+        val cached = runCatching {
+            com.filtertube.app.data.ChannelsRepository.getCachedChannelsFast(context)
+        }.getOrDefault(emptyList())
+        channelCount = cached.size
+        channelArt = cached.take(8).mapNotNull {
+            com.filtertube.app.data.ChannelAvatars.avatar(it.youtubeChannelId)
+        }
     }
     val loggedIn = accountStore.isLoggedIn   // מחושב מחדש בכל composition (מתעדכן בחזרה מהתחברות)
 
@@ -120,7 +141,8 @@ fun LibraryScreen(
                 val token = GoogleAuth.accessToken(context, a, googleSession)
                 Diagnostics.log("SYNC גוגל: אסימון התקבל (${token.length} תווים)")
                 // רק תוכן מהערוצים המאושרים — לייק/מנוי שלא ברשימה הלבנה לא נשמר ולא מוצג
-                val approved = ChannelsRepository.getChannels(context).map { it.youtubeChannelId }.toHashSet()
+                val approvedList = ChannelsRepository.getChannels(context)
+                val approved = com.filtertube.app.data.ApprovedChannels(approvedList)
 
                 // ── מיוזיק קודם, מאותה סיבה כמו בסנכרון הדפדפן ────────────
                 // "מוזיקה שאהבתי" היא תת-קבוצה של אותו פלייליסט LL. מי שמושך
@@ -137,12 +159,12 @@ fun LibraryScreen(
                         ).distinctBy { it.id }
                     // distinctBy לפני ההשלמה ולא אחריה: שני המקורות מחזירים
                     // את אותם שירים, והשלמת ערוץ היא בקשה לכל פריט.
-                    InnerTube.fillOwners(fromBoth) { it.channelId !in approved }
+                    InnerTube.fillOwners(fromBoth) { !approved.approves(it) }
                 }
                 val musicLiked = musicRaw
                 Diagnostics.log(
                     "SYNC גוגל · מיוזיק: ${musicRaw.size} התקבלו · " +
-                        "${musicRaw.count { it.channelId in approved }} מאושרים",
+                        "${musicRaw.count { approved.approves(it) }} מאושרים",
                 )
                 if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
                 if (musicLiked.isNotEmpty()) store.setMusicLikes(musicLiked)
@@ -154,12 +176,12 @@ fun LibraryScreen(
                     // למרות שהערוץ שהעלה אותו מאושר.
                     InnerTube.fillOwners(
                         YouTubeAccountRepository.likedVideos(token),
-                    ) { it.channelId !in approved }
+                    ) { !approved.approves(it) }
                 }
                 val liked = likedRaw.filter { it.id !in musicIds }
                 Diagnostics.log(
                     "SYNC גוגל · אהבתי: ${likedRaw.size} התקבלו · " +
-                        "${liked.count { it.channelId in approved }} מאושרים",
+                        "${liked.count { approved.approves(it) }} מאושרים",
                 )
                 if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
                 if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
@@ -176,7 +198,7 @@ fun LibraryScreen(
                 }
                 Diagnostics.log(
                     "SYNC גוגל · מנויים: ${subList.size} התקבלו · " +
-                        "${subList.count { it.channelId in approved }} מאושרים",
+                        "${subList.count { approved.approves(it.channelId, it.title) }} מאושרים",
                 )
                 if (!GoogleAuth.isSessionCurrent(context, googleSession)) return@launch
                 if (subList.isNotEmpty()) { store.setSubscriptions(subList); subs = subList }
@@ -187,7 +209,7 @@ fun LibraryScreen(
                 // הכל בלי שהמשתמש יקליד סיסמה אף פעם.
                 val oauthHistory = syncStep("היסטוריה") {
                     InnerTubeOAuth.history(token)
-                }.filter { it.channelId in approved }
+                }.filter { approved.approves(it) }
                 if (oauthHistory.isNotEmpty()) {
                     store.setHistory(oauthHistory); history = oauthHistory
                 }
@@ -219,14 +241,15 @@ fun LibraryScreen(
         syncing = true; status = "מסנכרן את החשבון שלך..."
         scope.launch {
             try {
-                val approved = ChannelsRepository.getChannels(context).map { it.youtubeChannelId }.toHashSet()
+                val approvedList = ChannelsRepository.getChannels(context)
+                val approved = com.filtertube.app.data.ApprovedChannels(approvedList)
                 // ערוץ שלא זוהה נפסל. באפליקציית רשימה לבנה "לא ידוע" אינו
                 // "מותר", ו-InnerTube מחזירה לא מעט פריטים שלא הצליחה לחלץ
                 // להם מזהה ערוץ — כלומר זו הדרך העיקרית שבה תוכן לא מאושר
                 // יכול היה להגיע לספרייה ומשם לנגן.
-                val hist = InnerTube.history(accountStore.cookies).filter { it.channelId in approved }
+                val hist = InnerTube.history(accountStore.cookies).filter { approved.approves(it) }
                 store.setHistory(hist); history = hist
-                val rec = InnerTube.recommendations(accountStore.cookies).filter { it.channelId in approved }
+                val rec = InnerTube.recommendations(accountStore.cookies).filter { approved.approves(it) }
                 store.setRecommendations(rec); recs = rec
 
                 // ── לייקים, מנויים ומוזיקה — אותן עוגיות, אותה פעולה ──────
@@ -236,7 +259,7 @@ fun LibraryScreen(
                 // מאיזה.
                 fun report(name: String, items: List<Video>): List<Video> {
                     val noChannel = items.count { it.channelId.isBlank() }
-                    val kept = items.filter { it.channelId in approved }
+                    val kept = items.filter { approved.approves(it) }
                     Diagnostics.log(
                         "SYNC $name: ${items.size} התקבלו · $noChannel בלי מזהה ערוץ · " +
                             "${kept.size} מאושרים",
@@ -256,7 +279,7 @@ fun LibraryScreen(
                 // עצמה, ולא לפי ניחוש שלנו.
                 val musicRaw = InnerTube.fillOwners(
                     InnerTube.likedMusic(accountStore.cookies),
-                ) { it.channelId !in approved }
+                ) { !approved.approves(it) }
                 // ── נשמר הכל, כולל מערוצים שלא אושרו ──────────────────────
                 // כמו במנויים: רשימה קטועה בלי שום רמז שחסר בה משהו היא
                 // בלבול. מסך "אהבתי" מציג את הלא-מאושרים באפור ומאפשר לבקש
@@ -273,7 +296,7 @@ fun LibraryScreen(
                 // שהערוץ שהעלה אותו מאושר לגמרי.
                 val likedRaw = InnerTube.fillOwners(
                     InnerTube.likedVideos(accountStore.cookies),
-                ) { it.channelId !in approved }
+                ) { !approved.approves(it) }
                 val liked = likedRaw.filter { it.id !in musicIds }
                 report("אהבתי", liked)
                 if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
@@ -282,7 +305,7 @@ fun LibraryScreen(
                 val subsFromCookies = allSubs.map { (id, name) -> SubChannel(id, name) }
                 Diagnostics.log(
                     "SYNC מנויים: ${allSubs.size} התקבלו · " +
-                        "${allSubs.count { it.first in approved }} מאושרים",
+                        "${allSubs.count { approved.approves(it.first, it.second) }} מאושרים",
                 )
                 if (subsFromCookies.isNotEmpty()) {
                     store.setSubscriptions(subsFromCookies); subs = subsFromCookies
@@ -337,7 +360,7 @@ fun LibraryScreen(
 
     LazyColumn(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         item {
-            Text("ספריה", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = ThemeState.text,
+            Text("ספריה", style = MaterialTheme.typography.displaySmall, color = ThemeState.text,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 8.dp))
             HorizontalDivider(color = ThemeState.divider)
         }
@@ -347,7 +370,7 @@ fun LibraryScreen(
             Column(modifier = Modifier.fillMaxWidth().padding(16.dp)
                 .clip(RoundedCornerShape(12.dp)).background(ThemeState.card).padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.AccountCircle, null, tint = Color(0xFFFF0000), modifier = Modifier.size(28.dp))
+                    Icon(Icons.Rounded.AccountCircle, null, tint = Color(0xFFFF0000), modifier = Modifier.size(28.dp))
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
@@ -396,7 +419,7 @@ fun LibraryScreen(
             Column(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
                 .clip(RoundedCornerShape(12.dp)).background(ThemeState.card).padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Sync, null, tint = ThemeState.accent, modifier = Modifier.size(26.dp))
+                    Icon(Icons.Rounded.Sync, null, tint = ThemeState.accent, modifier = Modifier.size(26.dp))
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(if (loggedIn) "חיבור דפדפן — פעיל" else "חיבור דפדפן",
@@ -440,24 +463,75 @@ fun LibraryScreen(
         //
         // "היסטוריה" ו"מומלצים" ירדו לשורות טקסט מתחת: הן שימושיות, אבל הן לא
         // אוסף שהמשתמש *בונה* — הן נוצרות מאליהן, ולכן לא צריכות את אותו משקל.
+        // ── הכל קוביות, וכל קובייה בנויה ממה שיש בתוכה ────────────────────
+        // קודם ישבו כאן שלוש קוביות ומתחתן שש שורות, וההבדל בגודל אמר "אלה
+        // חשובים יותר". בפועל זו הייתה הבחנה שלי ולא של מי שמשתמש: גם
+        // "ערוצים מאושרים" וגם "הבקשות שלי" הם יעדים שנכנסים אליהם.
+        //
+        // וגם: אייקון של לב אומר "אהבתי" אבל לא אומר *מה* אהבת. הכריכות של
+        // הפריטים הראשונים עונות על זה במבט, והקובייה מפסיקה להיות תווית.
         item {
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                LibTile("אהבתי", likes.size + ytLikes.size, Icons.Default.Favorite, Color(0xFFFF0000)) { onOpenCollection("likes") }
-                LibTile("הורדות", downloads.size, Icons.Default.Download, Color(0xFF10B981)) { onOpenCollection("downloads") }
-                LibTile("מנויים", subs.size, Icons.Default.Subscriptions, Color(0xFFA855F7)) { onOpenSubscriptions() }
+            val allLikes = remember(likes, ytLikes) { (likes + ytLikes).distinctBy { it.id } }
+            val tiles = listOf(
+                LibTileSpec(
+                    "סרטונים שאהבתי", allLikes.size, Icons.Rounded.Favorite, Tint.red,
+                    allLikes.map { it.thumbnailUrl },
+                ) { onOpenCollection("likes") },
+                LibTileSpec(
+                    "ההורדות שלי", downloads.size, Icons.Rounded.Download, Tint.green,
+                    downloads.map { it.thumbnailUrl },
+                ) { onOpenCollection("downloads") },
+                LibTileSpec(
+                    "מנויים", subs.size, Icons.Rounded.Subscriptions, Tint.violet,
+                    subs.map { it.thumbnailUrl },
+                ) { onOpenSubscriptions() },
+                LibTileSpec(
+                    "ערוצים מאושרים", channelCount, Icons.Rounded.Tv, ThemeState.accent,
+                    channelArt,
+                ) { onOpenChannels() },
+                // הבקשות יושבות ליד "ערוצים מאושרים" בכוונה: זו אותה שאלה
+                // משני צדדיה — מה כבר מאושר, ומה ביקשתי שיאושר.
+                LibTileSpec(
+                    "הבקשות שלי", -1, Icons.Rounded.Inbox, Tint.amber, emptyList(),
+                ) { onOpenMyRequests() },
+                LibTileSpec(
+                    "היסטוריית צפייה", localHist.size, Icons.Rounded.History, Tint.orange,
+                    localHist.map { it.thumbnailUrl },
+                ) { onOpenCollection("history") },
+                LibTileSpec(
+                    "מומלצים מיוטיוב", recs.size, Icons.Rounded.Recommend, Tint.teal,
+                    recs.map { it.thumbnailUrl },
+                ) { onOpenCollection("recs") },
+                // FilterTube יודעת לנגן גם מה שכבר על הטלפון, לא רק מה שהורידה.
+                LibTileSpec(
+                    "במכשיר שלי", -1, Icons.Rounded.PhoneAndroid, Tint.blue, emptyList(),
+                ) { onOpenDeviceMedia() },
+            )
+            // רשת ידנית ולא LazyVerticalGrid: אנחנו כבר בתוך LazyColumn,
+            // ורשת עצלה מקוננת בתוך רשימה עצלה באותו כיוון גלילה אינה חוקית.
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                tiles.chunked(2).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        row.forEach { spec ->
+                            MosaicTile(
+                                title = spec.title,
+                                subtitle = if (spec.count >= 0) "${spec.count} פריטים" else "",
+                                images = spec.images,
+                                icon = spec.icon,
+                                tint = spec.tint,
+                                modifier = Modifier.weight(1f),
+                                onClick = spec.onClick,
+                            )
+                        }
+                        // תא ריק כדי שקובייה בודדת בשורה אחרונה לא תימתח
+                        // לרוחב כפול ותיראה כמו פריט אחר לגמרי.
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
             }
-            Spacer(Modifier.height(14.dp))
-            // "ערוצים מאושרים" חי כאן ולא בתפריט צף שמסתתר מאחורי אווטאר במסך
-            // הבית. הספרייה היא "התוכן שלי", ומעקב אחרי ערוץ הוא בדיוק זה —
-            // ממש ליד "מנויים", שהוא אותו רעיון בצד של יוטיוב.
-            LibRow("ערוצים מאושרים", channelCount, Icons.Default.Tv, ThemeState.accent) { onOpenChannels() }
-            // הבקשות יושבות ליד "ערוצים מאושרים" בכוונה: זו אותה שאלה משני
-            // צדדיה — מה כבר מאושר, ומה ביקשתי שיאושר.
-            LibRow("הבקשות שלי", -1, Icons.Default.Inbox, Color(0xFFF59E0B)) { onOpenMyRequests() }
-            LibRow("היסטוריית צפייה", localHist.size, Icons.Default.History, Color(0xFFFF6D00)) { onOpenCollection("history") }
-            LibRow("מומלצים מיוטיוב", recs.size, Icons.Default.Recommend, Color(0xFF00BFA5)) { onOpenCollection("recs") }
-            // FilterTube יודעת לנגן גם מה שכבר על הטלפון, לא רק מה שהיא הורידה.
-            LibRow("במכשיר שלי", -1, Icons.Default.PhoneAndroid, Color(0xFF3B82F6)) { onOpenDeviceMedia() }
         }
 
         // אלבומים
@@ -466,10 +540,11 @@ fun LibraryScreen(
                 modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 24.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, tint = Color(0xFFFF0000), modifier = Modifier.size(20.dp))
+                Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, null, tint = Tint.red, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("אלבומים", color = ThemeState.text, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                IconButton(onClick = { showCreate = true }) { Icon(Icons.Default.Add, "אלבום חדש", tint = ThemeState.text) }
+                Text("אלבומים", color = ThemeState.text, style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.weight(1f))
+                IconButton(onClick = { showCreate = true }) { Icon(Icons.Rounded.Add, "אלבום חדש", tint = ThemeState.text) }
             }
         }
         if (playlists.isEmpty()) {
@@ -484,12 +559,13 @@ fun LibraryScreen(
                 ) {
                     Box(modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)).background(ThemeState.divider),
                         contentAlignment = Alignment.Center) {
-                        Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, tint = ThemeState.subtext)
+                        Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, null, tint = ThemeState.subtext)
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(pl.name, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        Text("${pl.videos.size} סרטונים", color = ThemeState.subtext, fontSize = 12.sp)
+                        Text(pl.name, color = ThemeState.text, style = MaterialTheme.typography.titleMedium)
+                        Text("${pl.videos.size} סרטונים", color = ThemeState.subtext,
+                            style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -498,46 +574,16 @@ fun LibraryScreen(
     }
 }
 
-/**
- * שורה, לא קובייה — לאוספים שנוצרים מאליהם ולא נבנים ע"י המשתמש.
- * ההבדל בגודל הוא ההבדל בחשיבות, וזה בדיוק מה שהיה חסר כששש קוביות
- * זהות התחרו על אותה תשומת לב.
- */
-@Composable
-private fun LibRow(title: String, count: Int, icon: ImageVector, accent: Color, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(12.dp)).background(ThemeState.card)
-            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, null, tint = accent, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(12.dp))
-        Text(title, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(1f))
-        // count שלילי = לשורה אין מונה (כמו "במכשיר שלי", שנספר רק אחרי סריקה).
-        if (count >= 0) Text("$count", color = ThemeState.subtext, fontSize = 13.sp)
-    }
-}
-
-@Composable
-private fun RowScope.LibTile(title: String, count: Int, icon: ImageVector, accent: Color, onClick: () -> Unit) {
-    Column(
-        modifier = Modifier.weight(1f).height(104.dp).clip(RoundedCornerShape(14.dp))
-            .background(ThemeState.card).clickable(onClick = onClick).padding(14.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Box(modifier = Modifier.size(40.dp).clip(CircleShape).background(accent.copy(alpha = 0.18f)),
-            contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = accent, modifier = Modifier.size(22.dp))
-        }
-        Column {
-            Text(title, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("$count פריטים", color = ThemeState.subtext, fontSize = 11.sp)
-        }
-    }
-}
+/** תיאור קובייה אחת ברשת הספרייה. */
+private data class LibTileSpec(
+    val title: String,
+    /** שלילי = לקובייה אין מונה (למשל "במכשיר שלי", שנספר רק אחרי סריקה). */
+    val count: Int,
+    val icon: ImageVector,
+    val tint: Color,
+    val images: List<String>,
+    val onClick: () -> Unit,
+)
 
 @Composable
 private fun CreatePlaylistDialog(onCreate: (String) -> Unit, onDismiss: () -> Unit) {

@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - 'codex/**'
+      - 'test/**'
     paths:
       - 'flutter_app/**'
       - '.github/workflows/flutter.yml'

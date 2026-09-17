@@ -124,10 +124,31 @@ class LibraryStore(context: Context) {
      * רגע עוד אין קובץ, ולכן המיקום נרשם רק כאן — וזה מה שהופך את הפריט
      * מ"רשומה ברשימה" למשהו שאפשר באמת לנגן, גם בלי רשת.
      */
-    fun setDownloadLocalUri(videoId: String, uri: String) {
+    fun setDownloadLocalUri(videoId: String, uri: String, fallback: Video? = null) {
         // uri ריק = ניקוי מיקום שכבר לא תקף, וזו פעולה לגיטימית.
         if (videoId.isBlank()) return
         val current = downloads()
+        if (current.none { it.id == videoId }) {
+            // ── הרשומה נעלמה בין ההתחלה לסיום ─────────────────────────────
+            // זה קרה בפועל: הקובץ ירד למכשיר, ההורדה סומנה "הושלם", ושום דבר
+            // לא נשמר — כי הפונקציה הזו רק *עדכנה* רשומה קיימת. אם היא איננה,
+            // אין מה לעדכן והתוצאה הייתה הורדה שנעלמה באוויר.
+            //
+            // הרשומה יכולה להיעדר משתי סיבות: היא מעולם לא נרשמה, או שהסשן
+            // התחלף באמצע (התחברות/התנתקות) ואז הכתיבה הראשונה נדחתה. בשני
+            // המקרים הסרטון ידוע לנו כאן, ולכן אפשר פשוט לרשום אותו עכשיו.
+            val video = fallback ?: run {
+                Diagnostics.log("DOWNLOAD $videoId: אין רשומה ואין גיבוי — המיקום לא נשמר")
+                return
+            }
+            val added = listOf(video.copy(localUri = uri)) + current
+            val ok = saveVideos(KEY_DOWNLOADS, added)
+            Diagnostics.log(
+                "DOWNLOAD $videoId: הרשומה נוצרה בסיום (${if (ok) "נשמר" else "הכתיבה נדחתה"})",
+            )
+            if (ok) queueCloudBackup()
+            return
+        }
         val updated = current.map { if (it.id == videoId) it.copy(localUri = uri) else it }
         if (updated != current && saveVideos(KEY_DOWNLOADS, updated)) queueCloudBackup()
     }
@@ -140,7 +161,52 @@ class LibraryStore(context: Context) {
         val current = downloads().toMutableList()
         current.removeAll { it.id == video.id }
         current.add(0, video)
-        if (saveVideos(KEY_DOWNLOADS, current)) queueCloudBackup()
+        if (saveVideos(KEY_DOWNLOADS, current)) {
+            queueCloudBackup()
+        } else {
+            // כתיבה נדחית כשהסשן אינו תואם. בלי השורה הזו זה כישלון שקט
+            // לחלוטין, וההורדה פשוט לא מופיעה בלי שום רמז למה.
+            Diagnostics.log("DOWNLOAD ${video.id}: הרישום נדחה — הסשן אינו תואם")
+        }
+    }
+
+    // ── סרטונים שהמשתמש חסם לעצמו ────────────────────────────────────────
+    /**
+     * חסימה אישית של סרטון.
+     *
+     * ## מה זה ומה זה לא
+     * זו אינה הרשימה הלבנה. הרשימה הלבנה קובעת מה *מותר* להיכנס לאפליקציה,
+     * וזו קובעת מה המשתמש לא רוצה לראות מתוך מה שכבר מותר. שתיהן מסננות,
+     * אבל רק אחת מהן היא מדיניות — ולכן רק אחת מהן מוגנת בקוד הורים.
+     *
+     * החסימה אישית ומקומית: היא לא מסירה את הסרטון לאף אחד אחר, ולא מדווחת
+     * לשום מקום. הסרטון פשוט מפסיק להופיע בבית, בחיפוש, במיקסים ובספרייה.
+     *
+     * ## למה נשמר הסרטון ולא רק המזהה
+     * כדי שמסך "מה חסמתי" יוכל להראות כותרת ותמונה. רשימה של מזהים בני
+     * 11 תווים אינה משהו שאפשר להחליט לפיו מה לשחרר.
+     */
+    fun blockedVideos(): List<Video> = videos(KEY_BLOCKED)
+
+    fun blockedIds(): Set<String> = blockedVideos().mapTo(HashSet()) { it.id }
+
+    fun isBlocked(videoId: String): Boolean = blockedIds().contains(videoId)
+
+    /** חוסם, ובנוסף מסיר מכל האוספים — אחרת הסרטון נשאר בספרייה כ"רוח". */
+    fun blockVideo(video: Video) {
+        if (video.id.isBlank()) return
+        val current = blockedVideos().toMutableList()
+        current.removeAll { it.id == video.id }
+        current.add(0, video)
+        while (current.size > BLOCKED_CAP) current.removeAt(current.lastIndex)
+        if (saveVideos(KEY_BLOCKED, current)) queueCloudBackup()
+        removeVideo(video)
+    }
+
+    fun unblockVideo(videoId: String) {
+        val current = blockedVideos()
+        val filtered = current.filterNot { it.id == videoId }
+        if (filtered.size != current.size && saveVideos(KEY_BLOCKED, filtered)) queueCloudBackup()
     }
 
     fun playlists(): List<Playlist> = AccountDataGuard.withLock {
@@ -399,6 +465,9 @@ class LibraryStore(context: Context) {
         private const val KEY_PLAYLISTS = "playlists"
         private const val KEY_YT_LIKES = "youtube_likes"
         private const val KEY_MUSIC_LIKES = "youtube_music_likes"
+        private const val KEY_BLOCKED = "blocked_videos"
+        /** תקרה: רשימה שגדלה בלי גבול מאטה כל סינון של הפיד. */
+        private const val BLOCKED_CAP = 500
         private const val KEY_SUBS = "youtube_subscriptions"
         private const val KEY_HISTORY = "youtube_history"
         private const val KEY_RECS = "youtube_recommendations"

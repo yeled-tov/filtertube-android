@@ -10,6 +10,10 @@ import 'screens/home_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/channels_screen.dart';
 import 'screens/player_screen.dart';
+import 'screens/library_screen.dart';
+import 'screens/music_screen.dart';
+import 'screens/shorts_screen.dart';
+import 'library.dart';
 
 /// מפתח ניווט גלובלי — לפתיחת קישורים חיצוניים מחוץ לעץ הווידג'טים.
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -56,15 +60,29 @@ class _RootState extends State<_Root> {
   int _index = 0;
   int _feedKey = 0;
 
+  /// בית · [שורטס] · ערוצים · חיפוש · מוזיקה · ספרייה
+  int get _tabCount => appSettings.shortsEnabled ? 6 : 5;
+
   @override
   void initState() {
     super.initState();
     _ready = _init();
     _setupDeepLinks();
+    appSettings.addListener(_onSettingsChanged);
+  }
+
+  /// לשונית השורטס נוספת ונעלמת לפי ההגדרה, ולכן האינדקס עלול להישאר מחוץ
+  /// לתחום כשמכבים אותה — מקצצים אותו במקום ליפול.
+  void _onSettingsChanged() {
+    if (!mounted) return;
+    setState(() {
+      if (_index >= _tabCount) _index = _tabCount - 1;
+    });
   }
 
   Future<void> _init() async {
     await appSettings.load();
+    await appLibrary.load();
     await _channels.load(level: appSettings.filterLevel);
   }
 
@@ -109,6 +127,7 @@ class _RootState extends State<_Root> {
 
   @override
   void dispose() {
+    appSettings.removeListener(_onSettingsChanged);
     _linkSub?.cancel();
     super.dispose();
   }
@@ -130,20 +149,30 @@ class _RootState extends State<_Root> {
             body: Center(child: CircularProgressIndicator(color: AppTheme.accent)),
           );
         }
+        final shorts = appSettings.shortsEnabled;
         final screens = [
           HomeScreen(
               key: ValueKey(_feedKey),
               api: _api,
               channels: _channels,
               onFilterLevelChanged: _onLevelChanged),
+          if (shorts)
+            ShortsScreen(
+                key: ValueKey(_feedKey),
+                api: _api,
+                channels: _channels,
+                active: _index == 1),
           ChannelsScreen(api: _api, channels: _channels),
           SearchScreen(api: _api, channels: _channels),
+          MusicScreen(api: _api, channels: _channels),
+          LibraryScreen(api: _api, channels: _channels),
         ];
         return Scaffold(
           extendBody: true,
           body: IndexedStack(index: _index, children: screens),
           bottomNavigationBar: _FloatingNav(
             index: _index,
+            showShorts: shorts,
             onTap: (i) => setState(() => _index = i),
           ),
         );
@@ -155,19 +184,32 @@ class _RootState extends State<_Root> {
 /// נאב בר צף יוקרתי — גלולה עם גרדיאנט לפריט הנבחר.
 class _FloatingNav extends StatelessWidget {
   final int index;
+  final bool showShorts;
   final ValueChanged<int> onTap;
-  const _FloatingNav({required this.index, required this.onTap});
+  const _FloatingNav({
+    required this.index,
+    required this.showShorts,
+    required this.onTap,
+  });
 
-  static const List<(IconData, String)> _items = [
+  static const (IconData, String) _shortsItem = (Icons.bolt_rounded, 'שורטס');
+
+  static const List<(IconData, String)> _base = [
     (Icons.home_rounded, 'בית'),
     (Icons.subscriptions_rounded, 'ערוצים'),
     (Icons.search_rounded, 'חיפוש'),
+    (Icons.music_note_rounded, 'מוזיקה'),
+    (Icons.library_books_rounded, 'ספרייה'),
   ];
+
+  /// חייב להתאים בדיוק לסדר של screens ב-_RootState.
+  List<(IconData, String)> get _items =>
+      showShorts ? [_base.first, _shortsItem, ..._base.skip(1)] : _base;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(26, 0, 26, 16),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
       child: Container(
         height: 62,
         decoration: BoxDecoration(
@@ -192,7 +234,7 @@ class _FloatingNav extends StatelessWidget {
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOut,
                 padding: EdgeInsets.symmetric(
-                    horizontal: selected ? 16 : 12, vertical: 9),
+                    horizontal: selected ? 12 : 9, vertical: 9),
                 decoration: BoxDecoration(
                   gradient: selected ? AppTheme.accentGradient : null,
                   borderRadius: BorderRadius.circular(16),
@@ -203,7 +245,7 @@ class _FloatingNav extends StatelessWidget {
                         color: selected ? Colors.white : AppTheme.subtext,
                         size: 22),
                     if (selected) ...[
-                      const SizedBox(width: 7),
+                      const SizedBox(width: 6),
                       Text(_items[i].$2,
                           style: const TextStyle(
                               color: Colors.white,

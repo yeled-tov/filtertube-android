@@ -21,11 +21,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -601,11 +601,11 @@ fun AppRoot() {
     // קודם לכן הדרך היחידה להגיע להגדרות הייתה שלוש הקשות — אווטאר, תפריט,
     // הגדרות — ורק ממסך הבית.
     val navItems = buildList {
-        add(GlassNavItem("home", "בית", Icons.Default.Home))
-        add(GlassNavItem("search", "חיפוש", Icons.Default.Search))
-        if (shortsEnabled) add(GlassNavItem("shorts", "Shorts", Icons.Default.PlayArrow))
-        add(GlassNavItem("library", "ספריה", Icons.Default.LibraryMusic))
-        add(GlassNavItem("settings", "הגדרות", Icons.Default.Settings))
+        add(GlassNavItem("home", "בית", Icons.Rounded.Home))
+        add(GlassNavItem("search", "חיפוש", Icons.Rounded.Search))
+        if (shortsEnabled) add(GlassNavItem("shorts", "Shorts", Icons.Rounded.PlayArrow))
+        add(GlassNavItem("library", "ספריה", Icons.Rounded.LibraryMusic))
+        add(GlassNavItem("settings", "הגדרות", Icons.Rounded.Settings))
     }
 
     fun navigateTab(route: String) {
@@ -901,14 +901,35 @@ object ThemeState {
     var accent2 by mutableStateOf(Color(0xFFFF6A5C))
     var dark by mutableStateOf(true)
 
-    val bg: Color get() = if (dark) Color(0xFF08080B) else Color(0xFFFAFAFA)
-    val bg2: Color get() = if (dark) Color(0xFF111114) else Color(0xFFEDEDED)
-    val surface: Color get() = if (dark) Color(0xFF18181B) else Color(0xFFFFFFFF)
-    val card: Color get() = if (dark) Color(0xFF121216) else Color(0xFFF1F1F1)
-    val divider: Color get() = if (dark) Color(0xFF26262C) else Color(0xFFE2E2E2)
-    val text: Color get() = if (dark) Color(0xFFF4F4F6) else Color(0xFF111111)
-    val subtext: Color get() = if (dark) Color(0xFF8B8B93) else Color(0xFF6B6B6B)
-    val subtext2: Color get() = if (dark) Color(0xFFC6C6CE) else Color(0xFF555555)
+    /**
+     * סולם המשטחים.
+     *
+     * ## למה הסדר הזה חשוב
+     * במצב כהה, משטח שמורם מעל אחר הוא **בהיר** יותר — כך העין קוראת עומק.
+     * קודם היה כאן ההפך: card (0xFF121216) היה כהה מ-surface, כלומר כרטיס
+     * "מורם" נצבע כהה מהרקע שמתחתיו. זה מה שגרם לממשק להיראות שטוח ולכרטיסים
+     * להיעלם ברקע. הסולם עכשיו מונוטוני: bg < bg2 < card < surface.
+     *
+     * ההפרשים קטנים בכוונה (2-4 יחידות בכל צעד): במסך כהה די בהבדל עדין
+     * כדי לתת עומק, והבדל גדול היה הופך את הכרטיסים לאפורים במקום לשחורים.
+     */
+    val bg: Color get() = if (dark) Color(0xFF0A0A0D) else Color(0xFFF7F7F9)
+    val bg2: Color get() = if (dark) Color(0xFF121216) else Color(0xFFEFEFF3)
+    val card: Color get() = if (dark) Color(0xFF17171C) else Color(0xFFFFFFFF)
+    val surface: Color get() = if (dark) Color(0xFF1D1D23) else Color(0xFFFFFFFF)
+    val divider: Color get() = if (dark) Color(0xFF2B2B33) else Color(0xFFE4E4EA)
+    val text: Color get() = if (dark) Color(0xFFF5F5F7) else Color(0xFF101014)
+    val subtext: Color get() = if (dark) Color(0xFF8E8E99) else Color(0xFF6E6E78)
+    val subtext2: Color get() = if (dark) Color(0xFFC8C8D2) else Color(0xFF44444C)
+
+    /**
+     * גוון ההדגשה ברקע — למצב "נבחר" ולשטחים שצריכים לרמוז על הצבע הראשי
+     * בלי לצעוק. שקיפות ולא צבע קבוע, כדי שזה יעבוד מעל כל משטח בסולם.
+     */
+    val accentSoft: Color get() = accent.copy(alpha = if (dark) 0.16f else 0.10f)
+
+    /** מה שנכתב מעל צבע ההדגשה. הוא רווי מספיק כדי שלבן תמיד ינצח. */
+    val onAccent: Color get() = Color.White
 
     val accentColors: List<Color> get() = listOf(accent, accent2)
 }
@@ -923,6 +944,17 @@ fun FilterTubeTheme(content: @Composable () -> Unit) {
         onBackground = ThemeState.text,
         onSurface = ThemeState.text,
         onSurfaceVariant = ThemeState.subtext2,
+        surfaceVariant = ThemeState.bg2,
+        outline = ThemeState.divider,
+        outlineVariant = ThemeState.divider,
+        onPrimary = ThemeState.onAccent,
+        secondary = ThemeState.accent2,
     )
-    MaterialTheme(colorScheme = colorScheme, content = content)
+    // הטיפוגרפיה נכנסת דרך MaterialTheme, ולכן כל Text באפליקציה שלא קובע
+    // fontFamily בעצמו יורש את Rubik — בלי לגעת במאות קריאות Text.
+    MaterialTheme(
+        colorScheme = colorScheme,
+        typography = com.filtertube.app.ui.theme.FilterTypography,
+        content = content,
+    )
 }

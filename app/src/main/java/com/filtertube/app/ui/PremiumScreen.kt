@@ -12,11 +12,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PictureInPictureAlt
-import androidx.compose.material.icons.filled.WorkspacePremium
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
+import androidx.compose.material.icons.rounded.WorkspacePremium
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -89,7 +89,7 @@ fun PremiumScreen(onBack: () -> Unit) {
                     .align(Alignment.CenterHorizontally),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Default.WorkspacePremium, null, tint = Color.White, modifier = Modifier.size(42.dp))
+                Icon(Icons.Rounded.WorkspacePremium, null, tint = Color.White, modifier = Modifier.size(42.dp))
             }
             Spacer(Modifier.height(14.dp))
             Text(
@@ -110,9 +110,9 @@ fun PremiumScreen(onBack: () -> Unit) {
             )
 
             Spacer(Modifier.height(22.dp))
-            Perk(Icons.Default.Download, "הורדות לצפייה ללא חיבור")
-            Perk(Icons.Default.MusicNote, "ניגון ברקע ובמסך כבוי")
-            Perk(Icons.Default.PictureInPictureAlt, "חלון צף (Picture-in-Picture)")
+            Perk(Icons.Rounded.Download, "הורדות לצפייה ללא חיבור")
+            Perk(Icons.Rounded.MusicNote, "ניגון ברקע ובמסך כבוי")
+            Perk(Icons.Rounded.PictureInPictureAlt, "חלון צף (Picture-in-Picture)")
 
             if (!paidActive) {
                 Spacer(Modifier.height(24.dp))
@@ -186,7 +186,7 @@ fun PremiumScreen(onBack: () -> Unit) {
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.Lock, null, tint = ThemeState.subtext2, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Rounded.Lock, null, tint = ThemeState.subtext2, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(
                         "לא שולחים פרטי אשראי במייל · התשלום מוסדר מולנו ישירות",

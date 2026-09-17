@@ -7,7 +7,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
@@ -17,7 +16,10 @@ object NotificationRegistration {
     private const val TAG = "NotificationRegistration"
     private const val API =
         "https://europe-west1-filter-tube-52d8e.cloudfunctions.net/registerNotificationToken"
-    private val http = OkHttpClient()
+    // נגזר מהלקוח המשותף ולא מופע חדש: מופע נפרד מחזיק מאגר חיבורים
+    // ומאגר תהליכונים משלו, ופותח חיבור TLS חדש גם כשכבר יש אחד פתוח
+    // לאותו מארח.
+    private val http = Http.newBuilder().build()
 
     suspend fun registerIfPossible() = withContext(Dispatchers.IO) {
         val user = FirebaseAuth.getInstance().currentUser?.takeIf { it.isEmailVerified } ?: return@withContext
@@ -40,5 +42,23 @@ object NotificationRegistration {
                 if (!response.isSuccessful) Log.w(TAG, "token registration failed: ${response.code}")
             }
         }.onFailure { Log.w(TAG, "unable to register push token", it) }
+    }
+
+    /**
+     * משחרר את אסימון ההתראות של המכשיר בהתנתקות.
+     *
+     * ## למה זה חייב לקרות
+     * אסימון FCM מזהה **התקנה**, לא חשבון, והוא לא משתנה כשמתחלף המשתמש.
+     * מכשיר שהאדמין התחבר בו פעם אחת נרשם אצלו בשרת, ונשאר רשום שם גם אחרי
+     * שהמכשיר עבר ללקוח — ולכן אותו לקוח המשיך לקבל "בקשת ערוץ חדשה".
+     *
+     * מחיקת האסימון עצמו היא הפתרון הנקי: היא מבטלת אותו אצל FCM, כך שכל
+     * שליחה אליו נכשלת מיד (והשרת מנקה את הרישום), והמכשיר מקבל אסימון חדש
+     * לגמרי בהתחברות הבאה. זה לא דורש קריאת רשת מאומתת בדיוק ברגע שבו
+     * ההרשאה נלקחת.
+     */
+    fun releaseOnSignOut() {
+        FirebaseMessaging.getInstance().deleteToken()
+            .addOnFailureListener { Log.w(TAG, "unable to release push token", it) }
     }
 }

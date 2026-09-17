@@ -47,6 +47,21 @@ object DownloadEngine {
     /** רשימת ההורדות הפעילות/האחרונות — נצפית במסך מנהל ההורדות (Compose). */
     val active = mutableStateListOf<DownloadTask>()
 
+    /**
+     * מונה שגדל בכל שינוי ברשימת ההורדות השמורה.
+     *
+     * ## למה זה נדרש
+     * הרשימה נשמרת ב-SharedPreferences, ולמסך אין שום דרך לדעת שהיא
+     * השתנתה — ולכן הוא קרא אותה פעם אחת בכניסה, והורדה חדשה הופיעה רק
+     * אחרי יציאה וחזרה. זה בדיוק מה שנראה כמו "לוקח לזה זמן להסתנכרן".
+     *
+     * מונה נצפה הוא הדרך הקצרה: כל מסך שקורא אותו נבנה מחדש כשהוא זז.
+     */
+    var libraryVersion by mutableStateOf(0)
+        private set
+
+    private fun bumpLibrary() { libraryVersion++ }
+
     private data class Spec(
         val url: String, val fileName: String, val ua: String?,
         val connections: Int, val isAudio: Boolean, val context: Context,
@@ -73,6 +88,10 @@ object DownloadEngine {
      * הקטגוריה נלקחת מהמטמון המקומי ולא מהרשת: הורדה לא אמורה לחכות לרשת
      * כדי לדעת מה מותר, ואם המטמון ריק נשארת ההגדרה הגלובלית של המשתמש.
      */
+    /** האם למשתמש יש הרשאה להוריד. ה-UI קורא לזה כדי להסביר במקום לשתוק. */
+    fun canDownload(context: Context): Boolean =
+        SettingsStore(context.applicationContext).premiumActive
+
     fun audioOnlyFor(context: Context, video: Video): Boolean {
         val settings = SettingsStore(context.applicationContext)
         val category = runCatching {
@@ -122,6 +141,28 @@ object DownloadEngine {
             audioUrl = null
         }
 
+        // ── שער הפרימיום, כאן ולא רק אצל הקוראים ──────────────────────────
+        // הבדיקה הייתה מפוזרת על מסכי ה-UI, ולכן כל מסלול הורדה חדש נולד
+        // פרוץ כברירת מחדל: כשנוספו כפתורי ההורדה ב-FilterMusic הם פשוט לא
+        // ידעו שצריך לבדוק. אותו לקח בדיוק כמו מדיניות האודיו למעלה — שער
+        // שיושב במעבר עצמו לא יכול להישכח, כי כל המסלולים עוברים בו.
+        //
+        // ה-UI ממשיך לבדוק לפני הקריאה כדי להציג הסבר; זה כאן הוא הרשת
+        // האחרונה, לא ההודעה.
+        if (!settings.premiumActive) {
+            Diagnostics.log("DOWNLOAD ${video.id}: נחסם — הורדות דורשות פרימיום")
+            return
+        }
+
+        // ── הרישום בספרייה, כאן ולא אצל הקוראים ───────────────────────────
+        // קודם addDownload נקרא ממקום אחד בלבד — מסך הנגן של FilterTube.
+        // כל שאר המסלולים (תפריט הפעולות, FilterMusic, הורדה מרוכזת) הורידו
+        // את הקובץ בלי לרשום אותו, ואז setDownloadLocalUri בסיום חיפש רשומה
+        // קיימת, לא מצא, ולא שמר כלום: הקובץ ירד למכשיר והאפליקציה לא ידעה
+        // עליו. כאן זה נרשם פעם אחת לכל מסלול, כי כאן כולם עוברים.
+        LibraryStore(ctx).addDownload(video)
+        bumpLibrary()
+
         val task = DownloadTask(video, isAudio)
         active.add(0, task)
         while (active.size > 60) active.removeAt(active.lastIndex)
@@ -146,7 +187,13 @@ object DownloadEngine {
      * לא היה שווה כלום: אפשר היה להאזין בלבד, אבל להוריד את הווידאו המלא
      * ולצפות בו מגלריית המכשיר.
      */
-    suspend fun enqueueByVideo(context: Context, video: Video, isAudio: Boolean): Boolean {
+    suspend fun enqueueByVideo(
+        context: Context,
+        video: Video,
+        isAudio: Boolean,
+        fromMusic: Boolean = false,
+    ): Boolean {
+        if (!SettingsStore(context.applicationContext).premiumActive) return false
         val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull() ?: return false
         val v = video.copy(
             title = data.title.ifBlank { video.title },
@@ -155,6 +202,7 @@ object DownloadEngine {
             // מזהה הערוץ מהזרם ולא מהרשומה: פריט שהגיע מהיסטוריה או מחיפוש
             // יכול להגיע בלי מזהה, ובלי מזהה אין קטגוריה ואין מדיניות.
             channelId = video.channelId.ifBlank { data.channelId },
+            fromMusic = fromMusic || video.fromMusic,
         )
         @Suppress("NAME_SHADOWING")
         val isAudio = isAudio || audioOnlyFor(context, v)
@@ -177,7 +225,11 @@ object DownloadEngine {
                     task.status = "מוריד"
                     val uri = downloadFile(s, task)
                     // רק עכשיו הסרטון באמת זמין לניגון מקומי.
-                    LibraryStore(s.context).setDownloadLocalUri(task.video.id, uri)
+                    // fallback: אם הרשומה איננה, היא נוצרת כאן מהסרטון עצמו
+                    // במקום שההורדה תיעלם בשקט.
+                    LibraryStore(s.context)
+                        .setDownloadLocalUri(task.video.id, uri, fallback = task.video)
+                    bumpLibrary()
                     task.progress = 100; task.status = "הושלם"
                     Diagnostics.log("DOWNLOAD ${task.video.id}: נשמר ב-$uri")
                     return uri

@@ -239,10 +239,42 @@ class SettingsStore(context: Context) {
         get() = prefs.getInt(KEY_CROSSFADE, 0).coerceIn(0, 12)
         set(value) = prefs.edit().putInt(KEY_CROSSFADE, value.coerceIn(0, 12)).apply()
 
-    /** מצב נושא: 0 = לפי המערכת, 1 = כהה, 2 = בהיר. */
+    /**
+     * מצב נושא: 0 = לפי המערכת, 1 = כהה, 2 = בהיר.
+     *
+     * ברירת המחדל היא בהיר: אפליקציה שנפתחת כהה במכשיר שמוגדר בהיר נראית
+     * כאילו משהו השתבש, ורוב המשתמשים לא מחפשים את ההגדרה כדי לתקן.
+     */
     var themeMode: Int
-        get() = prefs.getInt(KEY_THEME_MODE, 1)
+        get() = prefs.getInt(KEY_THEME_MODE, 2)
         set(value) = prefs.edit().putInt(KEY_THEME_MODE, value).apply()
+
+    // ── מחוות בנגן ────────────────────────────────────────────────────
+    // ארבעה מתגים ולא שניים: הנגן של FilterMusic והנגן של FilterTube הם שני
+    // מסכים שונים עם שימוש שונה. במוזיקה החלקה היא הדרך הטבעית להחליף שיר;
+    // בווידאו אותה תנועה עלולה להפריע למי שרגיל לגעת במסך בזמן צפייה. לכן
+    // כל נגן נשלט בנפרד, ואף אחד לא צריך לכבות מחווה שהוא כן רוצה כדי
+    // להיפטר מאחת שהוא לא.
+
+    /** FilterMusic: החלקה שמאלה = השיר הבא, ימינה = הקודם. */
+    var musicSwipeTrack: Boolean
+        get() = prefs.getBoolean(KEY_MUSIC_SWIPE_TRACK, true)
+        set(value) = prefs.edit().putBoolean(KEY_MUSIC_SWIPE_TRACK, value).apply()
+
+    /** FilterMusic: החלקה מלמעלה למטה סוגרת את הנגן. */
+    var musicSwipeDismiss: Boolean
+        get() = prefs.getBoolean(KEY_MUSIC_SWIPE_DISMISS, true)
+        set(value) = prefs.edit().putBoolean(KEY_MUSIC_SWIPE_DISMISS, value).apply()
+
+    /** FilterTube: החלקה שמאלה/ימינה מעבירה לסרטון הבא/הקודם בתור. */
+    var videoSwipeTrack: Boolean
+        get() = prefs.getBoolean(KEY_VIDEO_SWIPE_TRACK, true)
+        set(value) = prefs.edit().putBoolean(KEY_VIDEO_SWIPE_TRACK, value).apply()
+
+    /** FilterTube: החלקה מלמעלה למטה מכווצת את הנגן. */
+    var videoSwipeDismiss: Boolean
+        get() = prefs.getBoolean(KEY_VIDEO_SWIPE_DISMISS, true)
+        set(value) = prefs.edit().putBoolean(KEY_VIDEO_SWIPE_DISMISS, value).apply()
 
     /** התראות על סרטון חדש בערוץ מאושר (בדיקת רקע תקופתית). */
     var newVideoNotifications: Boolean
@@ -265,6 +297,16 @@ class SettingsStore(context: Context) {
     var skippedUpdateBuild: Int
         get() = prefs.getInt(KEY_SKIPPED_UPDATE, 0)
         set(value) = prefs.edit().putInt(KEY_SKIPPED_UPDATE, value).apply()
+
+    /**
+     * מספר הבנייה שכבר יצאה עליה התראה במגש ההתראות.
+     *
+     * בלי זה, בדיקת הרקע הייתה מקפיצה את אותה התראה בכל בדיקה מחדש —
+     * כלומר כמה פעמים ביום על אותו עדכון עצמו.
+     */
+    var notifiedUpdateBuild: Int
+        get() = prefs.getInt(KEY_NOTIFIED_UPDATE, 0)
+        set(value) = prefs.edit().putInt(KEY_NOTIFIED_UPDATE, value).apply()
 
     /** כמה הורדות לרוץ במקביל (1–4). */
     var concurrentDownloads: Int
@@ -646,6 +688,11 @@ class SettingsStore(context: Context) {
         private const val KEY_NOTIFY = "new_video_notifications"
         private const val KEY_TEST_CHANNEL = "test_channel_updates"
         private const val KEY_SKIPPED_UPDATE = "skipped_update_build"
+        private const val KEY_NOTIFIED_UPDATE = "notified_update_build"
+        private const val KEY_MUSIC_SWIPE_TRACK = "music_swipe_track"
+        private const val KEY_MUSIC_SWIPE_DISMISS = "music_swipe_dismiss"
+        private const val KEY_VIDEO_SWIPE_TRACK = "video_swipe_track"
+        private const val KEY_VIDEO_SWIPE_DISMISS = "video_swipe_dismiss"
         private const val KEY_DL_CONCURRENT = "dl_concurrent"
         private const val KEY_DL_CONNECTIONS = "dl_connections"
         private const val KEY_DL_AUTO_LIKES = "dl_auto_likes"

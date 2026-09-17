@@ -8,8 +8,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -107,7 +107,7 @@ fun ArtistPickerDialog(
                 onValueChange = { query = it },
                 singleLine = true,
                 placeholder = { Text("חיפוש", color = ThemeState.subtext, fontSize = 13.sp) },
-                leadingIcon = { Icon(Icons.Default.Search, null, tint = ThemeState.subtext) },
+                leadingIcon = { Icon(Icons.Rounded.Search, null, tint = ThemeState.subtext) },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -193,7 +193,7 @@ private fun ArtistRow(channel: Channel, selected: Boolean, onToggle: () -> Unit)
             contentAlignment = Alignment.Center,
         ) {
             if (selected) {
-                Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(20.dp))
             } else {
                 Text(
                     channel.name.trim().take(1).ifBlank { "?" },

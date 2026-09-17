@@ -271,9 +271,15 @@ object InnerTube {
                 async {
                     if (!needsOwner(video)) return@async video
                     val owner = gate.withPermit { ownerChannel(video.id) } ?: return@async video
+                    // שם המעלה שהתקבל גובר על הכיתוב המקורי, ולא רק ממלא
+                    // חסר. הכיתוב ביוטיוב מיוזיק הוא שם האמן הנקי, ואילו
+                    // המזהה שהתקבל כאן הוא של ערוץ ה-Topic שלו. שמירת השם
+                    // הישן לצד המזהה החדש הייתה משאירה רשומה שסותרת את
+                    // עצמה — ובלי הסיומת "- Topic" אין דרך לזהות שזה בכלל
+                    // ערוץ אוטומטי של אמן מאושר.
                     video.copy(
                         channelId = owner.first,
-                        channelName = video.channelName.ifBlank { owner.second },
+                        channelName = owner.second.ifBlank { video.channelName },
                     )
                 }
             }.map { it.await() }

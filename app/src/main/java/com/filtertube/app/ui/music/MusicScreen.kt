@@ -16,15 +16,18 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,6 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filtertube.app.ThemeState
+import com.filtertube.app.ui.theme.MosaicTile
+import com.filtertube.app.ui.theme.Tint
 import com.filtertube.app.data.Channel
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.FeedCache
@@ -45,6 +50,7 @@ import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.forLevel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * הקטגוריות שנחשבות "מוזיקה" ב-FilterMusic.
@@ -67,10 +73,14 @@ private enum class MusicChip(val label: String) {
 }
 
 private enum class MusicTab(val label: String, val icon: ImageVector) {
-    HOME("בית", Icons.Default.Home),
-    SEARCH("חיפוש", Icons.Default.Search),
-    LIBRARY("ספריה", Icons.Default.LibraryMusic),
-    DOWNLOADS("הורדות", Icons.Default.Download),
+    HOME("בית", Icons.Rounded.Home),
+    SEARCH("חיפוש", Icons.Rounded.Search),
+    // ── למה אין כאן "הורדות" ──────────────────────────────────────────
+    // הורדות הן חלק מהספרייה ולא מקום אחר: זה עדיין "מה ששלי", רק שהוא
+    // כבר על המכשיר. לשונית נפרדת אילצה לזכור בשתי רשימות שונות איפה שיר
+    // נמצא, וגזלה רבע מסרגל הניווט בשביל הבחנה שאינה מעניינת את המאזין.
+    MIXES("מיקסים", Icons.AutoMirrored.Rounded.QueueMusic),
+    LIBRARY("ספריה", Icons.Rounded.LibraryMusic),
 }
 
 /**
@@ -110,20 +120,32 @@ fun FilterMusicScreen(
     var downloads by remember { mutableStateOf<List<Video>>(emptyList()) }
     /** null = טרם נבדק. false = אין חיבור. */
     var online by remember { mutableStateOf<Boolean?>(null) }
+    // התפריט הוא בדיוק זה של FilterTube, במצב מוזיקה: אותן פעולות, אותה
+    // צורה, ורק ההורדה שונה — אודיו, ומסומנת כהורדת מוזיקה.
+    var menuFor by remember { mutableStateOf<Video?>(null) }
+    // הערוצים המוזיקליים המאושרים — החיפוש ברשת מוגבל אליהם.
+    var searchChannels by remember { mutableStateOf<List<Channel>>(emptyList()) }
+    var mixes by remember { mutableStateOf<List<com.filtertube.app.data.Mix>>(emptyList()) }
 
     LaunchedEffect(Unit) {
         val channels = runCatching {
             ChannelsRepository.getChannels(context).forLevel(settings.filterLevel, settings.userGender)
         }.getOrNull().orEmpty()
-        val musicIds = channels.asSequence()
-            .filter { it.category in MUSIC_CATEGORIES }
-            .mapTo(HashSet()) { it.youtubeChannelId }
+        // ApprovedChannels ולא סט מזהים: שיר שהועלה ע"י ערוץ ה-Topic של אמן
+        // מאושר נשא מזהה שאינו ברשימה, ולכן נפל כאן בשקט — הוא לא הוצג אפור
+        // אלא פשוט לא הופיע, ו"אהבתי" ב-FilterMusic נראה חסר בלי שום הסבר.
+        val musicOnlyChannels = channels.filter { it.category in MUSIC_CATEGORIES }
+        searchChannels = musicOnlyChannels
+        val musicChannels = com.filtertube.app.data.ApprovedChannels(musicOnlyChannels)
 
         // distinctBy חובה ולא נוי: מפתח כפול ב-LazyColumn מפיל את המסך,
         // ואותו סרטון יכול להופיע פעמיים בפיד אחרי רענון.
+        val blocked = runCatching { store.blockedIds() }.getOrDefault(emptySet())
         fun List<Video>.musicOnly() =
-            filter { it.channelId in musicIds && !it.isShort && it.id.isNotBlank() }
-                .distinctBy { it.id }
+            filter {
+                musicChannels.approves(it) && !it.isShort && it.id.isNotBlank() &&
+                    it.id !in blocked
+            }.distinctBy { it.id }
 
         feed = runCatching { FeedCache.loadFeed(context) }.getOrNull().orEmpty().musicOnly()
         // ── מה נחשב "אהבתי" ב-FilterMusic ──────────────────────────────
@@ -137,12 +159,17 @@ fun FilterMusicScreen(
         //
         // musicOnly הוא מה שמפריד: שיעור תורה שסומן בלב לא ייכנס לכאן גם
         // אם הוא ברשימת הלייקים, כי הערוץ שלו אינו ערוץ מוזיקה.
-        likes = (
+        // הקריאות לספרייה עוברות ל-IO: הן פותחות SharedPreferences ומפענחות
+        // JSON של מאות פריטים, ועל תהליכון ה-UI זה בדיוק מה שנראה כמו
+        // לשונית שנתקעת לרגע בכניסה אליה.
+        likes = withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching { store.musicLikes() }.getOrNull().orEmpty() +
                 runCatching { store.youtubeLikes() }.getOrNull().orEmpty() +
                 runCatching { store.likes() }.getOrNull().orEmpty()
-            ).musicOnly()
-        history = runCatching { store.localHistory() }.getOrNull().orEmpty().musicOnly()
+        }.musicOnly()
+        history = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { store.localHistory() }.getOrNull().orEmpty()
+        }.musicOnly()
         favorites = runCatching { settings.favoriteArtists }.getOrNull().orEmpty()
         // הסמלים של הערוצים — נמשכים בהדרגה ונשמרים לתמיד. בלעדיהם עיגול
         // האמן ריק, וזו בדיוק התלונה על "אות באנגלית במקום התמונה".
@@ -151,11 +178,49 @@ fun FilterMusicScreen(
                 context, channels.map { it.youtubeChannelId },
             )
         }
-        artists = channels.filter { it.youtubeChannelId in musicIds }
+        // רשימת האמנים נבנית מהערוצים המאושרים עצמם, ולכן היא לא עוברת דרך
+        // גשר ה-Topic: ערוץ Topic אינו מוצג כאמן נפרד אלא נספר לאמן שלו.
+        artists = channels.filter { it.category in MUSIC_CATEGORIES }
             .sortedByDescending { it.youtubeChannelId in favorites }
-        downloads = runCatching { store.downloads() }.getOrNull().orEmpty()
-            .filter { it.localUri.isNotBlank() }
+        downloads = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { store.downloads() }.getOrNull().orEmpty()
+        }.filter { it.localUri.isNotBlank() }
+
+        // ── המיקסים ───────────────────────────────────────────────────────
+        // נבנים מהנתונים שכבר בזיכרון, על תהליכון רקע: זו עבודת מיון וסינון
+        // על אלפי פריטים, ועל תהליכון ה-UI היא הייתה מקפיאה את המעבר ללשונית.
+        mixes = withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val byId = channels.associateBy { it.youtubeChannelId }
+            val profile = com.filtertube.app.data.TasteProfile.build(
+                likes = likes,
+                history = history,
+                subscriptions = emptyList(),
+                searchTerms = emptyList(),
+                categoryOf = { byId[it]?.category },
+            )
+            com.filtertube.app.data.MixBuilder.build(
+                pool = feed,
+                likes = likes,
+                history = history,
+                profile = profile,
+                categoryOf = { byId[it]?.category },
+                channelName = { byId[it]?.name },
+            )
+        }
         loading = false
+    }
+
+    // ── רענון ההורדות ────────────────────────────────────────────────────
+    // הרשימה נטענה פעם אחת בכניסה למסך, ולכן הורדה שהסתיימה *אחרי* הכניסה
+    // לא הופיעה עד יציאה וחזרה — וזה נראה בדיוק כמו הורדה שלא עבדה.
+    // active הוא רשימת-מצב, ולכן ספירת המושלמים בה מספיקה כטריגר.
+    val finishedCount = com.filtertube.app.data.DownloadEngine.active.count { it.progress >= 100 }
+    LaunchedEffect(finishedCount) {
+        if (finishedCount > 0) {
+            downloads = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { store.downloads() }.getOrNull().orEmpty()
+            }.filter { it.localUri.isNotBlank() }
+        }
     }
 
     // ── זיהוי אופליין ─────────────────────────────────────────────────────
@@ -167,7 +232,7 @@ fun FilterMusicScreen(
         online = com.filtertube.app.data.Connectivity.isOnline(context)
         if (online == false && !offlineRedirected) {
             offlineRedirected = true
-            tab = MusicTab.DOWNLOADS
+            tab = MusicTab.LIBRARY
         }
     }
 
@@ -185,11 +250,26 @@ fun FilterMusicScreen(
                         val songs = feed.filter { it.channelId == artist.youtubeChannelId }
                         if (songs.isNotEmpty()) onPlay(songs, 0)
                     },
+                    onMenu = { menuFor = it },
                 )
-                tab == MusicTab.SEARCH -> MusicSearch(feed + likes + history, activeId, onPlay)
-                tab == MusicTab.LIBRARY -> MusicLibrary(likes, history, activeId, onPlay)
-                else -> MusicDownloads(downloads, likes, online, activeId, onPlay)
+                tab == MusicTab.MIXES -> MusicMixes(mixes, activeId, onPlay, onMenu = { menuFor = it })
+                tab == MusicTab.SEARCH -> MusicSearch(
+                    feed + likes + history, searchChannels, activeId, onPlay,
+                    onMenu = { menuFor = it },
+                )
+                else -> MusicLibrary(
+                    likes, history, downloads, online, activeId, onPlay,
+                    onMenu = { menuFor = it },
+                )
             }
+        }
+
+        menuFor?.let { song ->
+            com.filtertube.app.ui.VideoActionMenu(
+                video = song,
+                onDismiss = { menuFor = null },
+                musicMode = true,
+            )
         }
 
         // המיני-פלייר של FilterTube, כאן מעל שורת הניווט של FilterMusic:
@@ -207,18 +287,16 @@ private fun MusicTopBar(tab: MusicTab, onExit: () -> Unit, onOpenSettings: () ->
             .padding(start = 6.dp, end = MusicDim.screenPadding, top = 6.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // חזרה ל-FilterTube — במקום הקבוע של "אחורה", כדי שהמעבר יהיה
-        // רפלקס ולא חיפוש. אותו כפתור בדיוק קיים בכיוון ההפוך במסך הבית.
-        IconButton(onClick = onExit) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזרה ל-FilterTube", tint = ThemeState.text)
+        // אותו מחליף מצבים שבמסך הבית, רק שכאן החצי השני מסומן. חץ "אחורה"
+        // היה מסתיר את העובדה שאלה שני מצבים של אותה אפליקציה, ובעיקר לא
+        // לימד את מי שהגיע לכאן איך חוזרים — מחליף מראה את שני הצדדים תמיד.
+        Spacer(Modifier.width(6.dp))
+        com.filtertube.app.ui.theme.ModeSwitch(musicMode = true) { music ->
+            if (!music) onExit()
         }
-        Text(
-            "FilterMusic", color = ThemeState.text,
-            fontSize = 20.sp, fontWeight = FontWeight.ExtraBold,
-            modifier = Modifier.weight(1f),
-        )
+        Spacer(Modifier.weight(1f))
         IconButton(onClick = onOpenSettings) {
-            Icon(Icons.Default.Settings, "הגדרות FilterMusic", tint = ThemeState.subtext2)
+            Icon(Icons.Rounded.Settings, "הגדרות FilterMusic", tint = ThemeState.subtext2)
         }
     }
 }
@@ -284,6 +362,7 @@ private fun MusicHome(
     activeId: String?,
     onPlay: (List<Video>, Int) -> Unit,
     onOpenArtist: (Channel) -> Unit,
+    onMenu: (Video) -> Unit,
 ) {
     if (feed.isEmpty() && likes.isEmpty() && history.isEmpty()) {
         EmptyState("עוד אין מוזיקה להציג.\nהפיד מתעדכן מהערוצים המאושרים — נסה שוב בעוד רגע.")
@@ -357,9 +436,11 @@ private fun MusicHome(
                         ) {
                             items(quickPicks, key = { "qp_${it.id}" }) { song ->
                                 Box(Modifier.width(tile)) {
-                                    MusicCell(song, active = song.id == activeId) {
-                                        onPlay(quickPicks, quickPicks.indexOf(song))
-                                    }
+                                    MusicCell(
+                                        song,
+                                        active = song.id == activeId,
+                                        onMenu = { onMenu(song) },
+                                    ) { onPlay(quickPicks, quickPicks.indexOf(song)) }
                                 }
                             }
                         }
@@ -419,6 +500,7 @@ private fun MusicHome(
                     video = song,
                     active = song.id == activeId,
                     playing = song.id == activeId,
+                    onMenu = { onMenu(song) },
                     onClick = { onPlay(feed, feed.indexOf(song)) },
                 )
             }
@@ -456,15 +538,45 @@ private fun SongRow(songs: List<Video>, onPlay: (List<Video>, Int) -> Unit) {
 
 // ── חיפוש ────────────────────────────────────────────────────────────────
 @Composable
-private fun MusicSearch(pool: List<Video>, activeId: String?, onPlay: (List<Video>, Int) -> Unit) {
+private fun MusicSearch(
+    pool: List<Video>,
+    musicChannels: List<Channel>,
+    activeId: String?,
+    onPlay: (List<Video>, Int) -> Unit,
+    onMenu: (Video) -> Unit,
+) {
+    val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     val songs = remember(pool) { pool.distinctBy { it.id } }
-    // הסינון מתבצע על הרשימה שכבר בזיכרון: זה חיפוש בתוך המוזיקה המאושרת,
-    // לא בקשה חדשה ליוטיוב — ולכן הוא מיידי ועובד גם בלי רשת.
-    val results = remember(songs, query) {
+
+    // ── שני מקורות, בזה אחר זה ────────────────────────────────────────────
+    // הסינון המקומי מיידי ועובד בלי רשת, אבל הוא מוגבל למה שכבר נטען — ולכן
+    // שיר מערוץ מאושר שלא הופיע בפיד פשוט "לא נמצא". החיפוש ברשת משלים את
+    // החסר, ומגיע שנייה אחריו כדי שהתוצאות המקומיות כבר יהיו על המסך.
+    val local = remember(songs, query) {
         val q = query.trim()
         if (q.isBlank()) emptyList()
-        else songs.filter { it.title.contains(q, true) || it.channelName.contains(q, true) }.take(80)
+        else songs.filter { it.title.contains(q, true) || it.channelName.contains(q, true) }.take(40)
+    }
+    var remote by remember { mutableStateOf<List<Video>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+
+    LaunchedEffect(query, musicChannels) {
+        val q = query.trim()
+        remote = emptyList()
+        if (q.length < 2 || musicChannels.isEmpty()) { searching = false; return@LaunchedEffect }
+        // השהיה קצרה: בלעדיה כל הקשה שולחת בקשה נפרדת ליוטיוב.
+        kotlinx.coroutines.delay(450)
+        searching = true
+        val found = runCatching {
+            com.filtertube.app.data.SearchEngine.search(context, q, musicChannels).videos
+        }.getOrDefault(emptyList())
+        searching = false
+        remote = found
+    }
+
+    val results = remember(local, remote) {
+        (local + remote).distinctBy { it.id }.filter { !it.isShort }.take(80)
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -473,7 +585,7 @@ private fun MusicSearch(pool: List<Video>, activeId: String?, onPlay: (List<Vide
             onValueChange = { query = it },
             singleLine = true,
             placeholder = { Text("שיר או אמן", color = ThemeState.subtext, fontSize = 14.sp) },
-            leadingIcon = { Icon(Icons.Default.Search, null, tint = ThemeState.subtext) },
+            leadingIcon = { Icon(Icons.Rounded.Search, null, tint = ThemeState.subtext) },
             modifier = Modifier.fillMaxWidth().padding(MusicDim.screenPadding),
             shape = RoundedCornerShape(24.dp),
             colors = OutlinedTextFieldDefaults.colors(
@@ -485,15 +597,95 @@ private fun MusicSearch(pool: List<Video>, activeId: String?, onPlay: (List<Vide
                 unfocusedContainerColor = ThemeState.card,
             ),
         )
+        if (searching) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().height(2.dp),
+                color = ThemeState.accent, trackColor = ThemeState.divider,
+            )
+        }
         when {
             query.isBlank() -> EmptyState("חפש שיר או אמן מתוך המוזיקה המאושרת.")
+            results.isEmpty() && searching -> EmptyState("מחפש…")
             results.isEmpty() -> EmptyState("לא נמצאו תוצאות ל״$query״.")
             else -> LazyColumn {
                 items(results, key = { it.id }) { song ->
-                    SongListItem(song, active = song.id == activeId, playing = song.id == activeId) {
-                        onPlay(results, results.indexOf(song))
-                    }
+                    SongListItem(
+                        song, active = song.id == activeId, playing = song.id == activeId,
+                        onMenu = { onMenu(song) },
+                    ) { onPlay(results, results.indexOf(song)) }
                 }
+            }
+        }
+    }
+}
+
+// ── מיקסים ───────────────────────────────────────────────────────────────
+/**
+ * רשימות ההשמעה שנבנות מהטעם.
+ *
+ * כל מיקס הוא קובייה שבנויה מהכריכות שבתוכו, ולחיצה עליה פותחת אותו.
+ * המיקסים עצמם נבנים ב-MixBuilder; כאן רק התצוגה.
+ */
+@Composable
+private fun MusicMixes(
+    mixes: List<com.filtertube.app.data.Mix>,
+    activeId: String?,
+    onPlay: (List<Video>, Int) -> Unit,
+    onMenu: (Video) -> Unit,
+) {
+    var open by remember { mutableStateOf<String?>(null) }
+
+    if (mixes.isEmpty()) {
+        EmptyState(
+            "המיקסים נבנים ממה שתשמע.\nתן לזה כמה שירים והם יופיעו כאן מעצמם.",
+        )
+        return
+    }
+
+    open?.let { id ->
+        val mix = mixes.firstOrNull { it.id == id }
+        if (mix != null) {
+            MusicCollection(
+                title = mix.title,
+                songs = mix.songs,
+                activeId = activeId,
+                onPlay = onPlay,
+                onMenu = onMenu,
+                onBack = { open = null },
+            )
+            return
+        }
+    }
+
+    LazyColumn(
+        contentPadding = PaddingValues(
+            start = MusicDim.screenPadding, end = MusicDim.screenPadding,
+            top = 6.dp, bottom = 24.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Text(
+                "נבנה ממה שאתה שומע — מתעדכן מעצמו",
+                color = ThemeState.subtext,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(bottom = 2.dp),
+            )
+        }
+        items(mixes.chunked(2)) { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                row.forEach { mix ->
+                    MosaicTile(
+                        title = mix.title,
+                        subtitle = mix.subtitle,
+                        images = mix.songs.map { it.thumbnailUrl },
+                        icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                        tint = ThemeState.accent,
+                        modifier = Modifier.weight(1f),
+                        onClick = { open = mix.id },
+                    )
+                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }
@@ -504,164 +696,214 @@ private fun MusicSearch(pool: List<Video>, activeId: String?, onPlay: (List<Vide
 private fun MusicLibrary(
     likes: List<Video>,
     history: List<Video>,
-    activeId: String?,
-    onPlay: (List<Video>, Int) -> Unit,
-) {
-    if (likes.isEmpty() && history.isEmpty()) {
-        EmptyState("הספרייה תתמלא ממה שתשמע ותסמן בלב.")
-        return
-    }
-    // ── כוורת ולא רשימה ───────────────────────────────────────────────────
-    // שורה ברוחב מלא לכל שיר בזבזה את רוב המסך על אוויר, והכריכה — הדבר
-    // היחיד שבאמת מזהה שיר במבט — הייתה 48dp בצד. ברשת נכנסים פי כמה שירים
-    // באותה גלילה, והכריכה היא הגיבור.
-    //
-    // Adaptive ולא Fixed(2): באותו קוד מסך צר מקבל שתי עמודות ומסך רחב
-    // שלוש או ארבע, בלי מספר קסם שנכון רק למכשיר אחד.
-    val rows = history.take(60)
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(MusicDim.cellMinWidth),
-        contentPadding = PaddingValues(
-            start = MusicDim.screenPadding, end = MusicDim.screenPadding, bottom = 24.dp,
-        ),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        if (likes.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                NavigationTitle("אהבתי", label = "${likes.size} שירים")
-            }
-            items(likes, key = { "like_${it.id}" }) { song ->
-                MusicCell(song, active = song.id == activeId) {
-                    onPlay(likes, likes.indexOf(song))
-                }
-            }
-        }
-        if (rows.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) { NavigationTitle("הושמע לאחרונה") }
-            items(rows, key = { "hist_${it.id}" }) { song ->
-                MusicCell(song, active = song.id == activeId) {
-                    onPlay(rows, rows.indexOf(song))
-                }
-            }
-        }
-    }
-}
-
-/**
- * ההורדות של FilterMusic — אודיו בלבד.
- *
- * ## למה רק אודיו
- * זו אפליקציית מוזיקה. הורדת וידאו ממנה פירושה קובץ שאפשר לצפות בו
- * מגלריית המכשיר, מחוץ לכל סינון — ולכן `enqueueByVideo(isAudio = true)`
- * כאן תמיד, בלי קשר למתג הגלובלי.
- */
-@Composable
-private fun MusicDownloads(
     downloads: List<Video>,
-    /** מה שמוצג כ"אהבתי" במסך — אותה רשימה שכפתור ההורדה המרוכזת פועל עליה. */
-    likes: List<Video>,
     online: Boolean?,
     activeId: String?,
     onPlay: (List<Video>, Int) -> Unit,
+    onMenu: (Video) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val active = com.filtertube.app.data.DownloadEngine.active
 
-    Column(Modifier.fillMaxSize()) {
-        if (online == false) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(MusicDim.screenPadding)
-                    .clip(RoundedCornerShape(14.dp)).background(ThemeState.card)
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Default.CloudOff, null, tint = Color(0xFFFFAA00), modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(10.dp))
-                Column {
-                    Text("אין חיבור לאינטרנט", color = ThemeState.text, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
-                    Text("זה מה ששמור אצלך במכשיר", color = ThemeState.subtext, fontSize = 11.5.sp)
-                }
-            }
-        }
+    // ── רק ההורדות של FilterMusic ─────────────────────────────────────────
+    // מה שהורד מפילטר טיוב נשאר בפילטר טיוב, גם אם הוא שיר מערוץ מוזיקה.
+    // הסימון נעשה ברגע ההורדה ולא נגזר מ"אודיו מול וידאו", כי גם בפילטר
+    // טיוב יש קטגוריות שיורדות כאודיו בכפייה — ואז ההבחנה הזו שקרית.
+    val mine = remember(downloads) { downloads.filter { it.fromMusic } }
+    val recent = remember(history) { history.take(60) }
 
-        if (active.isNotEmpty()) {
-            NavigationTitle("מוריד עכשיו", label = "${active.size} פריטים")
-            active.take(4).forEach { task ->
+    // ── קובייה נפתחת, לא הכל פרוש ─────────────────────────────────────────
+    // קודם שלושת האוספים נשפכו למסך אחד ארוך, ומי שחיפש שיר מסוים היה
+    // צריך לגלול דרך אוסף שלם כדי להגיע לבא אחריו. קובייה לכל אוסף נותנת
+    // את התמונה המלאה במסך אחד, והכניסה היא החלטה של המשתמש.
+    var open by remember { mutableStateOf<String?>(null) }
+
+    if (likes.isEmpty() && recent.isEmpty() && mine.isEmpty() && active.isEmpty()) {
+        EmptyState("הספרייה תתמלא ממה שתשמע ותסמן בלב.")
+        return
+    }
+
+    val collections = listOf(
+        Triple("שירים שאהבתי", likes, Icons.Rounded.Favorite to Tint.red),
+        Triple("ההורדות שלי", mine, Icons.Rounded.Download to Tint.green),
+        Triple("הושמע לאחרונה", recent, Icons.Rounded.History to Tint.orange),
+    )
+
+    open?.let { title ->
+        val songs = collections.firstOrNull { it.first == title }?.second.orEmpty()
+        MusicCollection(
+            title = title,
+            songs = songs,
+            activeId = activeId,
+            onPlay = onPlay,
+            onMenu = onMenu,
+            onBack = { open = null },
+        )
+        return
+    }
+
+    LazyColumn(
+        contentPadding = PaddingValues(
+            start = MusicDim.screenPadding, end = MusicDim.screenPadding,
+            top = 6.dp, bottom = 24.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (online == false) {
+            item {
                 Row(
                     modifier = Modifier.fillMaxWidth()
-                        .padding(horizontal = MusicDim.screenPadding, vertical = 6.dp),
+                        .clip(RoundedCornerShape(14.dp)).background(ThemeState.card)
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            task.video.title, color = ThemeState.text, fontSize = 13.sp,
-                            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        )
-                        LinearProgressIndicator(
-                            progress = { task.progress / 100f },
-                            modifier = Modifier.fillMaxWidth().height(3.dp).padding(top = 4.dp),
-                            color = ThemeState.accent, trackColor = ThemeState.divider,
-                        )
-                    }
+                    Icon(Icons.Rounded.CloudOff, null, tint = Tint.amber, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(10.dp))
-                    Text(task.status, color = ThemeState.subtext, fontSize = 11.sp)
+                    Column {
+                        Text("אין חיבור לאינטרנט", color = ThemeState.text,
+                            style = MaterialTheme.typography.titleSmall)
+                        Text("מה שהורדת ממשיך לעבוד", color = ThemeState.subtext,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }
 
-        // הורדה של כל האהובים — האינטראקציה היחידה שבאמת מתחילה הורדה
-        // מתוך FilterMusic, ולכן היא נמצאת גם כשהרשימה עדיין ריקה.
-        Row(
-            modifier = Modifier.fillMaxWidth()
-                .padding(horizontal = MusicDim.screenPadding, vertical = 6.dp),
-        ) {
-            BigAction("הורד את מה שאהבת (אודיו)", Icons.Default.Download, Modifier.weight(1f)) {
-                scope.launch {
-                    // בדיוק מה שמוצג במסך, ולא store.likes() — אחרת הכפתור
-                    // מוריד רשימה אחרת מזו שהמשתמש רואה מולו.
-                    val liked = likes
-                    if (liked.isEmpty()) {
-                        android.widget.Toast.makeText(context, "אין שירים ב״אהבתי״", android.widget.Toast.LENGTH_SHORT).show()
-                    } else {
-                        android.widget.Toast.makeText(context, "מוסיף ${liked.size} לתור ההורדות…", android.widget.Toast.LENGTH_SHORT).show()
-                        // isAudio = true תמיד: זו אפליקציית מוזיקה, והורדת
-                        // וידאו ממנה הייתה קובץ לצפייה מחוץ לכל סינון.
-                        liked.forEach {
-                            com.filtertube.app.data.DownloadEngine.enqueueByVideo(context, it, isAudio = true)
+        // ── מה שמוריד עכשיו ───────────────────────────────────────────────
+        if (active.isNotEmpty()) {
+            item {
+                Column {
+                    NavigationTitle("מוריד עכשיו", label = "${active.size} פריטים")
+                    active.take(4).forEach { task ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    task.video.title, color = ThemeState.text,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                )
+                                LinearProgressIndicator(
+                                    progress = { task.progress / 100f },
+                                    modifier = Modifier.fillMaxWidth().height(3.dp).padding(top = 4.dp),
+                                    color = ThemeState.accent, trackColor = ThemeState.divider,
+                                )
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Text(task.status, color = ThemeState.subtext,
+                                style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
             }
         }
 
-        if (downloads.isEmpty()) {
-            EmptyState(
-                "עוד לא הורדת כלום.\nלחיצה ארוכה על שיר, או הכפתור בנגן, שומרת אותו לכאן — כאודיו.",
-            )
-            return@Column
+        // ── שלוש הקוביות ──────────────────────────────────────────────────
+        items(collections.chunked(2)) { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                row.forEach { (title, songs, look) ->
+                    val (icon, tint) = look
+                    MosaicTile(
+                        title = title,
+                        subtitle = "${songs.size} שירים",
+                        images = songs.map { it.thumbnailUrl },
+                        icon = icon,
+                        tint = tint,
+                        modifier = Modifier.weight(1f),
+                        // גם כשריק: קובייה שנראית לחיצה ולא נלחצת היא תקלה
+                        // בעיני המשתמש. המסך שנפתח יסביר שאין בו כלום.
+                        onClick = { open = title },
+                    )
+                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
         }
 
-        LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-            item { NavigationTitle("הורדות", label = "${downloads.size} שירים · אודיו") }
+        // הורדת כל האהובים — הפעולה היחידה שמתחילה הורדה מרוכזת, ולכן היא
+        // נשארת גלויה גם כשלא נכנסים לאף אוסף.
+        if (likes.isNotEmpty()) {
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth()
-                        .padding(horizontal = MusicDim.screenPadding, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    BigAction("נגן הכל", Icons.Default.PlayArrow, Modifier.weight(1f)) {
-                        onPlay(downloads, 0)
+                BigAction("הורד את מה שאהבת (אודיו)", Icons.Rounded.Download, Modifier.fillMaxWidth()) {
+                    if (!com.filtertube.app.data.DownloadEngine.canDownload(context)) {
+                        android.widget.Toast.makeText(
+                            context, "הורדות הן פיצ'ר פרימיום. ראה הגדרות → FilterTube Premium", android.widget.Toast.LENGTH_LONG,
+                        ).show()
+                        return@BigAction
                     }
-                    BigAction("ערבוב", Icons.Default.Shuffle, Modifier.weight(1f)) {
-                        onPlay(downloads.shuffled(), 0)
+                    scope.launch {
+                        android.widget.Toast.makeText(
+                            context, "מוסיף ${likes.size} לתור ההורדות…",
+                            android.widget.Toast.LENGTH_SHORT,
+                        ).show()
+                        likes.forEach {
+                            com.filtertube.app.data.DownloadEngine.enqueueByVideo(
+                                context, it, isAudio = true, fromMusic = true,
+                            )
+                        }
                     }
                 }
             }
-            items(downloads, key = { "dl_${it.id}" }) { song ->
-                SongListItem(song, active = song.id == activeId, playing = song.id == activeId) {
-                    onPlay(downloads, downloads.indexOf(song))
+        }
+    }
+}
+
+/** אוסף אחד פרוש ככוורת, עם דרך חזרה. */
+@Composable
+private fun MusicCollection(
+    title: String,
+    songs: List<Video>,
+    activeId: String?,
+    onPlay: (List<Video>, Int) -> Unit,
+    onMenu: (Video) -> Unit,
+    onBack: () -> Unit,
+) {
+    androidx.activity.compose.BackHandler(onBack = onBack)
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = MusicDim.screenPadding),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, "חזרה לספרייה", tint = ThemeState.text)
+            }
+            Text(
+                title, color = ThemeState.text,
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.weight(1f),
+            )
+            Text("${songs.size}", color = ThemeState.subtext,
+                style = MaterialTheme.typography.bodyMedium)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .padding(horizontal = MusicDim.screenPadding, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            BigAction("נגן הכל", Icons.Rounded.PlayArrow, Modifier.weight(1f)) { onPlay(songs, 0) }
+            BigAction("ערבוב", Icons.Rounded.Shuffle, Modifier.weight(1f)) {
+                onPlay(songs.shuffled(), 0)
+            }
+        }
+        if (songs.isEmpty()) {
+            EmptyState("עוד אין כאן שירים.")
+            return@Column
+        }
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(MusicDim.cellMinWidth),
+            contentPadding = PaddingValues(
+                start = MusicDim.screenPadding, end = MusicDim.screenPadding,
+                top = 8.dp, bottom = 24.dp,
+            ),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            items(songs, key = { it.id }) { song ->
+                MusicCell(song, active = song.id == activeId, onMenu = { onMenu(song) }) {
+                    onPlay(songs, songs.indexOf(song))
                 }
             }
         }

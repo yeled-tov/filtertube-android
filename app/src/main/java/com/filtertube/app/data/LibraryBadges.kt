@@ -22,14 +22,31 @@ object LibraryBadges {
     var watched by mutableStateOf<Set<String>>(emptySet())
         private set
 
+    /**
+     * מזהי הסרטונים שהמשתמש חסם לעצמו.
+     *
+     * מוחזק כאן ולא נקרא מהדיסק בכל מסך: הסינון רץ על כל פריט בכל רשימה,
+     * וקריאת קובץ בכל בדיקה הייתה הופכת גלילה לגמגום.
+     */
+    var blocked by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    /** מרענן רק את רשימת החסומים — אחרי חסימה או שחרור. */
+    suspend fun refreshBlocked(context: Context) = withContext(Dispatchers.IO) {
+        val ids = runCatching { LibraryStore(context).blockedIds() }.getOrDefault(emptySet())
+        withContext(Dispatchers.Main) { blocked = ids }
+    }
+
     /** טוען מחדש מהאחסון המקומי. בטוח לקרוא בכל כניסה למסך. */
     suspend fun refresh(context: Context) = withContext(Dispatchers.IO) {
         val store = LibraryStore(context)
         val likedIds = runCatching { store.likedIds() }.getOrDefault(emptySet())
         val watchedIds = runCatching { store.watchedIds() }.getOrDefault(emptySet())
+        val blockedIds = runCatching { store.blockedIds() }.getOrDefault(emptySet())
         withContext(Dispatchers.Main) {
             liked = likedIds
             watched = watchedIds
+            blocked = blockedIds
         }
     }
 

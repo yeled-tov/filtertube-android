@@ -8,11 +8,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -52,6 +53,9 @@ fun AdminScreen(onBack: () -> Unit) {
     var clientQuery by remember { mutableStateOf("") }
     var clientFilter by remember { mutableStateOf("all") }
     var dashboardLoading by remember { mutableStateOf(false) }
+
+    // בקשה שנפתחה לבדיקה — הערוץ עצמו, לפני שמאשרים אותו על סמך השם בלבד.
+    var reviewing by remember { mutableStateOf<ChannelRequests.Req?>(null) }
 
     var newChannelInput by remember { mutableStateOf("") }
     var adminResolved by remember { mutableStateOf<ChannelAdmin.Resolved?>(null) }
@@ -137,7 +141,18 @@ fun AdminScreen(onBack: () -> Unit) {
         }
     }
 
-    fun approveRequest(r: ChannelRequests.Req) {
+    /**
+     * אישור בקשה — עם הסיווג שהמנהל בחר, לא בהכרח זה שהמבקש ביקש.
+     *
+     * [category] ו-[gender] נפרדים מ-[r] בכוונה: המבקש בוחר לפי מה שנוח לו
+     * ("מוזיקה לכולם"), והמנהל הוא זה שקובע לאיזו רמת סינון הערוץ באמת שייך.
+     * ברירת המחדל היא מה שביקשו, כך שאישור מהיר מהרשימה נשאר כשהיה.
+     */
+    fun approveRequest(
+        r: ChannelRequests.Req,
+        category: String = r.category,
+        gender: String = r.gender,
+    ) {
         if (busy) return
         busy = true; status = "מאשר: ${r.name}..."
         scope.launch {
@@ -147,9 +162,9 @@ fun AdminScreen(onBack: () -> Unit) {
                 val cid = resolved.channelId
                 val nm = resolved.name
                 if (channels.none { it.youtubeChannelId == cid }) {
-                    val ok = ChannelRequests.upsertApproved(ChannelRequests.Approved(cid, nm, r.category, r.gender))
+                    val ok = ChannelRequests.upsertApproved(ChannelRequests.Approved(cid, nm, category, gender))
                     if (!ok) { status = "שגיאה בשמירת הערוץ"; busy = false; return@launch }
-                    channels = (channels + Channel(cid, nm, r.category, r.gender)).sortedBy { it.name }
+                    channels = (channels + Channel(cid, nm, category, gender)).sortedBy { it.name }
                     ChannelsRepository.invalidate()
                     ChannelsRepository.refresh(context)
                 }
@@ -159,7 +174,8 @@ fun AdminScreen(onBack: () -> Unit) {
                     return@launch
                 }
                 requests = ChannelRequests.list()
-                status = "אושר: ${r.name} ✓"
+                status = if (category == r.category) "אושר: ${r.name} ✓"
+                    else "אושר: ${r.name} · סווג מחדש ל${categoryLabels[category] ?: category} ✓"
             } catch (e: Exception) { status = "שגיאה: ${e.message}" } finally { busy = false }
         }
     }
@@ -262,7 +278,7 @@ fun AdminScreen(onBack: () -> Unit) {
             modifier = Modifier.fillMaxWidth().padding(top = 24.dp, start = 4.dp, end = 16.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = ThemeState.text) }
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "חזור", tint = ThemeState.text) }
             Text("פאנל ניהול", color = ThemeState.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
         HorizontalDivider(color = ThemeState.divider)
@@ -310,6 +326,42 @@ fun AdminScreen(onBack: () -> Unit) {
                         DashboardStat("Premium", s.premiumAccounts, Modifier.weight(1f))
                         DashboardStat("ניסיון", s.trialAccounts, Modifier.weight(1f))
                     }
+                    // ── מי כבר עדכן ────────────────────────────────────────
+                    // השורה שמכריעה אם אפשר להפוך את המאגר לפרטי: כל לקוח
+                    // שאינו על הבנייה האחרונה יפסיק לגלות עדכונים באותו רגע.
+                    if (s.latestAppBuild > 0) {
+                        Spacer(Modifier.height(10.dp))
+                        val behind = (s.totalAccounts - s.onLatestBuild).coerceAtLeast(0)
+                        Column(
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                .background(ThemeState.card).padding(12.dp),
+                        ) {
+                            Text(
+                                "גרסאות אצל הלקוחות",
+                                color = Color(0xFFFFAA00), fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "${s.onLatestBuild} מתוך ${s.totalAccounts} על בנייה ${s.latestAppBuild}",
+                                color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                            )
+                            if (behind > 0) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "$behind עדיין לא — מהם ${s.unknownBuild} על גרסה שלא מדווחת בכלל. " +
+                                        "הפיכת המאגר לפרטי עכשיו תשאיר אותם בלי עדכונים.",
+                                    color = ThemeState.subtext, fontSize = 11.sp, lineHeight = 16.sp,
+                                )
+                            } else {
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "כולם מעודכנים — אפשר להפוך את המאגר לפרטי.",
+                                    color = Color(0xFF66BB6A), fontSize = 11.sp,
+                                )
+                            }
+                        }
+                    }
+
                     Spacer(Modifier.height(6.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         DashboardStat("מושבתים", s.disabledAccounts, Modifier.weight(1f))
@@ -455,9 +507,17 @@ fun AdminScreen(onBack: () -> Unit) {
                     requests.forEach { r ->
                         Column(
                             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                                .background(ThemeState.card).padding(12.dp),
+                                .background(ThemeState.card)
+                                .clickable { reviewing = r }
+                                .padding(12.dp),
                         ) {
-                            Text(r.name, color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    r.name, color = ThemeState.text, fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
+                                )
+                                Text("לחץ לבדיקה ›", color = Color(0xFFFFAA00), fontSize = 11.sp)
+                            }
                             Text(categoryLabels[r.category] ?: r.category, color = Color(0xFFFF0000), fontSize = 11.sp)
                             Text(
                                 when (r.gender.lowercase()) {
@@ -580,7 +640,7 @@ fun AdminScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(8.dp))
                     Button(onClick = { addChannel() }, modifier = Modifier.fillMaxWidth(), enabled = !busy,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF0000))) {
-                        Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("הוסף ערוץ")
                     }
@@ -611,13 +671,247 @@ fun AdminScreen(onBack: () -> Unit) {
                         )
                     }
                     IconButton(onClick = { removeChannel(channel) }, enabled = !busy) {
-                        Icon(Icons.Default.Delete, "הסר", tint = Color(0xFFFF0000))
+                        Icon(Icons.Rounded.Delete, "הסר", tint = Color(0xFFFF0000))
                     }
                 }
                 HorizontalDivider(color = ThemeState.card)
             }
         }
     }
+
+    reviewing?.let { req ->
+        ChannelReviewDialog(
+            request = req,
+            busy = busy,
+            onApprove = { category, gender ->
+                reviewing = null
+                approveRequest(req, category, gender)
+            },
+            onReject = {
+                reviewing = null
+                rejectRequest(req)
+            },
+            onDismiss = { reviewing = null },
+        )
+    }
+}
+
+/**
+ * בדיקת בקשת ערוץ לפני אישור — מה יש בערוץ, ולאיזו רמה הוא באמת שייך.
+ *
+ * ## למה זה קיים
+ * בקשה מגיעה עם שם, קישור וסיווג שהמבקש בחר. מהשם לבד אי אפשר לדעת מה
+ * מתפרסם בערוץ, ואישור על עיוור הוא בדיוק מה שהרשימה הלבנה אמורה למנוע.
+ * לכן הדיאלוג מביא את הסרטונים האחרונים מהערוץ עצמו, ומאפשר לשנות את
+ * הסיווג לפני האישור: המבקש סימן "מוזיקה לכולם", והמנהל מחליט שזה
+ * "דתי לייט" — ומאשר ישירות עם הסיווג הנכון, בלי להוסיף ואז לתקן.
+ *
+ * טעינת התצוגה המקדימה יושבת כאן ולא במסך האב כדי שהיא תיפתח ותיזרק עם
+ * הדיאלוג: סגירה באמצע טעינה מבטלת את הקורוטינה ולא משאירה בקשת רשת
+ * שממשיכה לרוץ למסך שכבר לא קיים.
+ */
+@Composable
+private fun ChannelReviewDialog(
+    request: ChannelRequests.Req,
+    busy: Boolean,
+    onApprove: (category: String, gender: String) -> Unit,
+    onReject: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    var preview by remember(request.id) { mutableStateOf<ChannelAdmin.Preview?>(null) }
+    var loading by remember(request.id) { mutableStateOf(true) }
+    var failed by remember(request.id) { mutableStateOf(false) }
+
+    // ברירת המחדל היא מה שהמבקש ביקש — שינוי הוא החלטה אקטיבית של המנהל.
+    var category by remember(request.id) { mutableStateOf(request.category) }
+    var gender by remember(request.id) { mutableStateOf(request.gender.ifBlank { "all" }) }
+
+    LaunchedEffect(request.id) {
+        loading = true; failed = false
+        val source = request.url.ifBlank { request.name }
+        val result = runCatching { ChannelAdmin.previewChannel(source) }.getOrNull()
+        preview = result
+        failed = result == null
+        loading = false
+    }
+
+    fun openInYouTube() {
+        val url = preview?.resolved?.url ?: request.url
+        if (url.isBlank()) return
+        runCatching {
+            context.startActivity(
+                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = ThemeState.card,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                coil.compose.AsyncImage(
+                    model = preview?.resolved?.avatarUrl, contentDescription = null,
+                    modifier = Modifier.size(44.dp).clip(RoundedCornerShape(50))
+                        .background(ThemeState.divider),
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        preview?.resolved?.name ?: request.name,
+                        color = ThemeState.text, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    )
+                    val subs = preview?.subscribers ?: -1L
+                    if (subs >= 0) {
+                        Text(
+                            "%,d עוקבים".format(subs),
+                            color = ThemeState.subtext2, fontSize = 11.sp,
+                        )
+                    }
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                if (request.description.isNotBlank()) {
+                    Text("מהמבקש: ${request.description}", color = ThemeState.subtext, fontSize = 12.sp)
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                when {
+                    loading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("טוען את הערוץ...", color = ThemeState.subtext, fontSize = 12.sp)
+                    }
+
+                    failed -> Text(
+                        "לא הצלחתי לפתוח את הערוץ מהקישור שנשלח. אפשר לפתוח אותו ביוטיוב ולבדוק ידנית.",
+                        color = Color(0xFFE05A5A), fontSize = 12.sp,
+                    )
+
+                    preview?.videos.isNullOrEmpty() -> Text(
+                        "הערוץ נפתח, אבל לא הוחזרו ממנו סרטונים. כדאי לפתוח ביוטיוב לפני אישור.",
+                        color = Color(0xFFFFAA00), fontSize = 12.sp,
+                    )
+
+                    else -> {
+                        Text(
+                            "הסרטונים האחרונים בערוץ", color = ThemeState.subtext,
+                            fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        preview?.videos.orEmpty().forEach { video ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        runCatching {
+                                            context.startActivity(
+                                                android.content.Intent(
+                                                    android.content.Intent.ACTION_VIEW,
+                                                    android.net.Uri.parse("https://www.youtube.com/watch?v=${video.id}"),
+                                                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                                            )
+                                        }
+                                    },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                coil.compose.AsyncImage(
+                                    model = video.thumbnail, contentDescription = null,
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    modifier = Modifier.size(width = 76.dp, height = 44.dp)
+                                        .clip(RoundedCornerShape(6.dp)).background(ThemeState.divider),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        video.title, color = ThemeState.text, fontSize = 12.sp,
+                                        maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 15.sp,
+                                    )
+                                    if (video.durationSec > 0) {
+                                        val minutes = video.durationSec / 60
+                                        val seconds = video.durationSec % 60
+                                        Text(
+                                            "%d:%02d".format(minutes, seconds),
+                                            color = ThemeState.subtext2, fontSize = 10.sp,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+                Box(
+                    modifier = Modifier.clip(RoundedCornerShape(50)).background(ThemeState.divider)
+                        .clickable { openInYouTube() }
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                ) { Text("פתח ביוטיוב", color = ThemeState.text, fontSize = 12.sp) }
+
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider(color = ThemeState.divider)
+                Spacer(Modifier.height(10.dp))
+
+                Text(
+                    "סיווג", color = ThemeState.subtext, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                )
+                if (category != request.category) {
+                    Text(
+                        "המבקש ביקש ${categoryLabels[request.category] ?: request.category}",
+                        color = Color(0xFFFFAA00), fontSize = 10.5.sp,
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    categoryLabels.forEach { (key, label) ->
+                        val selected = category == key
+                        Box(
+                            modifier = Modifier.padding(end = 6.dp).clip(RoundedCornerShape(16.dp))
+                                .background(if (selected) Color(0xFFFF0000) else ThemeState.divider)
+                                .clickable { category = key }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) { Text(label, color = ThemeState.text, fontSize = 12.sp) }
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+                Text("מגדר", color = ThemeState.subtext, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(6.dp))
+                Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    listOf("all" to "הכל", "male" to "זכר", "female" to "נקבה").forEach { (key, label) ->
+                        val selected = gender == key
+                        Box(
+                            modifier = Modifier.padding(end = 6.dp).clip(RoundedCornerShape(16.dp))
+                                .background(if (selected) Color(0xFFFF0000) else ThemeState.divider)
+                                .clickable { gender = key }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) { Text(label, color = ThemeState.text, fontSize = 12.sp) }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onApprove(category, gender) }, enabled = !busy) {
+                Text("אשר", color = Color(0xFF66BB6A), fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onReject, enabled = !busy) {
+                    Text("דחה", color = Color(0xFFE05A5A))
+                }
+                TextButton(onClick = onDismiss) { Text("סגור", color = ThemeState.subtext) }
+            }
+        },
+    )
 }
 
 /**
@@ -674,6 +968,12 @@ private fun ClientCard(
                 if (client.verified) null else "מייל לא מאומת",
             ).joinToString(" · "),
             color = ThemeState.subtext, fontSize = 11.sp, lineHeight = 16.sp,
+        )
+        // הגרסה בשורה נפרדת ובצבע: זה מה שמחפשים כשרוצים לדעת מי נשאר מאחור.
+        Text(
+            client.appVersionHe,
+            color = if (client.appBuild > 0) ThemeState.subtext2 else Color(0xFFFFAA00),
+            fontSize = 11.sp,
         )
         if (client.pendingChannelRequests > 0 || client.premiumRequestPending) {
             Text(

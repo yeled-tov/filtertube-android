@@ -265,13 +265,22 @@ object PersonalRadio {
      */
     suspend fun stationForSeed(context: Context, seed: Video): List<Video> = withContext(Dispatchers.IO) {
         val channels = runCatching { ChannelsRepository.getCachedChannelsFast(context) }.getOrNull().orEmpty()
-        val allowed = channels.mapTo(HashSet()) { it.youtubeChannelId }
+        val store = LibraryStore(context)
+        val settings = SettingsStore(context)
+        // ── forLevel ולא הרשימה הגולמית ───────────────────────────────────
+        // התחנה מתנגנת אוטומטית אחרי השיר שנבחר, ולכן "מאושר" כאן חייב
+        // להיות "מאושר *ברמה הנוכחית*". בלי זה ערוץ "דתי לייט" יכול היה
+        // להיכנס לתחנה גם ברמה 1 או 2, ובחירת המגדר לא נאכפה כלל.
+        val allowed = channels
+            .forLevel(settings.filterLevel, settings.userGender)
+            .mapTo(HashSet()) { it.youtubeChannelId }
+        // catById מהרשימה המלאה — הוא מכריע על הגבלת אודיו, וקטגוריה חסרה
+        // הייתה מקילה במקום להחמיר.
         val catById = channels.associate { it.youtubeChannelId to it.category }
         val seedCat = catById[seed.channelId]
         val seedTokens = tokens(seed.title).toSet()
-
-        val store = LibraryStore(context)
-        val settings = SettingsStore(context)
+        // מה שהמשתמש חסם לעצמו לא חוזר דרך התחנה.
+        val blocked = runCatching { store.blockedIds() }.getOrNull().orEmpty()
         val likes = runCatching { store.likes() }.getOrNull().orEmpty()
         val history = runCatching { store.localHistory() }.getOrNull().orEmpty()
         val profile = buildProfile(
@@ -297,7 +306,8 @@ object PersonalRadio {
                     // ערוץ לא מזוהה נפסל. באפליקציית רשימה לבנה "לא ידוע"
                     // הוא לא "מותר" — וגרף ה-related מחזיר גם פריטים בלי
                     // מזהה ערוץ.
-                    candidate.channelId in allowed
+                    candidate.channelId in allowed &&
+                    candidate.id !in blocked
             }
 
         val scored = pool.map { candidate ->

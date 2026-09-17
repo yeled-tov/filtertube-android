@@ -159,6 +159,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // יצירת קוד QR לשיתוף האפליקציה. ספריית Java טהורה, בלי תלויות אנדרואיד
+    // ובלי משאבים — רק המקודד עצמו, שממנו אנחנו מציירים Bitmap בעצמנו.
+    implementation("com.google.zxing:core:3.5.3")
     // גרירה לסידור מחדש של התור. ספרייה קטנה וטהורת-Compose; בדקתי את
     // aar-metadata שלה — minCompileSdk=1, כלומר אין תקרת AGP/compileSdk.
     implementation("sh.calvin.reorderable:reorderable:3.1.0")

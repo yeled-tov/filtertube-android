@@ -12,10 +12,12 @@ import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -41,7 +43,9 @@ import coil.compose.AsyncImage
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.FeedCache
 import com.filtertube.app.data.SettingsStore
+import com.filtertube.app.data.Diagnostics
 import com.filtertube.app.data.StreamRepository
+import com.filtertube.app.data.defaultTrackIndex
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeRepository
 import com.filtertube.app.data.forLevel
@@ -73,7 +77,10 @@ fun ShortsScreen(onOpenShort: () -> Unit, onSearch: () -> Unit) {
         if (showSpinner) state = ShortsState.Loading
         scope.launch {
             try {
-                val channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel)
+                // גם המגדר, לא רק הרמה: זה היה מסך ה*יחיד* שסינן לפי רמה
+                // בלבד, ולכן שורטס הציג ערוצים שכל שאר האפליקציה הסתירה.
+                val channels = ChannelsRepository.getChannels(context)
+                    .forLevel(settings.filterLevel, settings.userGender)
                 val shorts = YouTubeRepository.fetchShorts(channels)
                 if (shorts.isNotEmpty()) {
                     FeedCache.saveShorts(context, shorts)
@@ -100,7 +107,7 @@ fun ShortsScreen(onOpenShort: () -> Unit, onSearch: () -> Unit) {
         ) {
             Text("Shorts", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = ThemeState.text, modifier = Modifier.weight(1f))
             IconButton(onClick = onSearch) {
-                Icon(Icons.Default.Search, "חיפוש", tint = ThemeState.text)
+                Icon(Icons.Rounded.Search, "חיפוש", tint = ThemeState.text)
             }
         }
         HorizontalDivider(color = ThemeState.divider)
@@ -158,44 +165,73 @@ fun ShortsPlayerScreen(onBack: () -> Unit) {
     KeepScreenOn(true)   // המסך נשאר דלוק בזמן צפייה בשורטס
 
     val pagerState = rememberPagerState(initialPage = ShortsHolder.startIndex, pageCount = { videos.size })
+    // ── למה Factory ולא נגן סתם ──────────────────────────────────────────
+    // בלי ה-Factory הזה הנגן יודע לנגן רק כתובת אחת, ולכן השורטס נאלץ
+    // לבחור את הזרם ה"משולב" (muxed) — היחיד שמכיל וידאו וקול יחד. יוטיוב
+    // מגישה משולב רק באיכות נמוכה, וזו הסיבה שהשורטס נראה מטושטש בזמן
+    // שהנגן הרגיל מציג 720p על אותו סרטון בדיוק.
+    //
+    // עם מיזוג אפשר לקחת את זרם הווידאו הטוב ביותר ואת האודיו הנפרד שלו,
+    // בדיוק כמו בנגן הראשי.
     val exo = remember {
-        ExoPlayer.Builder(context).build().apply {
-            repeatMode = Player.REPEAT_MODE_ONE
-            playWhenReady = true
-        }
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(
+                com.filtertube.app.playback.FilterTubeMediaSourceFactory(context),
+            )
+            .build().apply {
+                repeatMode = Player.REPEAT_MODE_ONE
+                playWhenReady = true
+            }
     }
     DisposableEffect(Unit) { onDispose { exo.release() } }
 
     var loading by remember { mutableStateOf(true) }
-    val urlCache = remember { mutableMapOf<String, String>() }
+    val itemCache = remember { mutableMapOf<String, MediaItem>() }
     val prefetchScope = rememberCoroutineScope()
 
-    suspend fun resolveUrl(video: Video): String? {
-        urlCache[video.id]?.let { return it }
-        val url = withContext(Dispatchers.IO) {
+    suspend fun resolveItem(video: Video): MediaItem? {
+        itemCache[video.id]?.let { return it }
+        val item = withContext(Dispatchers.IO) {
             runCatching {
                 val data = StreamRepository.getStream(video.id)
-                data.tracks.firstOrNull { it.audioUrl == null }?.videoUrl ?: data.bestVideoUrl
+                // ── למה 1440 ולא ברירת המחדל ──────────────────────────
+                // ברירת המחדל בוחרת את הזרם הטוב ביותר שגובהו עד 720. בסרטון
+                // רוחבי זה בדיוק 720p. אבל שורט הוא סרטון **אנכי**, ו"גובה"
+                // אצלו הוא הצלע הארוכה — כלומר תקרה של 720 נותנת וידאו של
+                // 405 פיקסלים רוחב, שנמתח על מסך מלא. זו הסיבה שאותו סרטון
+                // נראה חד בנגן הרגיל ומטושטש בשורטס.
+                //
+                // 1440 על הצלע הארוכה = כ-810 פיקסלים רוחב, שזה מה שמסך
+                // טלפון באמת מציג.
+                val index = data.defaultTrackIndex(preferred = 1440)
+                val track = data.tracks.getOrNull(index)
+                Diagnostics.log(
+                    "SHORTS ${video.id}: נבחר ${track?.height ?: 0}p · " +
+                        if (track?.audioUrl.isNullOrEmpty()) "משולב" else "ממוזג עם אודיו נפרד",
+                )
+                com.filtertube.app.playback.Playback.buildItem(
+                    data, video.id, audio = false, qualityIndex = index,
+                )
             }.getOrNull()
         }
-        if (url != null) urlCache[video.id] = url
-        return url
+        if (item != null) itemCache[video.id] = item
+        return item
     }
 
     // טוען ומנגן את הסרטון של העמוד הנוכחי, ומקדים את הבא
     LaunchedEffect(pagerState.currentPage) {
         val page = pagerState.currentPage
         val video = videos.getOrNull(page) ?: return@LaunchedEffect
-        loading = urlCache[video.id] == null
-        val url = resolveUrl(video)
-        if (url != null) {
-            exo.setMediaItem(MediaItem.fromUri(url))
+        loading = itemCache[video.id] == null
+        val item = resolveItem(video)
+        if (item != null) {
+            exo.setMediaItem(item)
             exo.prepare()
             exo.playWhenReady = true
         }
         loading = false
         // טעינה מקדימה של השורט הבא — כך ההחלקה הבאה מיידית
-        videos.getOrNull(page + 1)?.let { next -> prefetchScope.launch { resolveUrl(next) } }
+        videos.getOrNull(page + 1)?.let { next -> prefetchScope.launch { resolveItem(next) } }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
@@ -209,7 +245,7 @@ fun ShortsPlayerScreen(onBack: () -> Unit) {
         }
         // כפתור חזרה לגריד
         IconButton(onClick = onBack, modifier = Modifier.align(Alignment.TopStart).padding(top = 28.dp, start = 4.dp)) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזור", tint = ThemeState.text)
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, "חזור", tint = ThemeState.text)
         }
     }
 }
@@ -296,7 +332,7 @@ private fun ShortPage(video: Video, isActive: Boolean, loading: Boolean, player:
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null,
+                Icon(if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null,
                     tint = ThemeState.text, modifier = Modifier.size(36.dp))
             }
         }
@@ -307,19 +343,35 @@ private fun ShortPage(video: Video, isActive: Boolean, loading: Boolean, player:
                     .background(Color(0xCC000000)).padding(horizontal = 16.dp, vertical = 8.dp))
         }
 
-        // מידע + פס התקדמות בתחתית
-        Column(modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(16.dp)) {
-            Text(video.channelName, color = ThemeState.text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        // ── מידע + פס התקדמות בתחתית ──────────────────────────────────────
+        // navigationBarsPadding: בלעדיו סרגל הניווט של המערכת יושב בדיוק על
+        // פס ההתקדמות. במסך גדול נשאר מספיק מקום והוא נראה בכל זאת, ובמסך
+        // קטן הוא נעלם לגמרי — וזה בדיוק ההבדל שנראה כמו "לא מתכוונן".
+        Column(
+            modifier = Modifier.align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        ) {
+            Text(video.channelName, color = Color.White,
+                style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(4.dp))
-            Text(video.title, color = ThemeState.text, fontSize = 13.sp, maxLines = 2,
-                overflow = TextOverflow.Ellipsis, lineHeight = 17.sp)
-            Spacer(Modifier.height(8.dp))
-            LinearProgressIndicator(
-                progress = { if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f },
-                modifier = Modifier.fillMaxWidth(),
-                color = Color(0xFFFF0000),
-                trackColor = Color(0x55FFFFFF),
-            )
+            Text(video.title, color = Color.White.copy(alpha = 0.88f),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(10.dp))
+            // זמן זורם משמאל לימין גם בממשק עברי. בלי הבלוק הזה הפס התמלא
+            // מימין לשמאל, כלומר הפוך מכל נגן אחר.
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                LinearProgressIndicator(
+                    progress = {
+                        if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
+                    },
+                    modifier = Modifier.fillMaxWidth().height(3.dp),
+                    color = ThemeState.accent,
+                    trackColor = Color(0x55FFFFFF),
+                )
+            }
         }
     }
 }

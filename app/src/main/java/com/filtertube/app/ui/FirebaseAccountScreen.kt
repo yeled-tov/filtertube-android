@@ -9,11 +9,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.CloudDone
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.CloudDone
+import androidx.compose.material.icons.rounded.Email
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -23,6 +23,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -368,7 +370,7 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                Icons.Default.CloudDone,
+                Icons.Rounded.CloudDone,
                 contentDescription = null,
                 tint = Color.White,
                 modifier = Modifier.size(42.dp),
@@ -407,7 +409,7 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = { openMode(AccountEntryMode.WELCOME) }, enabled = !loading) {
-                        Icon(Icons.Default.ArrowBack, "חזרה", tint = ThemeState.text)
+                        Icon(Icons.Rounded.ArrowBack, "חזרה", tint = ThemeState.text)
                     }
                     Text(
                         if (registering) "יצירת חשבון חדש" else "כניסה לחשבון",
@@ -435,7 +437,7 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                         clearMessage()
                     },
                     label = "כתובת אימייל",
-                    icon = { Icon(Icons.Default.Email, null) },
+                    icon = { Icon(Icons.Rounded.Email, null) },
                     keyboardType = KeyboardType.Email,
                 )
                 Spacer(Modifier.height(12.dp))
@@ -446,7 +448,7 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                         clearMessage()
                     },
                     label = "קוד לחשבון ולהורים (4 תווים ומעלה)",
-                    icon = { Icon(Icons.Default.Lock, null) },
+                    icon = { Icon(Icons.Rounded.Lock, null) },
                     keyboardType = KeyboardType.Password,
                     password = true,
                 )
@@ -459,7 +461,7 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                             clearMessage()
                         },
                         label = "אישור הקוד",
-                        icon = { Icon(Icons.Default.Lock, null) },
+                        icon = { Icon(Icons.Rounded.Lock, null) },
                         keyboardType = KeyboardType.Password,
                         password = true,
                     )
@@ -509,7 +511,7 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                         )
                     } else {
                         Icon(
-                            if (registering) Icons.Default.PersonAdd else Icons.Default.Lock,
+                            if (registering) Icons.Rounded.PersonAdd else Icons.Rounded.Lock,
                             null,
                             modifier = Modifier.size(19.dp),
                         )
@@ -540,7 +542,7 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                     value = password,
                     onValueChange = { password = it },
                     label = "קוד (4 תווים לפחות)",
-                    icon = { Icon(Icons.Default.Lock, null, tint = ThemeState.subtext2) },
+                    icon = { Icon(Icons.Rounded.Lock, null, tint = ThemeState.subtext2) },
                     keyboardType = KeyboardType.Password,
                     password = true,
                 )
@@ -549,7 +551,7 @@ fun FirebaseAccountScreen(onDone: (needsProfile: Boolean) -> Unit) {
                     value = confirmPassword,
                     onValueChange = { confirmPassword = it },
                     label = "אישור הקוד",
-                    icon = { Icon(Icons.Default.Lock, null, tint = ThemeState.subtext2) },
+                    icon = { Icon(Icons.Rounded.Lock, null, tint = ThemeState.subtext2) },
                     keyboardType = KeyboardType.Password,
                     password = true,
                 )
@@ -687,6 +689,7 @@ private fun AccountField(
     keyboardType: KeyboardType,
     password: Boolean = false,
 ) {
+    var reveal by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -695,8 +698,21 @@ private fun AccountField(
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        // עין להצגת הסיסמה — סיסמה שמוקלדת בעיוור נכשלת שוב ושוב בלי שיהיה
+        // ברור אם הטעות בהקלדה או בסיסמה עצמה.
+        trailingIcon = if (!password) null else {
+            {
+                IconButton(onClick = { reveal = !reveal }) {
+                    Icon(
+                        if (reveal) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                        if (reveal) "הסתר סיסמה" else "הצג סיסמה",
+                        tint = ThemeState.subtext,
+                    )
+                }
+            }
+        },
         visualTransformation =
-            if (password) PasswordVisualTransformation()
+            if (password && !reveal) PasswordVisualTransformation()
             else androidx.compose.ui.text.input.VisualTransformation.None,
         shape = RoundedCornerShape(16.dp),
         colors = OutlinedTextFieldDefaults.colors(
@@ -754,7 +770,7 @@ fun EmailVerificationScreen(
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Default.Email, null, tint = Color.White, modifier = Modifier.size(40.dp))
+            Icon(Icons.Rounded.Email, null, tint = Color.White, modifier = Modifier.size(40.dp))
         }
         Spacer(Modifier.height(18.dp))
         Text(
@@ -791,7 +807,7 @@ fun EmailVerificationScreen(
                 value = passcode.orEmpty(),
                 onValueChange = onPasscodeChange,
                 label = "קוד החשבון וההורים",
-                icon = { Icon(Icons.Default.Lock, null) },
+                icon = { Icon(Icons.Rounded.Lock, null) },
                 keyboardType = KeyboardType.Password,
                 password = true,
             )

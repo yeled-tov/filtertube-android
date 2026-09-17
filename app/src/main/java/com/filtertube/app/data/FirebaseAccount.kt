@@ -595,6 +595,9 @@ object FirebaseAccount {
         }
 
     fun signOut(context: Context, settings: SettingsStore) {
+        // לפני שמנתקים: משחררים את אסימון ההתראות, אחרת המכשיר ממשיך לקבל
+        // את ההתראות של החשבון הקודם — כולל התראות הניהול של האדמין.
+        NotificationRegistration.releaseOnSignOut()
         AccountDataGuard.withLock {
             // Invalidate in-flight snapshots before revoking Firebase access
             // and clearing the account-owned local store.

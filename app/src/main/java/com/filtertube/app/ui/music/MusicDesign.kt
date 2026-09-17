@@ -2,15 +2,18 @@ package com.filtertube.app.ui.music
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.Equalizer
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.rounded.Equalizer
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -78,12 +81,19 @@ fun SongArt(video: Video, size: Dp, modifier: Modifier = Modifier, corner: Dp = 
                 contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
             )
         } else {
-            Icon(Icons.Default.MusicNote, null, tint = ThemeState.subtext, modifier = Modifier.size(size / 3))
+            Icon(Icons.Rounded.MusicNote, null, tint = ThemeState.subtext, modifier = Modifier.size(size / 3))
         }
     }
 }
 
-/** שורת שיר — 64dp גובה, תמונה 48dp, שתי שורות טקסט, ואפשרות לתוכן נגרר. */
+/**
+ * שורת שיר — 64dp גובה, תמונה 48dp, שתי שורות טקסט, ואפשרות לתוכן נגרר.
+ *
+ * [onMenu] מוסיף שלוש נקודות בקצה השורה וגם לחיצה ארוכה. הכפתור אינו
+ * מחליף את הלחיצה הארוכה אלא מסגיר שהיא קיימת: מחווה שאי אפשר לראות היא
+ * מחווה שרוב המשתמשים לא ימצאו.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun SongListItem(
     video: Video,
@@ -92,14 +102,23 @@ fun SongListItem(
     modifier: Modifier = Modifier,
     leading: @Composable (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
+    onMenu: (() -> Unit)? = null,
     onClick: (() -> Unit)? = null,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(MusicDim.listItemHeight)
-            .let { if (onClick != null) it.clickable(onClick = onClick) else it }
-            .padding(horizontal = MusicDim.screenPadding),
+            .let {
+                when {
+                    onClick != null && onMenu != null -> it.combinedClickable(
+                        onClick = onClick, onLongClick = onMenu,
+                    )
+                    onClick != null -> it.clickable(onClick = onClick)
+                    else -> it
+                }
+            }
+            .padding(start = MusicDim.screenPadding, end = if (onMenu != null) 2.dp else MusicDim.screenPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         leading?.let { it(); Spacer(Modifier.width(4.dp)) }
@@ -114,7 +133,7 @@ fun SongListItem(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.Default.Equalizer, null,
+                        Icons.Rounded.Equalizer, null,
                         tint = if (playing) ThemeState.accent else Color.White,
                         modifier = Modifier.size(22.dp),
                     )
@@ -136,6 +155,14 @@ fun SongListItem(
             )
         }
         trailing?.let { Spacer(Modifier.width(6.dp)); it() }
+        onMenu?.let {
+            IconButton(onClick = it, modifier = Modifier.size(38.dp)) {
+                Icon(
+                    Icons.Rounded.MoreVert, "פעולות לשיר",
+                    tint = ThemeState.subtext, modifier = Modifier.size(20.dp),
+                )
+            }
+        }
     }
 }
 
@@ -163,9 +190,15 @@ fun MusicGridItem(video: Video, size: Dp = MusicDim.gridThumbnail, onClick: () -
  * שונה מ-[MusicGridItem] בכך שהיא לא קובעת רוחב קבוע: ברשת הרוחב נקבע
  * ע"י התא, וכריכה ברוחב קשיח הייתה או גולשת ממנו או משאירה חורים.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun MusicCell(video: Video, active: Boolean, onClick: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+fun MusicCell(video: Video, active: Boolean, onMenu: (() -> Unit)? = null, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxWidth().let {
+            if (onMenu != null) it.combinedClickable(onClick = onClick, onLongClick = onMenu)
+            else it.clickable(onClick = onClick)
+        },
+    ) {
         BoxWithConstraints {
             SongArt(video, maxWidth)
             if (active) {
@@ -175,7 +208,24 @@ fun MusicCell(video: Video, active: Boolean, onClick: () -> Unit) {
                         .background(Color(0x66000000)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Default.Equalizer, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                    Icon(Icons.Rounded.Equalizer, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                }
+            }
+            // שלוש הנקודות יושבות על הכריכה עצמה: בכוורת אין קצה שורה פנוי
+            // שאפשר לתלות בו כפתור, והדיסקית הכהה מבטיחה שהוא ייראה גם מעל
+            // כריכה בהירה.
+            onMenu?.let { menu ->
+                Box(
+                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
+                        .size(28.dp).clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.45f))
+                        .clickable(onClick = menu),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Rounded.MoreVert, "פעולות לשיר",
+                        tint = Color.White, modifier = Modifier.size(17.dp),
+                    )
                 }
             }
         }
@@ -221,7 +271,7 @@ fun ArtistCircle(
                 // עד שהסמל נמשך — צללית אדם, לא אות באנגלית. שם עברי שמוצג
                 // כאות לטינית בודדת נראה כמו תקלה, וזה גם לא מזהה כלום.
                 Icon(
-                    Icons.Default.Person, null,
+                    Icons.Rounded.Person, null,
                     tint = ThemeState.subtext, modifier = Modifier.size(size / 2.4f),
                 )
             }
@@ -272,7 +322,7 @@ fun NavigationTitle(
         }
         if (onClick != null) {
             Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowLeft, null,
+                Icons.AutoMirrored.Rounded.KeyboardArrowLeft, null,
                 tint = ThemeState.subtext, modifier = Modifier.size(22.dp),
             )
         }

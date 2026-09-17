@@ -42,6 +42,11 @@ object ChannelsRepository {
 
     private const val GITHUB_RAW =
         "https://raw.githubusercontent.com/yeled-tov/filtertube-android/main/channels.json"
+    // עותק באתר שלנו. raw.githubusercontent דורש מאגר ציבורי, ולכן הוא
+    // מפסיק לעבוד ביום שהמאגר יהפוך לפרטי; זה נשאר. הוא עדיין רק גיבוי —
+    // המקור הוא הפונקציה ב-Firebase — אבל הוא טרי בהרבה מה-asset המוטמע
+    // בבנייה, ולכן הוא נבדק לפניו.
+    private const val HOSTING_RAW = "https://filter-tube-52d8e.web.app/channels.json"
     private const val APPROVED_API =
         "https://europe-west1-filter-tube-52d8e.cloudfunctions.net/listApprovedChannels"
     private const val SNAPSHOT_FILE_NAME = "channels_snapshot.json"
@@ -134,8 +139,13 @@ object ChannelsRepository {
                 if (snapshot.isNotEmpty()) {
                     snapshot to "snapshot"
                 } else {
-                    val fromGithub = runCatching { fetchFromGithub() }.getOrNull().orEmpty()
-                    if (fromGithub.isNotEmpty()) fromGithub to "github" else loadFromAsset(context) to "asset"
+                    val fromHosting = runCatching { fetchJson(HOSTING_RAW) }.getOrNull().orEmpty()
+                    if (fromHosting.isNotEmpty()) {
+                        fromHosting to "hosting"
+                    } else {
+                        val fromGithub = runCatching { fetchFromGithub() }.getOrNull().orEmpty()
+                        if (fromGithub.isNotEmpty()) fromGithub to "github" else loadFromAsset(context) to "asset"
+                    }
                 }
             }
 
@@ -143,7 +153,7 @@ object ChannelsRepository {
                 cached = channels
                 lastFetchTime = System.currentTimeMillis()
                 _approvedChannelsFlow.value = channels
-                if (source == "firebase" || source == "github") {
+                if (source == "firebase" || source == "github" || source == "hosting") {
                     saveToSnapshot(context, channels, source)
                 }
             }
@@ -222,8 +232,10 @@ object ChannelsRepository {
         }
     }
 
-    private suspend fun fetchFromGithub(): List<Channel> = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url("$GITHUB_RAW?t=${System.currentTimeMillis()}").build()
+    private suspend fun fetchFromGithub(): List<Channel> = fetchJson(GITHUB_RAW)
+
+    private suspend fun fetchJson(url: String): List<Channel> = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url("$url?t=${System.currentTimeMillis()}").build()
         httpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return@use emptyList()
             val body = response.body?.string() ?: return@use emptyList()

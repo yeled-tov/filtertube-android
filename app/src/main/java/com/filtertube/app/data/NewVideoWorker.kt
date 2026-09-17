@@ -36,16 +36,20 @@ class NewVideoWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         val store = LibraryStore(ctx)
         val snapshot = AccountDataGuard.withLock {
             if (!sessionCurrent()) return@withLock null
-            settings.filterLevel to store.localSubscriptions()
+            Triple(settings.filterLevel, settings.userGender, store.localSubscriptions())
         } ?: return Result.success()
+        // ── גם המגדר, לא רק הרמה ──────────────────────────────────────────
+        // forLevel קיבל כאן רמה בלבד, ולכן ההתראה על "סרטון חדש" יכלה להגיע
+        // מערוץ שהמשתמש לא אמור לראות בכלל לפי בחירת המגדר שלו — התראה היא
+        // הצגה לכל דבר, והיא הגיעה למסך הנעילה.
         val all = runCatching {
-            ChannelsRepository.getChannels(ctx).forLevel(snapshot.first)
+            ChannelsRepository.getChannels(ctx).forLevel(snapshot.first, snapshot.second)
         }.getOrNull().orEmpty()
         if (!sessionCurrent()) return Result.success()
         if (all.isEmpty()) return Result.success()
 
         // אם יש מנויים — מצמצמים אליהם בלבד; אחרת כל הערוצים המאושרים
-        val subs = snapshot.second
+        val subs = snapshot.third
         val channels = if (subs.isEmpty()) all else all.filter { it.youtubeChannelId in subs }
         if (channels.isEmpty()) return Result.success()
 

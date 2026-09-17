@@ -28,14 +28,34 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late Future<List<Video>> _future;
 
+  /// הקטגוריה שנבחרה. ריק = הכול.
+  String _category = '';
+
   @override
   void initState() {
     super.initState();
     _future = _loadFeed();
   }
 
+  /// הקטגוריות שבאמת קיימות ברשימה הלבנה הנוכחית.
+  ///
+  /// לא רשימה קבועה: ברמת סינון שאינה 3 אין "דתי לייט" בכלל, וצ'יפ שמוביל
+  /// לרשימה ריקה גרוע מצ'יפ שלא קיים.
+  List<String> get _categories {
+    final seen = <String>{};
+    for (final c in widget.channels.channels) {
+      seen.add(c.category);
+    }
+    final ordered = categoryLabels.keys.where(seen.contains).toList();
+    return ordered;
+  }
+
   Future<List<Video>> _loadFeed() async {
-    final chs = widget.channels.channels.take(24).toList();
+    var pool = widget.channels.channels;
+    if (_category.isNotEmpty) {
+      pool = pool.where((c) => c.category == _category).toList();
+    }
+    final chs = pool.take(24).toList();
     final results = await Future.wait(
       chs.map((c) => widget.api.channelUploads(c, max: 6)),
     );
@@ -53,6 +73,56 @@ class _HomeScreenState extends State<HomeScreen> {
     final f = _loadFeed();
     setState(() => _future = f);
     await f;
+  }
+
+  void _selectCategory(String id) {
+    if (_category == id) return;
+    setState(() {
+      _category = id;
+      _future = _loadFeed();
+    });
+  }
+
+  Widget _categoryBar() {
+    final cats = _categories;
+    if (cats.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        children: [
+          _chip('הכול', ''),
+          ...cats.map((c) => _chip(categoryLabel(c), c)),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(String label, String id) {
+    final selected = _category == id;
+    return Padding(
+      padding: const EdgeInsets.only(left: 8, top: 6, bottom: 6),
+      child: GestureDetector(
+        onTap: () => _selectCategory(id),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            color: selected ? AppTheme.accent : AppTheme.surface,
+            borderRadius: BorderRadius.circular(50),
+            border: Border.all(color: selected ? AppTheme.accent : AppTheme.stroke),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : AppTheme.subtext2,
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _open(Video v) {
@@ -118,7 +188,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      body: RefreshIndicator(
+      body: Column(
+        children: [
+          _categoryBar(),
+          Expanded(
+            child: RefreshIndicator(
         color: AppTheme.accent,
         onRefresh: _refresh,
         child: FutureBuilder<List<Video>>(
@@ -151,6 +225,9 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
+            ),
+          ),
+        ],
       ),
     );
   }

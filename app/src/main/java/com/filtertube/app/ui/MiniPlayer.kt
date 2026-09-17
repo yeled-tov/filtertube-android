@@ -7,17 +7,19 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -169,7 +171,8 @@ fun MiniPlayer(
                 progress = { progress },
                 modifier = Modifier.fillMaxWidth().height(3.dp),
                 color = ThemeState.accent,
-                trackColor = Color(0xFF333333),
+                // היה 0xFF333333 קבוע — פס אפור שלא השתנה במצב בהיר.
+                trackColor = ThemeState.divider,
             )
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
@@ -197,37 +200,49 @@ fun MiniPlayer(
                             modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
                         )
                     } else {
-                        Icon(Icons.Default.MusicNote, null, tint = ThemeState.subtext, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Rounded.MusicNote, null, tint = ThemeState.subtext, modifier = Modifier.size(20.dp))
                     }
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        ui.title, color = ThemeState.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        ui.title, color = ThemeState.text,
+                        style = MaterialTheme.typography.titleSmall,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        ui.artist, color = ThemeState.subtext2, fontSize = 11.sp,
+                        ui.artist, color = ThemeState.subtext,
+                        style = MaterialTheme.typography.bodySmall,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                 }
-                IconButton(onClick = { controller.seekToPreviousMediaItem() }, modifier = Modifier.size(38.dp)) {
-                    Icon(Icons.Default.SkipPrevious, "שיר קודם", tint = ThemeState.text)
+                // ── היררכיה בין הפקדים ────────────────────────────────
+                // קודם כל ארבעת הכפתורים נראו זהים: אותו גודל, אותו צבע,
+                // אותו משקל. הפעולה שהמשתמש עושה כאן הכי הרבה היא נגן/השהה,
+                // והיא נבלעה בין דילוג לסגירה. עכשיו היא עיגול מלא בצבע
+                // ההדגשה, הדילוגים אפורים והסגירה הקטנה והחיוורת מכולן.
+                IconButton(onClick = { controller.seekToPreviousMediaItem() }, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Rounded.SkipPrevious, "שיר קודם", tint = ThemeState.subtext2,
+                        modifier = Modifier.size(24.dp))
                 }
-                IconButton(
-                    onClick = { if (ui.isPlaying) controller.pause() else controller.play() },
-                    modifier = Modifier.size(42.dp),
+                Box(
+                    modifier = Modifier.size(40.dp).clip(CircleShape)
+                        .background(ThemeState.accent)
+                        .clickable { if (ui.isPlaying) controller.pause() else controller.play() },
+                    contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        if (ui.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        if (ui.isPlaying) "השהה" else "נגן", tint = ThemeState.text,
+                        if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        if (ui.isPlaying) "השהה" else "נגן",
+                        tint = ThemeState.onAccent, modifier = Modifier.size(23.dp),
                     )
                 }
-                IconButton(onClick = { controller.seekToNextMediaItem() }, modifier = Modifier.size(38.dp)) {
-                    Icon(Icons.Default.SkipNext, "שיר הבא", tint = ThemeState.text)
+                IconButton(onClick = { controller.seekToNextMediaItem() }, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Rounded.SkipNext, "שיר הבא", tint = ThemeState.subtext2,
+                        modifier = Modifier.size(24.dp))
                 }
-                IconButton(onClick = { stopEverything() }, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.Close, "עצור וסגור", tint = ThemeState.subtext2, modifier = Modifier.size(19.dp))
+                IconButton(onClick = { stopEverything() }, modifier = Modifier.size(30.dp)) {
+                    Icon(Icons.Rounded.Close, "עצור וסגור", tint = ThemeState.subtext, modifier = Modifier.size(17.dp))
                 }
             }
         }

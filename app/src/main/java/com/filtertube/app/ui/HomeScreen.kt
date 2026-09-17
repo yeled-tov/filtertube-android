@@ -9,26 +9,29 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.LiveTv
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.Radio
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.LiveTv
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -61,7 +64,8 @@ import com.filtertube.app.data.YouTubeRepository
 import com.filtertube.app.playback.Playback
 import com.filtertube.app.data.categoryLabelHe
 import com.filtertube.app.data.forLevel
-import com.filtertube.app.data.personalizeFeed
+import com.filtertube.app.data.FeedRanker
+import com.filtertube.app.data.TasteProfile
 import com.filtertube.app.data.sortedCategories
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -123,12 +127,9 @@ fun HomeScreen(
                     return@launch
                 }
 
-                // מיון ~2,500 סרטונים + קריאת ההיסטוריה מהדיסק. scope כאן הוא
-                // rememberCoroutineScope, כלומר Dispatchers.Main — בלי המעבר
-                // הזה כל רענון של מסך הבית עושה את העבודה על תהליכון ה-UI.
-                val ordered = withContext(Dispatchers.Default) {
-                    sanitizeFeed(personalizeFeed(videos, store.localHistory()))
-                }
+                // rankFeed עצמו עובר ל-Dispatchers.Default: הדירוג של ~2,500
+                // סרטונים וקריאת הספרייה מהדיסק לא יכולים לרוץ על תהליכון ה-UI.
+                val ordered = rankFeed(context, videos, store)
 
                 // הפיד מוצג *מיד*. העשרת המטא-דאטה היא שיפור, לא תנאי:
                 // כשהיא הייתה חוסמת את ההצגה, מסך הבית חיכה לעד 6 קריאות רשת
@@ -185,11 +186,7 @@ fun HomeScreen(
         runCatching { channels = ChannelsRepository.getChannels(context).forLevel(settings.filterLevel, settings.userGender) }
         val cached = FeedCache.loadFeed(context)
         if (!cached.isNullOrEmpty()) {
-            state = HomeState.Success(
-                withContext(Dispatchers.Default) {
-                    sanitizeFeed(personalizeFeed(cached, store.localHistory()))
-                },
-            )
+            state = HomeState.Success(rankFeed(context, cached, store))
         }
         refresh(showSpinner = cached.isNullOrEmpty())
     }
@@ -197,36 +194,20 @@ fun HomeScreen(
     Box(modifier = Modifier.fillMaxSize().background(ThemeState.bg)) {
         // התוכן הראשי — מטושטש כשהתפריט הצף פתוח (אפקט זכוכית)
         Column(modifier = Modifier.fillMaxSize()) {
-            // טופ-בר: אווטאר לתפריט, ושם האפליקציה. זהו.
+            // טופ-בר: מחליף המצבים בלבד.
             //
-            // קודם ישבו כאן גם "סרטונים חדשים" ו"שידורים חיים" כשני עיגולים
-            // קטנים. שניהם *יעדי תוכן*, לא פעולות על המסך הנוכחי, והם נדחסו
-            // לפינה שהעין לא סורקת. הם ירדו לשורת הצ'יפים — בדיוק המקום שאליו
-            // המשתמש מסתכל כשהוא מחפש "מה יש כאן".
+            // הוא ממלא כאן שני תפקידים ולכן אין צורך בשורת כותרת נפרדת:
+            // החצי המסומן הוא שם האפליקציה, והחצי השני הוא הדרך למוזיקה.
+            // קודם ישב כאן כפתור "Music" קטן ואפור שאיש לא זיהה ככפתור,
+            // וכותרת נפרדת לצידו — שתי שורות תפקיד בשביל חצי תפקיד.
             Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 32.dp, bottom = 10.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 30.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
             ) {
-                // ── מעבר ל-FilterMusic ────────────────────────────────
-                // בפינה השמאלית של הטופ-בר, נגיש בלחיצה אחת מהמסך הראשי.
-                // אותו כפתור בדיוק, בכיוון ההפוך, יושב בטופ-בר של FilterMusic.
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(ThemeState.card)
-                        .clickable(onClick = onOpenMusic)
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Default.MusicNote, null,
-                        tint = ThemeState.accent, modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(Modifier.width(5.dp))
-                    Text("Music", color = ThemeState.text, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                com.filtertube.app.ui.theme.ModeSwitch(musicMode = false) { music ->
+                    if (music) onOpenMusic()
                 }
-                Spacer(Modifier.weight(1f))
-                Text("Filter Tube", color = ThemeState.text, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
             }
             // שורה אחת לכל מה ש"יש כאן": קודם שני יעדי התוכן (חי, חדש) ואז
             // סינון הפיד לפי קטגוריה. היעדים מסומנים באייקון וצבע כדי שיהיה
@@ -237,10 +218,10 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                DestinationChip("שידורים חיים", Icons.Default.LiveTv, Color(0xFFFF3B30), onLive)
+                DestinationChip("שידורים חיים", Icons.Rounded.LiveTv, Color(0xFFFF3B30), onLive)
                 DestinationChip(
                     label = if (newCount > 0) "חדשים ($newCount)" else "חדשים",
-                    icon = Icons.Default.Notifications,
+                    icon = Icons.Rounded.Notifications,
                     tint = if (newCount > 0) ThemeState.accent else ThemeState.subtext2,
                     onClick = onInbox,
                 )
@@ -277,7 +258,7 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        Icons.Default.CloudOff, null,
+                        Icons.Rounded.CloudOff, null,
                         tint = Color(0xFFFFAA00), modifier = Modifier.size(20.dp),
                     )
                     Spacer(Modifier.width(12.dp))
@@ -287,7 +268,7 @@ fun HomeScreen(
                         Text("אפשר להאזין למה שהורדת — הקש כאן", color = ThemeState.subtext, fontSize = 11.5.sp)
                     }
                     Icon(
-                        Icons.Default.Download, null,
+                        Icons.Rounded.Download, null,
                         tint = ThemeState.accent, modifier = Modifier.size(18.dp),
                     )
                 }
@@ -319,21 +300,39 @@ fun HomeScreen(
                             )
                         }
                     }
-                    val displayed = remember(s.videos, selectedCategory, catByChannel) {
-                        if (selectedCategory == null) s.videos
-                        else s.videos.filter { catByChannel[it.channelId] == selectedCategory }
+                    // LibraryBadges.blocked במפתח: חסימה מסירה את הסרטון מהמסך
+                    // מיד, בלי להמתין לרענון. הפיד עצמו הוא תצלום שנטען פעם
+                    // אחת, ולכן בלי הסינון כאן הסרטון נשאר על המסך עד הרענון
+                    // הבא — וזה בדיוק מה שנראה כאילו ההסרה לא עבדה.
+                    val displayed = remember(s.videos, selectedCategory, catByChannel, LibraryBadges.blocked) {
+                        val visible = s.videos.filter { it.id !in LibraryBadges.blocked }
+                        if (selectedCategory == null) visible
+                        else visible.filter { catByChannel[it.channelId] == selectedCategory }
                     }
                     if (displayed.isEmpty()) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text("אין סרטונים בקטגוריה זו", color = ThemeState.subtext, fontSize = 14.sp)
                         }
                     } else {
-                        LazyColumn(
+                        val listState = rememberLazyListState()
+                        com.filtertube.app.ui.theme.TopPullRefresh(
+                            isRefreshing = refreshing,
+                            atTop = {
+                                listState.firstVisibleItemIndex == 0 &&
+                                    listState.firstVisibleItemScrollOffset == 0
+                            },
+                            scrolling = listState.isScrollInProgress,
+                            onRefresh = { refresh(showSpinner = false) },
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
                         ) {
-                            items(displayed, key = { it.id }) { video ->
-                                VideoRow(video, onClick = { onVideoClick(video) })
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
+                            ) {
+                                items(displayed, key = { it.id }) { video ->
+                                    VideoRow(video, onClick = { onVideoClick(video) })
+                                }
                             }
                         }
                     }
@@ -372,7 +371,7 @@ fun HomeScreen(
                     modifier = Modifier.size(15.dp),
                 )
             } else {
-                Icon(Icons.Default.Radio, null, tint = ThemeState.accent, modifier = Modifier.size(16.dp))
+                Icon(Icons.Rounded.Radio, null, tint = ThemeState.accent, modifier = Modifier.size(16.dp))
             }
             Spacer(Modifier.width(6.dp))
             Text(
@@ -384,6 +383,41 @@ fun HomeScreen(
 }
 
 /** A stale cache or a repeated upstream item must never create duplicate LazyColumn keys. */
+/**
+ * בונה את פרופיל הטעם ומדרג את הפיד.
+ *
+ * הכל מקומי: לייקים, היסטוריה, מנויים וחיפושים אחרונים כבר במכשיר, ולכן
+ * הדירוג עובד גם בלי רשת ולא עולה ולו בקשה אחת.
+ */
+private suspend fun rankFeed(
+    context: android.content.Context,
+    videos: List<Video>,
+    store: LibraryStore,
+): List<Video> = withContext(Dispatchers.Default) {
+    val settings = com.filtertube.app.data.SettingsStore(context)
+    val categories = runCatching {
+        com.filtertube.app.data.ChannelsRepository.getCachedChannelsFast(context)
+            .associate { it.youtubeChannelId to it.category }
+    }.getOrDefault(emptyMap())
+
+    val profile = TasteProfile.build(
+        likes = store.likes() + store.youtubeLikes(),
+        history = store.localHistory(),
+        subscriptions = store.subscriptions().map { it.channelId },
+        searchTerms = settings.getSearchHistory(),
+        categoryOf = { categories[it] },
+    )
+    // סרטונים שהמשתמש חסם לעצמו יוצאים כאן, לפני הדירוג: אין טעם לדרג
+    // משהו שלא יוצג, והסינון במקום אחד מבטיח שלא נשכח מסך.
+    val blocked = store.blockedIds()
+    FeedRanker.rank(
+        videos = sanitizeFeed(videos).filter { it.id !in blocked },
+        profile = profile,
+        categoryOf = { categories[it] },
+        watchedIds = store.watchedIds(),
+    )
+}
+
 private fun sanitizeFeed(videos: List<Video>): List<Video> =
     videos.asSequence()
         .filter { it.id.isNotBlank() }
@@ -412,28 +446,41 @@ private fun DestinationChip(
     ) {
         Icon(icon, null, tint = tint, modifier = Modifier.size(15.dp))
         Spacer(Modifier.width(6.dp))
-        Text(label, color = ThemeState.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Text(label, color = ThemeState.text, style = MaterialTheme.typography.labelMedium)
     }
 }
 
 @Composable
 private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    // צ'יפ שאינו נבחר קיבל מסגרת: בלעדיה הוא רק טקסט על מלבן, ולא היה שום
+    // סימן שאפשר להקיש עליו — בדיוק ההבדל בין תווית לפקד.
+    val content by androidx.compose.animation.animateColorAsState(
+        targetValue = if (selected) Color.White else ThemeState.subtext2,
+        animationSpec = com.filtertube.app.ui.theme.Motion.normal(),
+        label = "chipContent",
+    )
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
             .then(
-                if (selected) Modifier.background(
-                    Brush.horizontalGradient(ThemeState.accentColors),
-                ) else Modifier.background(ThemeState.surface),
+                if (selected) {
+                    Modifier.background(Brush.horizontalGradient(ThemeState.accentColors))
+                } else {
+                    Modifier.background(ThemeState.bg2)
+                        .border(1.dp, ThemeState.divider, RoundedCornerShape(50))
+                },
             )
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Text(
             label,
-            color = if (selected) Color.White else ThemeState.subtext2,
-            fontSize = 13.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = content,
+            style = if (selected) {
+                MaterialTheme.typography.labelMedium
+            } else {
+                MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium)
+            },
         )
     }
 }
@@ -453,7 +500,7 @@ fun CenteredLoading(text: String) {
 fun CenteredError(message: String, onRetry: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
-            Icon(Icons.Default.Warning, null, tint = Color(0xFFFF0000), modifier = Modifier.size(48.dp))
+            Icon(Icons.Rounded.Warning, null, tint = Color(0xFFFF0000), modifier = Modifier.size(48.dp))
             Spacer(Modifier.height(16.dp))
             Text("שגיאה בטעינה", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ThemeState.text)
             Spacer(Modifier.height(8.dp))
@@ -489,33 +536,35 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
             )
-            // ברק עדין מלמעלה לעומק
+            // ── צל תחתון בלבד ─────────────────────────────────────
+            // קודם ישב כאן גם ברק לבן בשקיפות 6% מלמעלה. על תמונה ממוזערת
+            // הוא לא הוסיף עומק — הוא רק הלבין את שליש התמונה העליון. הצל
+            // התחתון, לעומתו, עושה עבודה אמיתית: הוא מה שמאפשר לקרוא את
+            // משך הסרטון גם מעל תמונה בהירה.
             Box(
                 modifier = Modifier.matchParentSize().background(
-                    Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.06f), Color.Transparent, Color.Black.copy(alpha = 0.12f))),
+                    Brush.verticalGradient(
+                        0.65f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = 0.45f),
+                    ),
                 ),
             )
-            // באדג' "מאושר" (כל הסרטונים מערוצים מאושרים)
-            Row(
-                modifier = Modifier.align(Alignment.TopEnd).padding(9.dp)
-                    .clip(RoundedCornerShape(20.dp)).background(Color.Black.copy(alpha = 0.5f))
-                    .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(20.dp))
-                    .padding(horizontal = 8.dp, vertical = 3.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Default.Check, null, tint = Color(0xFF7CF2C0), modifier = Modifier.size(11.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("מאושר", color = Color(0xFF7CF2C0), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
+            // ── למה אין כאן באדג' "מאושר" ─────────────────────────
+            // הוא הופיע על כל סרטון בלי יוצא מן הכלל, כי *כל* הסרטונים
+            // מגיעים מערוצים מאושרים — זו כל האפליקציה. תווית שנכונה תמיד
+            // אינה מידע: היא לא מבדילה בין שני סרטונים ולכן העין לומדת
+            // להתעלם ממנה, ובינתיים היא גוזלת פינה בכל תמונה. ההבטחה הזו
+            // שייכת למקום אחד באפליקציה, לא לכל כרטיס בנפרד.
+
             // משך זמן הסרטון בפינה הימנית התחתונה
             val formattedDur = video.formattedDuration()
             if (formattedDur.isNotBlank()) {
                 Box(
                     modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)
-                        .clip(RoundedCornerShape(4.dp)).background(Color.Black.copy(alpha = 0.75f))
+                        .clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(alpha = 0.7f))
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                 ) {
-                    Text(formattedDur, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(formattedDur, color = Color.White, style = MaterialTheme.typography.labelSmall)
                 }
             }
             // סימון "נצפה" — פס התקדמות מלא בתחתית התמונה, כמו ביוטיוב
@@ -525,6 +574,7 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                         .background(ThemeState.accent),
                 )
             }
+
             // סימון "אהבתי"
             if (liked) {
                 Box(
@@ -532,13 +582,13 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                         .clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.5f))
                         .padding(5.dp),
                 ) {
-                    Icon(Icons.Default.Favorite, "אהבתי", tint = ThemeState.accent,
+                    Icon(Icons.Rounded.Favorite, "אהבתי", tint = ThemeState.accent,
                         modifier = Modifier.size(12.dp))
                 }
             }
         }
         Spacer(Modifier.height(10.dp))
-        Row(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             // הסמל האמיתי של הערוץ. אות בודדת לא מזהה כלום, ובשם עברי היא
             // גם נראית כמו תקלה. ChannelAvatars מושך אותם דרך NewPipe פעם
             // אחת לכל ערוץ ושומר לתמיד.
@@ -555,15 +605,18 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                     )
                 } else {
                     Icon(
-                        Icons.Default.Person, null, tint = Color.White,
+                        Icons.Rounded.Person, null, tint = Color.White,
                         modifier = Modifier.size(18.dp),
                     )
                 }
             }
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(video.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = ThemeState.text,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 18.sp)
+                Text(
+                    video.title, color = ThemeState.text,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                )
                 Spacer(Modifier.height(3.dp))
                 val subParts = mutableListOf(video.channelName)
                 val viewsStr = video.formattedViewCount()
@@ -571,8 +624,11 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                 val timeStr = video.timeAgoHe()
                 // "תאריך לא זמין" רק מרעיש — עדיף להשמיט את החלק הזה
                 if (timeStr.isNotBlank() && timeStr != "תאריך לא זמין") subParts.add(timeStr)
-                Text(subParts.joinToString(" · "), fontSize = 12.sp, color = ThemeState.subtext,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    subParts.joinToString(" · "), color = ThemeState.subtext,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
                 val watchedStr = video.watchedAgoHe()
                 if (watched && watchedStr.isNotBlank()) {
                     Spacer(Modifier.height(2.dp))
@@ -580,26 +636,40 @@ fun VideoRow(video: Video, onClick: () -> Unit) {
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+            // ── שלוש הנקודות ──────────────────────────────────────────
+            // התפריט היה קיים רק בלחיצה ארוכה, וזו מחווה שאי אפשר לראות.
+            // מי שלא ניסה אותה במקרה לא ידע שיש כאן בכלל תפריט. הכפתור
+            // אינו מחליף את הלחיצה הארוכה — הוא רק מה שמסגיר שהיא קיימת.
+            IconButton(
+                onClick = { showActions = true },
+                modifier = Modifier.size(30.dp),
+            ) {
+                Icon(
+                    Icons.Rounded.MoreVert, "פעולות לסרטון",
+                    tint = ThemeState.subtext, modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
     if (showActions) VideoActionMenu(video, onDismiss = { showActions = false })
 }
 
 @Composable
-private fun VideoActionMenu(video: Video, onDismiss: () -> Unit) {
+fun VideoActionMenu(video: Video, onDismiss: () -> Unit, musicMode: Boolean = false) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val store = remember { LibraryStore(context) }
     var playlistOpen by remember { mutableStateOf(false) }
     var reportOpen by remember { mutableStateOf(false) }
+    var blockConfirm by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("פעולות לסרטון", color = ThemeState.text) },
+        title = { Text(if (musicMode) "פעולות לשיר" else "פעולות לסרטון", color = ThemeState.text) },
         text = {
             Column {
-                VideoAction("הבא בתור", Icons.AutoMirrored.Filled.QueueMusic) {
+                VideoAction("הבא בתור", Icons.AutoMirrored.Rounded.QueueMusic) {
                     busy = true
                     scope.launch {
                         val immediate = Playback.enqueueNext(context, video)
@@ -607,36 +677,105 @@ private fun VideoActionMenu(video: Video, onDismiss: () -> Unit) {
                         android.widget.Toast.makeText(context, if (immediate) "נוסף לתור הבא" else "נשמר לתור הבא", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
-                VideoAction("הורד סרטון", Icons.Default.Download) {
+                // ב-FilterMusic ההורדה היא תמיד אודיו ומסומנת כהורדת מוזיקה:
+                // זו אפליקציית מוזיקה, והורדת וידאו ממנה הייתה קובץ לצפייה
+                // מחוץ לכל סינון. הסימון הוא גם מה שמפריד בין רשימות ההורדות
+                // של שתי האפליקציות.
+                VideoAction(
+                    if (musicMode) "הורד שיר (אודיו)" else "הורד סרטון",
+                    Icons.Rounded.Download,
+                ) {
+                    // הבדיקה כאן היא בשביל ההסבר: השער עצמו יושב בתוך
+                    // DownloadEngine, אבל בלי ההודעה הזו הלחיצה פשוט לא
+                    // עושה כלום ונראית כמו תקלה.
+                    if (!DownloadEngine.canDownload(context)) {
+                        onDismiss()
+                        android.widget.Toast.makeText(
+                            context, "הורדות הן פיצ'ר פרימיום. ראה הגדרות → FilterTube Premium", android.widget.Toast.LENGTH_LONG,
+                        ).show()
+                        return@VideoAction
+                    }
                     busy = true
                     scope.launch {
-                        val ok = DownloadEngine.enqueueByVideo(context, video, isAudio = false)
+                        val ok = DownloadEngine.enqueueByVideo(
+                            context, video, isAudio = musicMode, fromMusic = musicMode,
+                        )
                         busy = false; onDismiss()
                         android.widget.Toast.makeText(context, if (ok) "ההורדה התחילה" else "לא ניתן להתחיל הורדה", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
                 val liked = video.id in LibraryBadges.liked
-                VideoAction(if (liked) "הסר מסרטונים שאהבתי" else "הוסף לסרטונים שאהבתי", if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder) {
+                VideoAction(if (liked) "הסר מסרטונים שאהבתי" else "הוסף לסרטונים שאהבתי", if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder) {
                     LibraryBadges.setLiked(video.id, store.toggleLike(video)); onDismiss()
                 }
-                VideoAction("שתף סרטון", Icons.Default.Share) {
+                VideoAction("שתף סרטון", Icons.Rounded.Share) {
                     val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                         type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, "https://www.youtube.com/watch?v=${video.id}")
                     }
                     context.startActivity(android.content.Intent.createChooser(share, "שתף סרטון")); onDismiss()
                 }
-                VideoAction("הוסף לפלייליסט", Icons.AutoMirrored.Filled.PlaylistAdd) { playlistOpen = true }
-                VideoAction("דווח על הסרטון", Icons.Default.Flag) { reportOpen = true }
-                VideoAction("הסר סרטון", Icons.Default.Delete) {
-                    store.removeVideo(video); onDismiss()
-                    android.widget.Toast.makeText(context, "הסרטון הוסר מהספרייה", android.widget.Toast.LENGTH_SHORT).show()
-                }
+                VideoAction("הוסף לפלייליסט", Icons.AutoMirrored.Rounded.PlaylistAdd) { playlistOpen = true }
+                VideoAction("דווח על הסרטון", Icons.Rounded.Flag) { reportOpen = true }
+                // ── "הסר" הפך ל"אל תציג לי" ───────────────────────────
+                // הפעולה הקודמת הסירה את הסרטון מהאוספים בלבד, והפיד ממשיך
+                // להגיע מהרשת — כלומר הסרטון חזר להופיע מיד אחרי הרענון
+                // הבא. מבחינת המשתמש זה פשוט לא עשה כלום.
+                //
+                // עכשיו הוא נכנס לרשימת החסומים האישית, ונעלם גם מהבית,
+                // מהחיפוש ומהמיקסים. השחרור יושב בהגדרות הסינון, מאחורי
+                // קוד ההורים.
+                VideoAction("אל תציג לי את זה יותר", Icons.Rounded.Block) { blockConfirm = true }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("ביטול") } },
     )
     if (playlistOpen) PlaylistPicker(video, store, onDismiss = { playlistOpen = false })
     if (reportOpen) ReportVideoDialog(video, onDismiss = { reportOpen = false })
+
+    // ── אישור לפני חסימה ──────────────────────────────────────────────────
+    // חסימה היא פעולה שקשה לבטל: היא דורשת את קוד ההורים. פעולה כזו לא
+    // אמורה לקרות בהקשה אחת, וגם לא בלי שהמשתמש יודע מראש איך חוזרים ממנה.
+    if (blockConfirm) {
+        AlertDialog(
+            onDismissRequest = { blockConfirm = false },
+            containerColor = ThemeState.surface,
+            icon = { Icon(Icons.Rounded.Block, null, tint = ThemeState.accent) },
+            title = { Text("להסיר את הסרטון?", color = ThemeState.text, fontSize = 17.sp) },
+            text = {
+                Column {
+                    Text(
+                        video.title, color = ThemeState.subtext2, fontSize = 13.sp,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "הסרטון ייעלם ממסך הבית, מהחיפוש, מההיסטוריה ומהמיקסים.",
+                        color = ThemeState.text, fontSize = 13.5.sp, lineHeight = 19.sp,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "שחרור בחזרה אפשרי רק בהגדרות הסינון, עם קוד ההורים.",
+                        color = ThemeState.accent, fontSize = 12.5.sp, lineHeight = 18.sp,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        store.blockVideo(video)
+                        LibraryBadges.refresh(context)
+                    }
+                    blockConfirm = false
+                    onDismiss()
+                }) { Text("הסר", color = ThemeState.accent, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { blockConfirm = false }) {
+                    Text("ביטול", color = ThemeState.subtext2)
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -689,7 +828,17 @@ private fun ReportVideoDialog(video: Video, onDismiss: () -> Unit) {
                 scope.launch {
                     val ok = BugReport.submit("דיווח על סרטון ${video.id}\nכותרת: ${video.title}", reason.trim())
                     sending = false; onDismiss()
-                    android.widget.Toast.makeText(context, if (ok) "הדיווח נשלח" else "שליחת הדיווח נכשלה", android.widget.Toast.LENGTH_SHORT).show()
+                    // ── למה זה נכשל ───────────────────────────────────
+                    // השרת דורש חשבון עם אימייל מאומת. "שליחת הדיווח נכשלה"
+                    // לא אמר את זה, ולכן נראה כמו תקלה במקום כמו תנאי.
+                    val verified = com.google.firebase.auth.FirebaseAuth.getInstance()
+                        .currentUser?.isEmailVerified == true
+                    val message = when {
+                        ok -> "הדיווח נשלח"
+                        !verified -> "כדי לדווח צריך חשבון עם אימייל מאומת"
+                        else -> "שליחת הדיווח נכשלה — בדוק את החיבור לאינטרנט"
+                    }
+                    android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
                 }
             }) { Text(if (sending) "שולח…" else "שלח") }
         },
