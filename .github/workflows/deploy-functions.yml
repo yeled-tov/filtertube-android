@@ -42,6 +42,16 @@ jobs:
         with:
           node-version: '22'
 
+      # ── למה npm ci לפני הפריסה ────────────────────────────────────────
+      # firebase-tools לא מעלה את הקוד "כמו שהוא": כדי לדעת אילו פונקציות
+      # קיימות הוא **טוען** את index.js, וזה מייבא את firebase-functions.
+      # בלי node_modules הייבוא נכשל, וההודעה שמתקבלת היא
+      # "Couldn't find firebase-functions package in your source code"
+      # ואחריה "An unexpected error has occurred" — שלא מרמזת בכלל שמדובר
+      # בתלויות חסרות. זה מה שהפיל את הפריסה.
+      - name: התקנת התלויות של הפונקציות
+        run: npm ci --prefix functions
+
       - name: בדיקת תחביר של הפונקציות
         run: npm --prefix functions run lint
 
