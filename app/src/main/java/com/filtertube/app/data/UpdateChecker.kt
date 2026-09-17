@@ -128,7 +128,7 @@ object UpdateChecker {
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "FilterTube")
             .build()
-        runCatching {
+        val attempt = runCatching {
             http.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) return@use null
                 val arr = org.json.JSONArray(resp.body?.string() ?: return@use null)
@@ -169,7 +169,8 @@ object UpdateChecker {
                 }
                 latest
             }
-        }.getOrNull()
+        }
+        return attempt.getOrNull()
     }
 
     /** "גרסה 1.1.0 (בנייה 142)" → "1.1.0". אם אין — נופלים למספר הבנייה בלבד. */
