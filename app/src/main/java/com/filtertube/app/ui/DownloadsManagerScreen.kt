@@ -22,7 +22,10 @@ import com.filtertube.app.data.DownloadEngine
 import com.filtertube.app.data.DownloadTask
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
+import com.filtertube.app.data.forLevel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** מנהל הורדות — הורדת כל ה"אהבתי", הורדה אוטומטית, מהירות (חיבורים/מקביליות), ומעקב. */
 @Composable
@@ -51,9 +54,25 @@ fun DownloadsManagerScreen(onBack: () -> Unit) {
                         }
                         queuing = true
                         scope.launch {
-                            val likes = store.likes()
+                            // ── הרשימה הלבנה חלה גם על הורדה מרוכזת ───────
+                            // "אהבתי" נשמר לנצח, ורמת הסינון יכולה לרדת
+                            // אחריו. בלי הסינון כאן, לחיצה אחת הייתה מורידה
+                            // למכשיר גם מה שכבר אינו מותר — ולקובץ שיושב
+                            // בגלריה אין שום סינון יותר.
+                            val likes = withContext(Dispatchers.IO) {
+                                val approved = com.filtertube.app.data.ApprovedChannels(
+                                    runCatching {
+                                        com.filtertube.app.data.ChannelsRepository.getChannels(context)
+                                            .forLevel(settings.filterLevel, settings.userGender)
+                                    }.getOrDefault(emptyList()),
+                                )
+                                val blocked = runCatching { store.blockedIds() }.getOrDefault(emptySet())
+                                store.likes().filter {
+                                    (approved.isEmpty() || approved.approves(it)) && it.id !in blocked
+                                }
+                            }
                             if (likes.isEmpty()) {
-                                Toast.makeText(context, "אין סרטונים ב״אהבתי״", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "אין סרטונים מאושרים ב״אהבתי״", Toast.LENGTH_SHORT).show()
                             } else {
                                 Toast.makeText(context, "מוסיף ${likes.size} לתור ההורדות…", Toast.LENGTH_SHORT).show()
                                 likes.forEach { DownloadEngine.enqueueByVideo(context, it, isAudio = false) }
