@@ -1083,6 +1083,12 @@ export const adminDashboard = onRequest({
         gender: cleanSingleLine(profile.gender, 16),
         filterLevel: Number(profile.filterLevel) || 0,
         onboardingDone: Boolean(profile.onboardingDone),
+        // ── איזו גרסה רצה אצלו בפועל ──────────────────────────────
+        // ריק = לקוח שעוד לא סנכרן מגרסה שמדווחת אותה, כלומר גרסה ישנה.
+        // זה מה שמכריע אם אפשר להפוך את המאגר לפרטי: מכשיר שנשאר על
+        // בנייה ישנה מפסיק לגלות עדכונים לתמיד באותו רגע.
+        appVersion: cleanSingleLine(profile.appVersion, 32),
+        appBuild: Number(profile.appBuild) || 0,
         channelRequests: requests.total,
         pendingChannelRequests: requests.pending,
         premiumRequestPending: premiumPendingUids.has(user.uid),
@@ -1098,6 +1104,18 @@ export const adminDashboard = onRequest({
       disabledAccounts: clients.filter((client) => client.disabled).length,
       pendingRequests: clients.reduce(
         (sum, client) => sum + client.pendingChannelRequests, 0,
+      ),
+      // ── פילוח גרסאות ────────────────────────────────────────────
+      // התשובה לשאלה "האם כבר אפשר להפוך את המאגר לפרטי": כל עוד יש
+      // לקוחות שלא דיווחו גרסה, או שדיווחו בנייה ישנה מהאחרונה, הם אלה
+      // שיישארו מאחור.
+      byAppBuild: clients.reduce((acc, client) => {
+        const key = client.appBuild > 0 ? String(client.appBuild) : "unknown";
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {}),
+      latestAppBuild: clients.reduce(
+        (max, client) => Math.max(max, client.appBuild || 0), 0,
       ),
       byFilterLevel: {
         level1: clients.filter((client) => client.filterLevel === 1).length,

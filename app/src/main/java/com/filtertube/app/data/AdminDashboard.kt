@@ -30,6 +30,18 @@ object AdminDashboard {
         val level2: Int = 0,
         val level3: Int = 0,
         val levelUnset: Int = 0,
+        /** הבנייה הגבוהה ביותר שדווחה על ידי לקוח כלשהו. */
+        val latestAppBuild: Int = 0,
+        /** כמה לקוחות מריצים את הבנייה האחרונה. */
+        val onLatestBuild: Int = 0,
+        /**
+         * כמה לקוחות עדיין לא דיווחו גרסה.
+         *
+         * זה לא "לא ידוע" סתם: דיווח הגרסה נוסף בבנייה 245, ולכן כל מי
+         * שלא דיווח יושב על משהו ישן יותר — והוא בדיוק מי שיישאר מאחור
+         * ביום שהמאגר יהפוך לפרטי.
+         */
+        val unknownBuild: Int = 0,
     )
 
     data class Client(
@@ -52,7 +64,17 @@ object AdminDashboard {
         val channelRequests: Int = 0,
         val pendingChannelRequests: Int = 0,
         val premiumRequestPending: Boolean = false,
+        val appVersion: String = "",
+        val appBuild: Int = 0,
     ) {
+        /** "2.0.2 (245)" — או הודעה ברורה כשעוד לא דיווח. */
+        val appVersionHe: String
+            get() = when {
+                appBuild <= 0 -> "גרסה לא ידועה — לא עודכן"
+                appVersion.isBlank() -> "בנייה $appBuild"
+                else -> "$appVersion (בנייה $appBuild)"
+            }
+
         /** "רמה 3 · דתי לייט" — מה הלקוח באמת רואה באפליקציה. */
         val filterLevelHe: String
             get() = when (filterLevel) {
@@ -107,6 +129,10 @@ object AdminDashboard {
                 level2 = levels.optInt("level2"),
                 level3 = levels.optInt("level3"),
                 levelUnset = levels.optInt("unset"),
+                latestAppBuild = s.optInt("latestAppBuild"),
+                onLatestBuild = s.optJSONObject("byAppBuild")
+                    ?.optInt(s.optInt("latestAppBuild").toString()) ?: 0,
+                unknownBuild = s.optJSONObject("byAppBuild")?.optInt("unknown") ?: 0,
             )
             val array = root.optJSONArray("clients") ?: return@use Snapshot(summary, emptyList())
             val clients = buildList {
@@ -127,6 +153,8 @@ object AdminDashboard {
                         channelRequests = c.optInt("channelRequests"),
                         pendingChannelRequests = c.optInt("pendingChannelRequests"),
                         premiumRequestPending = c.optBoolean("premiumRequestPending"),
+                        appVersion = c.optString("appVersion"),
+                        appBuild = c.optInt("appBuild"),
                     ))
                 }
             }

@@ -326,6 +326,42 @@ fun AdminScreen(onBack: () -> Unit) {
                         DashboardStat("Premium", s.premiumAccounts, Modifier.weight(1f))
                         DashboardStat("ניסיון", s.trialAccounts, Modifier.weight(1f))
                     }
+                    // ── מי כבר עדכן ────────────────────────────────────────
+                    // השורה שמכריעה אם אפשר להפוך את המאגר לפרטי: כל לקוח
+                    // שאינו על הבנייה האחרונה יפסיק לגלות עדכונים באותו רגע.
+                    if (s.latestAppBuild > 0) {
+                        Spacer(Modifier.height(10.dp))
+                        val behind = (s.totalAccounts - s.onLatestBuild).coerceAtLeast(0)
+                        Column(
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                .background(ThemeState.card).padding(12.dp),
+                        ) {
+                            Text(
+                                "גרסאות אצל הלקוחות",
+                                color = Color(0xFFFFAA00), fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "${s.onLatestBuild} מתוך ${s.totalAccounts} על בנייה ${s.latestAppBuild}",
+                                color = ThemeState.text, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                            )
+                            if (behind > 0) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "$behind עדיין לא — מהם ${s.unknownBuild} על גרסה שלא מדווחת בכלל. " +
+                                        "הפיכת המאגר לפרטי עכשיו תשאיר אותם בלי עדכונים.",
+                                    color = ThemeState.subtext, fontSize = 11.sp, lineHeight = 16.sp,
+                                )
+                            } else {
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "כולם מעודכנים — אפשר להפוך את המאגר לפרטי.",
+                                    color = Color(0xFF66BB6A), fontSize = 11.sp,
+                                )
+                            }
+                        }
+                    }
+
                     Spacer(Modifier.height(6.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         DashboardStat("מושבתים", s.disabledAccounts, Modifier.weight(1f))
@@ -932,6 +968,12 @@ private fun ClientCard(
                 if (client.verified) null else "מייל לא מאומת",
             ).joinToString(" · "),
             color = ThemeState.subtext, fontSize = 11.sp, lineHeight = 16.sp,
+        )
+        // הגרסה בשורה נפרדת ובצבע: זה מה שמחפשים כשרוצים לדעת מי נשאר מאחור.
+        Text(
+            client.appVersionHe,
+            color = if (client.appBuild > 0) ThemeState.subtext2 else Color(0xFFFFAA00),
+            fontSize = 11.sp,
         )
         if (client.pendingChannelRequests > 0 || client.premiumRequestPending) {
             Text(

@@ -162,6 +162,14 @@ object CloudSync {
                         "gender" to profileGender,
                         "filterLevel" to local.filterLevel,
                         "onboardingDone" to local.onboardingDone,
+                        // ── איזו גרסה רצה במכשיר הזה ───────────────────────
+                        // בלי זה אין שום דרך לדעת מי כבר עדכן ומי לא, וכל
+                        // החלטה שתלויה בזה — קודם כל הפיכת המאגר לפרטי,
+                        // שמשאירה מאחור כל מי שנשאר על גרסה ישנה — מתקבלת
+                        // בניחוש. מונה ההורדות של GitHub סופר קבצים שירדו,
+                        // לא מכשירים שבאמת מריצים את הגרסה.
+                        "appVersion" to com.filtertube.app.BuildConfig.VERSION_NAME,
+                        "appBuild" to com.filtertube.app.BuildConfig.VERSION_CODE,
                     ),
                     expectedUid = userId,
                     generation = generation,

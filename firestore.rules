@@ -27,6 +27,8 @@ service cloud.firestore {
           'filterLevel',
           'onboardingDone',
           'updatedAtMillis',
+          'appVersion',
+          'appBuild',
         ])
         && request.resource.data.name is string
         && request.resource.data.name.size() <= 80
@@ -37,7 +39,14 @@ service cloud.firestore {
         && request.resource.data.filterLevel >= 1
         && request.resource.data.filterLevel <= 3
         && request.resource.data.onboardingDone is bool
-        && request.resource.data.updatedAtMillis is int;
+        && request.resource.data.updatedAtMillis is int
+        // הגרסה אופציונלית: מכשיר על בנייה ישנה עדיין מסנכרן פרופיל, והוא
+        // פשוט לא מדווח אותה. דרישה חוסמת כאן הייתה שוברת לו את הסנכרון.
+        && (!('appVersion' in request.resource.data.keys())
+            || (request.resource.data.appVersion is string
+                && request.resource.data.appVersion.size() <= 32))
+        && (!('appBuild' in request.resource.data.keys())
+            || request.resource.data.appBuild is int);
     }
 
     function validLibraryState() {
