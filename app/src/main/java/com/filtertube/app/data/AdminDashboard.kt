@@ -66,11 +66,16 @@ object AdminDashboard {
         val premiumRequestPending: Boolean = false,
         val appVersion: String = "",
         val appBuild: Int = 0,
+        /** מתי האפליקציה נפתחה אצלו בפעם האחרונה (ISO), ריק אם מעולם. */
+        val lastSeenAt: String = "",
     ) {
         /** "2.0.2 (245)" — או הודעה ברורה כשעוד לא דיווח. */
         val appVersionHe: String
             get() = when {
-                appBuild <= 0 -> "גרסה לא ידועה — לא עודכן"
+                // נראה לאחרונה ולא דיווח גרסה = בוודאות בנייה ישנה, כי
+                // גרסה חדשה מדווחת בכל פתיחה. זה לא ניחוש.
+                appBuild <= 0 && lastSeenAt.isNotBlank() -> "גרסה ישנה — נפתחה ${lastSeenAt.take(10)}"
+                appBuild <= 0 -> "גרסה לא ידועה — לא נפתחה מאז העדכון"
                 appVersion.isBlank() -> "בנייה $appBuild"
                 else -> "$appVersion (בנייה $appBuild)"
             }
@@ -155,6 +160,7 @@ object AdminDashboard {
                         premiumRequestPending = c.optBoolean("premiumRequestPending"),
                         appVersion = c.optString("appVersion"),
                         appBuild = c.optInt("appBuild"),
+                        lastSeenAt = c.optString("lastSeenAt"),
                     ))
                 }
             }
