@@ -36,7 +36,19 @@ object NotificationRegistration {
         runCatching {
             val request = Request.Builder().url(API)
                 .header("Authorization", "Bearer $idToken")
-                .post(JSONObject().put("token", token).toString().toRequestBody("application/json".toMediaType()))
+                // ── הגרסה נוסעת יחד עם האסימון ──────────────────────────
+                // הרישום הזה רץ בכל פתיחה של האפליקציה עם חשבון מאומת, ולכן
+                // הוא המקום שבו דיווח הגרסה מגיע הכי מהר לדשבורד. סנכרון
+                // הפרופיל רץ רק במקרים מסוימים, ומכשיר שכבר עודכן היה יכול
+                // להיראות שם "ישן" במשך ימים.
+                .post(
+                    JSONObject()
+                        .put("token", token)
+                        .put("appVersion", com.filtertube.app.BuildConfig.VERSION_NAME)
+                        .put("appBuild", com.filtertube.app.BuildConfig.VERSION_CODE)
+                        .toString()
+                        .toRequestBody("application/json".toMediaType()),
+                )
                 .build()
             http.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) Log.w(TAG, "token registration failed: ${response.code}")

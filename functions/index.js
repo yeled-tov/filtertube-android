@@ -972,6 +972,16 @@ export const registerNotificationToken = onRequest({
   const token = cleanSingleLine(req.body?.token, 4096);
   if (token.length < 20) return res.status(400).json({ ok: false, message: "Token לא תקין" });
   const id = createHash("sha256").update(token).digest("hex");
+  // ── הגרסה נרשמת כאן ולא רק בסנכרון הפרופיל ───────────────────────
+  // סנכרון הפרופיל רץ רק במקרים מסוימים, ולכן מכשיר שכבר עודכן היה
+  // יכול להיראות "ישן" במשך ימים. הרישום הזה רץ בכל פתיחה של האפליקציה
+  // עם חשבון מאומת, ולכן התמונה בדשבורד מתעדכנת כמעט מיד.
+  //
+  // מסמך נפרד ולא בתוך profile/main: הכללים על הפרופיל דורשים hasOnly,
+  // ושדה שהשרת היה מוסיף שם היה גורם לכתיבת הפרופיל הבאה של הלקוח
+  // להידחות. כאן רק השרת כותב, והלקוח בכלל לא ניגש.
+  const appBuild = Number(req.body?.appBuild) || 0;
+  const appVersion = cleanSingleLine(req.body?.appVersion, 32);
   try {
     // ── המכשיר תובע את האסימון לעצמו ─────────────────────────────────
     // אסימון FCM מזהה התקנה, לא חשבון, והוא לא משתנה כשמתחלפים משתמשים.
@@ -992,6 +1002,12 @@ export const registerNotificationToken = onRequest({
     await claimRef.set({
       uid: decoded.uid, updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
+    // lastSeenAt הופך את היעדר הגרסה למידע ולא לחור: לקוח שנראה אתמול
+    // ולא דיווח גרסה **בוודאות** על בנייה ישנה, כי גרסה חדשה מדווחת.
+    // בלי זה אי אפשר להבחין בינו לבין מי שפשוט לא פתח את האפליקציה.
+    await db.collection("users").doc(decoded.uid).collection("meta").doc("app").set({
+      appVersion, appBuild, lastSeenAt: FieldValue.serverTimestamp(),
+    }, { merge: true }).catch(() => {});
     return res.json({ ok: true });
   } catch (error) {
     console.error("registerNotificationToken failed", error);
@@ -1045,12 +1061,16 @@ export const adminDashboard = onRequest({
     );
 
     const clients = await Promise.all(users.map(async (user) => {
-      const [billingSnap, profileSnap] = await Promise.all([
+      const [billingSnap, profileSnap, metaSnap] = await Promise.all([
         billingRef(user.uid).get(),
         db.collection("users").doc(user.uid).collection("profile").doc("main").get(),
+        db.collection("users").doc(user.uid).collection("meta").doc("app").get(),
       ]);
       const billing = billingSnap.data() || {};
       const profile = profileSnap.data() || {};
+      // meta קודם לפרופיל: הוא נכתב בכל פתיחה של האפליקציה, והפרופיל
+      // רק בסנכרון. השני יכול להיות ישן בימים.
+      const meta = metaSnap.data() || {};
       const requests = channelReqByUid.get(user.uid) || { total: 0, pending: 0 };
       const createdAt = Date.parse(user.metadata.creationTime) || now;
       const trialEndsAt = createdAt + TRIAL_DURATION_MS;
@@ -1087,8 +1107,9 @@ export const adminDashboard = onRequest({
         // ריק = לקוח שעוד לא סנכרן מגרסה שמדווחת אותה, כלומר גרסה ישנה.
         // זה מה שמכריע אם אפשר להפוך את המאגר לפרטי: מכשיר שנשאר על
         // בנייה ישנה מפסיק לגלות עדכונים לתמיד באותו רגע.
-        appVersion: cleanSingleLine(profile.appVersion, 32),
-        appBuild: Number(profile.appBuild) || 0,
+        appVersion: cleanSingleLine(meta.appVersion || profile.appVersion, 32),
+        appBuild: Number(meta.appBuild) || Number(profile.appBuild) || 0,
+        lastSeenAt: meta.lastSeenAt?.toDate?.()?.toISOString() || "",
         channelRequests: requests.total,
         pendingChannelRequests: requests.pending,
         premiumRequestPending: premiumPendingUids.has(user.uid),
