@@ -29,6 +29,8 @@ on:
       - 'firestore.rules'
       - 'firestore.indexes.json'
       - 'public/**'
+      - '.github/scripts/**'
+      - 'CHANGELOG.md'
       - '.github/workflows/deploy-functions.yml'
 
 # שתי פריסות במקביל לאותו פרויקט נכשלות אחת על השנייה.

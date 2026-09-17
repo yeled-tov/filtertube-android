@@ -18,7 +18,7 @@
 //   public/download/FilterTube-test.apk  — גרסת הבדיקה האחרונה (אם יש)
 //   public/releases.json                 — מה שהאפליקציה והאתר קוראים
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const SITE = "https://filter-tube-52d8e.web.app";
@@ -51,6 +51,41 @@ function parseChanges(body) {
     .slice(0, 15);
 }
 
+/**
+ * הערות השחרור מתוך CHANGELOG.md, אם יש שם קטע לגרסה הזו.
+ *
+ * ## למה לא מגוף ה-Release
+ * גוף ה-Release נבנה אוטומטית מכותרות הקומיטים כשאין קטע ב-CHANGELOG,
+ * וכותרת קומיט נכתבת למפתח: "תיקון בנייה: חסר return ב-fromGithub" לא
+ * אומרת ללקוח כלום. CHANGELOG.md נכתב עבורו, ולכן הוא קודם.
+ *
+ * זה חשוב במיוחד כאן: הקובץ הזה הוא מה שהאפליקציה קוראת כדי להציג
+ * "מה חדש" בחלון העדכון, כלומר זה הטקסט שהלקוח באמת רואה.
+ */
+async function changelogFor(version) {
+  if (!version) return null;
+  const text = await readFile("CHANGELOG.md", "utf8").catch(() => "");
+  if (!text) return null;
+  const lines = text.split("\n");
+  const start = lines.findIndex((line) => line.trim() === `## ${version}`);
+  if (start < 0) return null;
+
+  const items = [];
+  for (let i = start + 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (line.startsWith("## ")) break;
+    if (line.startsWith("### ") || line.trim() === "---") continue;
+    const clean = (t) => t.replace(/[`*_]/g, "").trim();
+    if (/^\s*[-*] /.test(line)) {
+      items.push(clean(line.replace(/^\s*[-*] /, "")));
+    } else if (items.length > 0 && line.trim() !== "") {
+      // שורת המשך של פריט שנשבר לשתי שורות בקובץ.
+      items[items.length - 1] = `${items[items.length - 1]} ${clean(line)}`;
+    }
+  }
+  return items.filter(Boolean).slice(0, 20);
+}
+
 /** "גרסה 2.0.1 (בנייה 218)" → "2.0.1" */
 function versionName(release) {
   const fromTitle = String(release.name || "").match(/\d+\.\d+(\.\d+)?/);
@@ -59,13 +94,13 @@ function versionName(release) {
   return fromBody ? fromBody[0] : "";
 }
 
-function shape(release, prefix, assetName, publicPath) {
+function shape(release, prefix, assetName, publicPath, curated) {
   const asset = (release.assets || []).find((a) => a.name === assetName);
   return {
     build: Number(String(release.tag_name).replace(prefix, "")) || 0,
     tag: release.tag_name,
     versionName: versionName(release),
-    changes: parseChanges(release.body),
+    changes: curated?.length ? curated : parseChanges(release.body),
     publishedAt: release.published_at,
     sizeBytes: asset?.size ?? null,
     downloads: asset?.download_count ?? 0,
@@ -114,10 +149,19 @@ async function main() {
   const gotStable = await download(stableRelease, "FilterTube.apk", "FilterTube.apk");
   const gotTest = await download(testRelease, "FilterTube-test.apk", "FilterTube-test.apk");
 
+  // CHANGELOG.md הוא מקור האמת להערות השחרור, גם אם ה-Release עצמו כבר
+  // פורסם עם כותרות קומיטים. כל ריצה של הסקריפט מיישרת את מה שהלקוח רואה.
+  const stableNotes = gotStable ? await changelogFor(versionName(stableRelease)) : null;
+  const testNotes = gotTest ? await changelogFor(versionName(testRelease)) : null;
+
   const payload = {
     updatedAt: new Date().toISOString(),
-    stable: gotStable ? shape(stableRelease, "build-", "FilterTube.apk", "/download/FilterTube.apk") : null,
-    test: gotTest ? shape(testRelease, "test-", "FilterTube-test.apk", "/download/FilterTube-test.apk") : null,
+    stable: gotStable
+      ? shape(stableRelease, "build-", "FilterTube.apk", "/download/FilterTube.apk", stableNotes)
+      : null,
+    test: gotTest
+      ? shape(testRelease, "test-", "FilterTube-test.apk", "/download/FilterTube-test.apk", testNotes)
+      : null,
     // סך ההורדות על פני כל הגרסאות — זה מה שהאתר מציג, ואחרי שהמאגר
     // יהפוך לפרטי הדפדפן לא יוכל לספור אותו בעצמו.
     totalDownloads: live.reduce(
