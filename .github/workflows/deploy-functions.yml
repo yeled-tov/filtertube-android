@@ -82,6 +82,19 @@ jobs:
             console.log("::notice::פרויקט המפתח: " + sa.project_id);
           '
 
+      # ── מראה ההורדות ──────────────────────────────────────────────────
+      # פריסת hosting מחליפה את **כל** האתר, ולכן כל פריסה חייבת לבנות את
+      # האתר השלם — כולל ה-APK וקובץ הגרסאות. בלי זה פריסת שרת הייתה מוחקת
+      # את ההורדות שהעלה job השחרור.
+      #
+      # GITHUB_TOKEN ולא כתובת ציבורית: זה מה שימשיך לעבוד כשהמאגר יהפוך
+      # לפרטי — וזו כל מטרת המראה הזו.
+      - name: בניית ההורדות לאתר
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node .github/scripts/build-hosting-downloads.mjs
+
       - name: פריסה
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/service-account.json

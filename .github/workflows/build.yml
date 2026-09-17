@@ -247,3 +247,60 @@ jobs:
           body_path: release-notes.md
           files: artifacts/FilterTube-test.apk
           fail_on_unmatched_files: true
+
+  # ── מראה ההורדות ב-Firebase Hosting ──────────────────────────────────────
+  # האפליקציה, דף ההורדה ואתר filterphone.com מושכים את ה-APK ואת מספרי
+  # הגרסאות ישירות מ-GitHub בלי הזדהות. ברגע שהמאגר יהפוך לפרטי כל אלה
+  # יקבלו 404 — האפליקציה תפסיק לגלות עדכונים ובאתר ייעלם כפתור ההורדה.
+  #
+  # ה-job הזה מעתיק את שניהם ל-Hosting, שנשאר ציבורי בכל מקרה. הוא רץ אחרי
+  # כל שחרור, יציב וגם בדיקה, כדי שהאתר תמיד יציג את המצב האמיתי.
+  publish-site:
+    needs: [release, prerelease]
+    if: |
+      always() &&
+      (needs.release.result == 'success' || needs.prerelease.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: בניית ההורדות לאתר
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node .github/scripts/build-hosting-downloads.mjs
+
+      - name: כתיבת חשבון השירות לקובץ
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then
+            echo "::error::חסר הסוד FIREBASE_SERVICE_ACCOUNT — האתר לא עודכן."
+            exit 1
+          fi
+          printf '%s' "$SA" > "$RUNNER_TEMP/service-account.json"
+
+      - name: פריסת האתר
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/service-account.json
+        run: |
+          npm install -g firebase-tools@15
+          # hosting בלבד: הפונקציות וכללי האבטחה נפרסים מה-workflow שלהם,
+          # ואין שום סיבה ששחרור אפליקציה יגע בשרת.
+          firebase deploy \
+            --only hosting \
+            --project filter-tube-52d8e \
+            --non-interactive \
+            --force
+
+      - name: ניקוי
+        if: always()
+        run: rm -f "$RUNNER_TEMP/service-account.json"

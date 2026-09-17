@@ -15,7 +15,17 @@ import java.util.concurrent.TimeUnit
  */
 object RemoteConfig {
 
-    private const val URL =
+    /**
+     * הקונפיג מוגש מהאתר שלנו, עם GitHub כגיבוי.
+     *
+     * raw.githubusercontent דורש מאגר ציבורי. ביום שהמאגר יהפוך לפרטי
+     * המנגנון הזה — היכולת לתקן נגן שנשבר בלי להוציא APK — היה מת בשקט
+     * ונופל לברירות המחדל שהוטמעו בבנייה. Firebase Hosting נשאר ציבורי,
+     * והקובץ מועתק לשם בכל פריסה.
+     */
+    private const val URL = "https://filter-tube-52d8e.web.app/remote_config.json"
+
+    private const val FALLBACK_URL =
         "https://raw.githubusercontent.com/yeled-tov/filtertube-android/main/remote_config.json"
 
     private val http = Http.newBuilder()
@@ -28,17 +38,20 @@ object RemoteConfig {
 
     /** מושכים פעם אחת בהפעלה (fire-and-forget). חותמת-זמן עוקפת מטמון CDN. */
     suspend fun refresh() = withContext(Dispatchers.IO) {
-        runCatching {
-            val req = Request.Builder().url("$URL?t=${System.currentTimeMillis()}").build()
-            http.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful) {
-                    cfg = resp.body?.string()?.let { JSONObject(it) }
-                    Diagnostics.log("RemoteConfig נטען מהענן ✓")
-                }
-            }
-        }
+        if (!load(URL, "אתר")) load(FALLBACK_URL, "GitHub")
         Unit
     }
+
+    private fun load(url: String, source: String): Boolean = runCatching {
+        val req = Request.Builder().url("$url?t=${System.currentTimeMillis()}").build()
+        http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) return@use false
+            val body = resp.body?.string() ?: return@use false
+            cfg = JSONObject(body)
+            Diagnostics.log("RemoteConfig נטען מ$source ✓")
+            true
+        }
+    }.getOrDefault(false)
 
     private fun client(name: String): JSONObject? = cfg?.optJSONObject("innertube")?.optJSONObject(name)
 

@@ -1,0 +1,20 @@
+{
+  "_comment": "קונפיג ענן ל-FilterTube. כשיוטיוב משתנה והנגן מפסיק לעבוד — עדכן כאן את גרסאות הלקוח / ה-User-Agent ושמור. כל הטלפונים יתעדכנו בהפעלה הבאה, בלי בנייה חדשה ובלי עדכון אפליקציה. חשוב: הקובץ נקרא מענף main, אז שינוי כאן משפיע רק אחרי מיזוג.",
+  "_ios_note": "גרסה 19.29.1 הוחזרה מיוטיוב עם HTTP 400 — יוטיוב חוסם גרסאות לקוח ישנות. נבדק מול youtubei.googleapis.com: 19.29.1 => 400, 20.50.3 => 200. אם המנוע חוזר להיכשל ב-400, זה הסימן שצריך להעלות כאן את clientVersion.",
+  "share": {
+    "_comment": "כתובת דף ההורדה שהאפליקציה משתפת. שינוי כאן מחליף את הקישור בכל המכשירים בהפעלה הבאה.",
+    "url": "https://filter-tube-52d8e.web.app"
+  },
+  "innertube": {
+    "ios": {
+      "clientVersion": "20.50.3",
+      "userAgent": "com.google.ios.youtube/20.50.3 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X)",
+      "deviceModel": "iPhone16,2",
+      "osVersion": "18.1"
+    },
+    "vr": {
+      "clientVersion": "1.60.19",
+      "userAgent": "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip"
+    }
+  }
+}

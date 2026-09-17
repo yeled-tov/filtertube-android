@@ -24,8 +24,22 @@ import java.util.concurrent.TimeUnit
  */
 object UpdateChecker {
 
-    // רשימת ה-Releases (לא /latest) — כי ב-repo יש גם Releases של גרסת Flutter,
-    // ואנחנו צריכים את האחרון מסוג build-N / test-N דווקא.
+    /**
+     * מקור הגרסאות — האתר שלנו, לא GitHub.
+     *
+     * ## למה זה השתנה
+     * הבדיקה פנתה ל-api.github.com בלי הזדהות. ברגע שהמאגר יהפוך לפרטי
+     * התשובה היא 404, והאפליקציה מפסיקה לגלות עדכונים **לתמיד** — בלי שום
+     * שגיאה שהמשתמש רואה. Firebase Hosting נשאר ציבורי בכל מקרה, והקובץ
+     * מתעדכן שם בכל שחרור.
+     *
+     * יתרון נוסף: מכסת GitHub הלא-מזוהה היא 60 בקשות לשעה לכל כתובת IP,
+     * וכל המכשירים מאחורי אותו NAT סלולרי חולקים אותה.
+     */
+    private const val RELEASES_URL = "https://filter-tube-52d8e.web.app/releases.json"
+
+    // מסלול הגיבוי, כל עוד המאגר ציבורי. אחרי שהוא יהפוך לפרטי הוא פשוט
+    // ייכשל בשקט, וזה בסדר — הוא לא המקור.
     private const val LIST_URL =
         "https://api.github.com/repos/yeled-tov/filtertube-android/releases?per_page=100"
 
@@ -70,6 +84,46 @@ object UpdateChecker {
      * Pre-release נדחה, כדי שגרסאות בדיקה לא יגיעו בטעות ללקוחות.
      */
     suspend fun check(includeTestBuilds: Boolean = false): Update? = withContext(Dispatchers.IO) {
+        fromHosting(includeTestBuilds) ?: fromGithub(includeTestBuilds)
+    }
+
+    /**
+     * releases.json שהאתר מגיש. המבנה נבנה ע"י
+     * .github/scripts/build-hosting-downloads.mjs בכל שחרור.
+     */
+    private fun fromHosting(includeTestBuilds: Boolean): Update? = runCatching {
+        val request = Request.Builder().url("$RELEASES_URL?t=${System.currentTimeMillis()}")
+            .header("Accept", "application/json")
+            .build()
+        http.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) return@use null
+            val root = org.json.JSONObject(resp.body?.string() ?: return@use null)
+            val stable = root.optJSONObject("stable")?.let { toUpdate(it, isTest = false) }
+            val test = root.optJSONObject("test")?.let { toUpdate(it, isTest = true) }
+            // ערוץ הבדיקות מקבל את הגבוה מבין השניים: גרסה יציבה חדשה יותר
+            // מגרסת בדיקה ישנה היא עדיין עדכון, וזו בדיוק הסיבה שיש מונה
+            // בנייה אחד משותף לשני הערוצים.
+            val candidates = if (includeTestBuilds) listOfNotNull(stable, test) else listOfNotNull(stable)
+            candidates.maxByOrNull { it.build }
+        }
+    }.getOrNull()
+
+    private fun toUpdate(obj: org.json.JSONObject, isTest: Boolean): Update? {
+        val build = obj.optInt("build", 0).takeIf { it > 0 } ?: return null
+        val apk = obj.optString("apkUrl").takeIf { it.isNotBlank() }
+        return Update(
+            build = build,
+            versionName = obj.optString("versionName"),
+            changes = obj.optJSONArray("changes")?.let { arr ->
+                (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }
+            }.orEmpty(),
+            // כתובת יחסית באתר → כתובת מלאה להורדה.
+            apkUrl = apk?.let { if (it.startsWith("http")) it else "https://filter-tube-52d8e.web.app$it" },
+            isTestBuild = isTest,
+        )
+    }
+
+    private fun fromGithub(includeTestBuilds: Boolean): Update? {
         val request = Request.Builder().url(LIST_URL)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "FilterTube")
