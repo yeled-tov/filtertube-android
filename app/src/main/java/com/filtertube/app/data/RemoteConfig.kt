@@ -53,6 +53,15 @@ object RemoteConfig {
     fun vrVersion(default: String) = str("vr", "clientVersion", default)
     fun vrUserAgent(default: String) = str("vr", "userAgent", default)
 
+    /**
+     * כתובת דף ההורדה שמשותפת החוצה.
+     *
+     * בענן ולא רק בקוד: קישור ששותף בוואטסאפ חי הרבה אחרי הבנייה ששלחה
+     * אותו, ואם הכתובת תשתנה אין דרך לעדכן מכשירים שכבר הותקנו.
+     */
+    fun shareUrl(default: String): String =
+        cfg?.optJSONObject("share")?.optString("url")?.takeIf { it.isNotBlank() } ?: default
+
     fun isResolverEnabled(resolverName: String, default: Boolean = true): Boolean {
         val resolvers = cfg?.optJSONObject("resolvers") ?: return default
         val res = resolvers.optJSONObject(resolverName) ?: return default

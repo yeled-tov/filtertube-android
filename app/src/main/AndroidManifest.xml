@@ -74,6 +74,21 @@
             </intent-filter>
         </activity>
 
+        <!--
+             שיתוף קובץ ההתקנה עצמו (בלוטות'/שיתוף מהיר).
+             URI של קובץ פנימי אי אפשר להעביר לאפליקציה אחרת ישירות —
+             FileProvider נותן הרשאת קריאה זמנית לקובץ אחד בלבד.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- שירות ניגון ברקע + חלונית בהתראות/מסך נעילה -->
         <service
             android:name=".playback.PlaybackService"

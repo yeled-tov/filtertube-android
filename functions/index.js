@@ -469,14 +469,32 @@ async function sendAdminPush(title, body) {
     const admin = await auth.getUserByEmail(ADMIN_EMAIL);
     const snapshot = await db.collection("users").doc(admin.uid)
       .collection("notificationTokens").limit(20).get();
-    const tokens = snapshot.docs.map((doc) => doc.get("token"))
-      .filter((token) => typeof token === "string" && token.length > 20);
+    // ── רק מכשירים שהאדמין הוא הבעלים הנוכחי שלהם ────────────────────
+    // אסימון FCM שייך למכשיר, לא לחשבון. מכשיר שהאדמין התחבר בו פעם
+    // השאיר כאן מסמך, והמסמך הזה נשאר גם אחרי שהמכשיר עבר ללקוח אחר —
+    // ולכן אותו לקוח המשיך לקבל "בקשת ערוץ חדשה". הבעלות הנוכחית נשמרת
+    // ב-notificationTokens ברמת השורש, וכאן בודקים אותה לפני כל שליחה.
+    const owned = await Promise.all(snapshot.docs.map(async (doc) => {
+      const token = doc.get("token");
+      if (typeof token !== "string" || token.length <= 20) return null;
+      const claim = await db.collection("notificationTokens").doc(doc.id).get();
+      const owner = claim.exists ? claim.get("uid") : null;
+      // מסמך בלי רישום בעלות הוא מלפני המנגנון הזה: נשלח אליו, והמכשיר
+      // יתבע אותו לעצמו בהתחברות הבאה. מסמך ששייך למישהו אחר — לא.
+      if (owner && owner !== admin.uid) {
+        await doc.ref.delete().catch(() => {});
+        return null;
+      }
+      return { token, ref: doc.ref };
+    }));
+    const targets = owned.filter(Boolean);
+    const tokens = targets.map((item) => item.token);
     if (tokens.length === 0) return;
     // ── עדיפות גבוהה, אחרת ההתראה פשוט לא מגיעה ───────────────────
     // הודעה בעדיפות רגילה נדחית ע"י Doze ומצב חיסכון בסוללה עד שהמכשיר
     // מתעורר מעצמו — כלומר לפעמים שעות. בקשה שממתינה לאישור היא בדיוק
     // הדבר שאסור שיחכה.
-    await getMessaging().sendEachForMulticast({
+    const result = await getMessaging().sendEachForMulticast({
       tokens,
       notification: { title, body },
       data: { type: "admin_request" },
@@ -489,6 +507,16 @@ async function sendAdminPush(title, body) {
         },
       },
     });
+    // אסימון שנמחק מהמכשיר (התנתקות, הסרת האפליקציה) נשאר כאן לנצח
+    // ומייצר כישלון בכל שליחה. מנקים אותו ברגע ש-FCM אומרת שהוא כבר לא קיים.
+    await Promise.all(result.responses.map((response, index) => {
+      const code = response.error?.code;
+      if (code === "messaging/registration-token-not-registered"
+        || code === "messaging/invalid-registration-token") {
+        return targets[index].ref.delete().catch(() => {});
+      }
+      return null;
+    }));
   } catch (error) {
     console.error("sendAdminPush failed", error);
   }
@@ -945,8 +973,24 @@ export const registerNotificationToken = onRequest({
   if (token.length < 20) return res.status(400).json({ ok: false, message: "Token לא תקין" });
   const id = createHash("sha256").update(token).digest("hex");
   try {
+    // ── המכשיר תובע את האסימון לעצמו ─────────────────────────────────
+    // אסימון FCM מזהה התקנה, לא חשבון, והוא לא משתנה כשמתחלפים משתמשים.
+    // בלי השורות האלה מסמך האסימון נשאר גם אצל הבעלים הקודם — ולכן מכשיר
+    // שהאדמין התחבר בו פעם אחת המשיך לקבל את התראות הניהול שלו גם אחרי
+    // שעבר ללקוח. רישום בעלות ברמת השורש + מחיקת הרישום הישן פותרים את זה
+    // גם עבור מכשירים שכבר נרשמו בעבר: ההתחברות הבאה מנקה אותם.
+    const claimRef = db.collection("notificationTokens").doc(id);
+    const claim = await claimRef.get();
+    const previousUid = claim.exists ? claim.get("uid") : null;
+    if (previousUid && previousUid !== decoded.uid) {
+      await db.collection("users").doc(previousUid)
+        .collection("notificationTokens").doc(id).delete().catch(() => {});
+    }
     await db.collection("users").doc(decoded.uid).collection("notificationTokens").doc(id).set({
       token, updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await claimRef.set({
+      uid: decoded.uid, updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
     return res.json({ ok: true });
   } catch (error) {

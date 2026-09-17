@@ -23,19 +23,35 @@ object NotificationChannels {
     /** בקשות שממתינות לאדמין — חייבות להגיע מיד, גם בחיסכון בסוללה. */
     const val ADMIN_ALERTS = "admin_alerts"
 
+    /** גרסה חדשה של האפליקציה. */
+    const val UPDATES = "app_updates"
+
     fun ensure(context: Context) {
         if (Build.VERSION.SDK_INT < 26) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        if (manager.getNotificationChannel(ADMIN_ALERTS) != null) return
-        manager.createNotificationChannel(
-            NotificationChannel(
-                ADMIN_ALERTS,
-                "בקשות ממתינות",
-                NotificationManager.IMPORTANCE_HIGH,
-            ).apply {
-                description = "בקשות ערוץ ובקשות פרימיום שממתינות לאישור"
-                enableVibration(true)
-            },
-        )
+        if (manager.getNotificationChannel(ADMIN_ALERTS) == null) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    ADMIN_ALERTS,
+                    "בקשות ממתינות",
+                    NotificationManager.IMPORTANCE_HIGH,
+                ).apply {
+                    description = "בקשות ערוץ ובקשות פרימיום שממתינות לאישור"
+                    enableVibration(true)
+                },
+            )
+        }
+        if (manager.getNotificationChannel(UPDATES) == null) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    UPDATES,
+                    "עדכוני אפליקציה",
+                    NotificationManager.IMPORTANCE_HIGH,
+                ).apply {
+                    description = "הודעה כשיצאה גרסה חדשה של FilterTube"
+                    enableVibration(true)
+                },
+            )
+        }
     }
 }

@@ -271,6 +271,16 @@ class SettingsStore(context: Context) {
         get() = prefs.getInt(KEY_SKIPPED_UPDATE, 0)
         set(value) = prefs.edit().putInt(KEY_SKIPPED_UPDATE, value).apply()
 
+    /**
+     * מספר הבנייה שכבר יצאה עליה התראה במגש ההתראות.
+     *
+     * בלי זה, בדיקת הרקע הייתה מקפיצה את אותה התראה בכל בדיקה מחדש —
+     * כלומר כמה פעמים ביום על אותו עדכון עצמו.
+     */
+    var notifiedUpdateBuild: Int
+        get() = prefs.getInt(KEY_NOTIFIED_UPDATE, 0)
+        set(value) = prefs.edit().putInt(KEY_NOTIFIED_UPDATE, value).apply()
+
     /** כמה הורדות לרוץ במקביל (1–4). */
     var concurrentDownloads: Int
         get() = prefs.getInt(KEY_DL_CONCURRENT, 3).coerceIn(1, 4)
@@ -651,6 +661,7 @@ class SettingsStore(context: Context) {
         private const val KEY_NOTIFY = "new_video_notifications"
         private const val KEY_TEST_CHANNEL = "test_channel_updates"
         private const val KEY_SKIPPED_UPDATE = "skipped_update_build"
+        private const val KEY_NOTIFIED_UPDATE = "notified_update_build"
         private const val KEY_DL_CONCURRENT = "dl_concurrent"
         private const val KEY_DL_CONNECTIONS = "dl_connections"
         private const val KEY_DL_AUTO_LIKES = "dl_auto_likes"

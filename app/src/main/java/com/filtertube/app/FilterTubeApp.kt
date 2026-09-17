@@ -41,5 +41,13 @@ class FilterTubeApp : Application() {
             .build()
         WorkManager.getInstance(this)
             .enqueueUniquePeriodicWork("ft_new_videos", ExistingPeriodicWorkPolicy.UPDATE, notifyWork)
+
+        // בדיקת גרסה חדשה ברקע (כל ~6 שעות). בלי זה ההודעה על עדכון מגיעה
+        // רק למי שפתח את האפליקציה — כלומר לא למי שצריך אותה.
+        val updateWork = PeriodicWorkRequestBuilder<com.filtertube.app.data.UpdateWorker>(6, TimeUnit.HOURS)
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .build()
+        WorkManager.getInstance(this)
+            .enqueueUniquePeriodicWork("ft_app_update", ExistingPeriodicWorkPolicy.UPDATE, updateWork)
     }
 }

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<!--
+  דף ההורדה של FilterTube.
+
+  זה היעד של הקישור שהאפליקציה משתפת, והוא נמצא ב-Firebase Hosting ולא
+  ב-GitHub בכוונה: קישור ששותף בוואטסאפ חי הרבה אחרי הבנייה ששלחה אותו,
+  ואם המאגר יהפוך לפרטי כל קישור ישיר ל-GitHub ייפול בבת אחת. כאן צריך
+  לשנות רק את כתובת ההורדה למטה, והקישורים שכבר יצאו ממשיכים לעבוד.
+-->
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FilterTube — יוטיוב עם ערוצים מאושרים בלבד</title>
+<meta name="description" content="FilterTube מנגנת רק ערוצים שאושרו ידנית. הורדה לאנדרואיד.">
+<meta property="og:title" content="FilterTube">
+<meta property="og:description" content="יוטיוב עם ערוצים מאושרים בלבד — כל ערוץ נבדק ואושר על ידי אדם.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg2: #f5f5f7;
+    --card: #ffffff;
+    --border: #e4e4e9;
+    --text: #17171c;
+    --subtext: #5c5c66;
+    --brand: #ff0000;
+    --brand-ink: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0a0d;
+      --bg2: #121216;
+      --card: #17171c;
+      --border: #26262e;
+      --text: #f2f2f5;
+      --subtext: #a0a0ad;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0 16px 64px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: Rubik, "Segoe UI", system-ui, -apple-system, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 620px; margin: 0 auto; }
+  header { text-align: center; padding: 56px 0 28px; }
+  .mark {
+    width: 84px; height: 84px; margin: 0 auto 18px;
+    background: var(--brand); border-radius: 22px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--brand-ink); font-weight: 700; font-size: 34px; letter-spacing: 1px;
+  }
+  h1 { font-size: 30px; margin: 0 0 8px; }
+  .tagline { color: var(--subtext); font-size: 16px; margin: 0; }
+  .cta {
+    display: block; text-align: center; text-decoration: none;
+    background: var(--brand); color: var(--brand-ink);
+    font-size: 18px; font-weight: 700;
+    padding: 16px 20px; border-radius: 14px; margin: 28px 0 10px;
+  }
+  .cta-note { text-align: center; color: var(--subtext); font-size: 13px; margin: 0 0 32px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 18px 20px; margin-bottom: 14px;
+  }
+  .card h2 { font-size: 16px; margin: 0 0 8px; }
+  .card p { margin: 0; color: var(--subtext); font-size: 14.5px; }
+  ol { margin: 8px 0 0; padding-inline-start: 20px; color: var(--subtext); font-size: 14.5px; }
+  ol li { margin-bottom: 6px; }
+  footer { text-align: center; color: var(--subtext); font-size: 13px; padding-top: 24px; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="mark">FT</div>
+    <h1>FilterTube</h1>
+    <p class="tagline">יוטיוב שמנגן רק ערוצים מאושרים</p>
+  </header>
+
+  <a class="cta" href="https://github.com/yeled-tov/filtertube-android/releases/latest/download/FilterTube.apk">
+    הורד לאנדרואיד
+  </a>
+  <p class="cta-note">קובץ התקנה (APK) · אנדרואיד 7 ומעלה · חינם</p>
+
+  <div class="card">
+    <h2>כל ערוץ נבדק על ידי אדם</h2>
+    <p>
+      הרשימה הלבנה נבנית ידנית, לא על ידי בינה מלאכותית ולא על ידי סינון
+      אוטומטי של מילים. ערוץ שלא נבדק ואושר — פשוט לא מתנגן.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>שלוש רמות סינון</h2>
+    <p>
+      כל משפחה בוחרת את הרמה שמתאימה לה, והבחירה מוגנת בקוד הורים.
+      מה שמחוץ לרמה שנבחרה לא מופיע בחיפוש, לא במסך הבית ולא בהמלצות.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>איך מתקינים</h2>
+    <ol>
+      <li>לוחצים על "הורד לאנדרואיד" למעלה.</li>
+      <li>פותחים את הקובץ שירד (בהתראת ההורדה או בתיקיית ההורדות).</li>
+      <li>אנדרואיד תשאל אם לאשר התקנה ממקור לא מוכר — מאשרים.</li>
+      <li>פותחים את האפליקציה ובוחרים רמת סינון וקוד הורים.</li>
+    </ol>
+  </div>
+
+  <footer>
+    <p>לשאלות ולבקשת הוספת ערוץ: <a href="mailto:ywldyld@gmail.com">ywldyld@gmail.com</a></p>
+  </footer>
+
+</div>
+</body>
+</html>

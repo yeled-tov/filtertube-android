@@ -16,6 +16,9 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Shield
@@ -39,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -53,6 +57,7 @@ import com.filtertube.app.ui.theme.GroupCard
 import com.filtertube.app.ui.theme.GroupHeader
 import com.filtertube.app.ui.theme.GroupRow
 import com.filtertube.app.ui.theme.Tint
+import com.filtertube.app.data.AppShare
 import com.filtertube.app.data.CloudSync
 import com.filtertube.app.data.FirebaseAccount
 import com.filtertube.app.data.GoogleAuth
@@ -92,6 +97,7 @@ fun SettingsScreen(
     var showUpdate by remember { mutableStateOf(false) }
     var showNotify by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
+    var showShare by remember { mutableStateOf(false) }
     var showCloud by remember { mutableStateOf(false) }
     val isAdmin = FirebaseAuth.getInstance().currentUser?.email
         ?.equals("ywldyld@gmail.com", ignoreCase = true) == true
@@ -108,6 +114,15 @@ fun SettingsScreen(
             color = ThemeState.text,
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 34.dp, bottom = 6.dp),
         )
+
+        // שיתוף יושב ראשון ולא בתחתית "על האפליקציה": זו הפעולה היחידה כאן
+        // שנעשית בשביל מישהו אחר, ומי שמחפש אותה מחפש אותה עכשיו — לא אחרי
+        // גלילה דרך שש קבוצות של הגדרות.
+        GroupHeader("שיתוף")
+        GroupCard {
+            GroupRow(Icons.Rounded.Share, Tint.blue, "שתף את FilterTube",
+                subtitle = "קישור להורדה · קוד QR · קובץ התקנה בבלוטות'", last = true) { showShare = true }
+        }
 
         GroupHeader("חשבון")
         GroupCard {
@@ -170,6 +185,8 @@ fun SettingsScreen(
         Spacer(Modifier.height(110.dp))
     }
 
+
+    if (showShare) ShareAppSheet { showShare = false }
 
     gateTarget?.let { target ->
         FilterGateDialog(
@@ -903,6 +920,118 @@ private fun NotificationsDialog(settings: SettingsStore, onDismiss: () -> Unit) 
 }
 
 // ── עדכונים ──────────────────────────────────────────────────────────────
+/**
+ * שיתוף האפליקציה — שלוש דרכים, כי "לשתף" זה לא דבר אחד.
+ *
+ * הקישור הוא לדף הורדה שאנחנו שולטים בו ולא לקובץ ישיר: קישור ששותף פעם
+ * אחת חי לנצח בהודעה של מישהו, והדף הוא מה שמאפשר להחליף את מה שהוא מפנה
+ * אליו בלי לרדוף אחרי כל ההודעות שכבר יצאו.
+ *
+ * הקוד והקובץ הם שתי הדרכים שבהן שיתוף באמת קורה מול אדם שנמצא מולך: אחד
+ * מצלם, ואחד מקבל את ה-APK עצמו כשאין אינטרנט בכלל.
+ */
+@Composable
+private fun ShareAppSheet(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val link = remember { AppShare.link() }
+    // הקוד נוצר פעם אחת ולא בכל רה-קומפוזיציה: זה חישוב של מטריצה ו-Bitmap
+    // בגודל מסך, ובלי remember הוא היה רץ מחדש בכל לחיצה על המסך.
+    val qr = remember(link) { AppShare.qrBitmap(content = link) }
+    var busy by remember { mutableStateOf(false) }
+
+    SettingsSheet("שתף את FilterTube", onDismiss) {
+        Column(
+            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "כל מי שמקבל את הקישור יכול להוריד את האפליקציה ולהתחיל משלו — " +
+                    "עם אותה רשימת ערוצים מאושרים, ורמת סינון שהוא בוחר בעצמו.",
+                color = ThemeState.subtext, fontSize = 12.5.sp, lineHeight = 18.sp,
+            )
+            Spacer(Modifier.height(16.dp))
+
+            if (qr != null) {
+                Box(
+                    modifier = Modifier.clip(RoundedCornerShape(20.dp))
+                        .background(Color.White).padding(14.dp),
+                ) {
+                    androidx.compose.foundation.Image(
+                        bitmap = qr.asImageBitmap(),
+                        contentDescription = "קוד QR להורדת FilterTube",
+                        modifier = Modifier.size(200.dp),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "מי שעומד מולך פשוט מצלם את הקוד",
+                    color = ThemeState.subtext2, fontSize = 11.5.sp,
+                )
+                Spacer(Modifier.height(18.dp))
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .background(ThemeState.card)
+                    .clickable {
+                        AppShare.copyLink(context)
+                        android.widget.Toast.makeText(context, "הקישור הועתק", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    link, color = ThemeState.text, fontSize = 12.5.sp,
+                    maxLines = 1, modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(8.dp))
+                Icon(Icons.Rounded.ContentCopy, "העתק", tint = ThemeState.subtext, modifier = Modifier.size(18.dp))
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Button(
+                onClick = { AppShare.shareLink(context) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = ThemeState.accent),
+            ) {
+                Icon(Icons.Rounded.Share, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("שתף קישור — וואטסאפ, SMS, מייל")
+            }
+
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        val ok = AppShare.shareApk(context)
+                        busy = false
+                        if (!ok) {
+                            android.widget.Toast.makeText(
+                                context, "לא הצלחתי להכין את קובץ ההתקנה", android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !busy,
+            ) {
+                Icon(Icons.Rounded.Bluetooth, null, tint = ThemeState.text, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("שלח את קובץ ההתקנה", color = ThemeState.text)
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "בלוטות' או שיתוף מהיר — עובד גם בלי אינטרנט אצל מי שמקבל. " +
+                    "הוא יצטרך לאשר התקנה ממקור לא מוכר, כמו בהתקנה הרגילה.",
+                color = ThemeState.subtext2, fontSize = 11.sp, lineHeight = 16.sp,
+            )
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
 @Composable
 private fun UpdateSheet(onDismiss: () -> Unit) {
     val context = LocalContext.current
