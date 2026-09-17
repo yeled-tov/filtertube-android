@@ -22,6 +22,7 @@ on:
       - 'functions/**'
       - 'firestore.rules'
       - 'firestore.indexes.json'
+      - 'public/**'
       - '.github/workflows/deploy-functions.yml'
 
 # שתי פריסות במקביל לאותו פרויקט נכשלות אחת על השנייה.
@@ -63,8 +64,12 @@ jobs:
           # גם כללי האבטחה ולא רק הפונקציות: הכללים שבמאגר הם מקור האמת,
           # ואם הם לא פורסמו, מסד הנתונים חוסם את כל בקשות הלקוח — סנכרון
           # הפרופיל והספרייה מפסיק לעבוד בלי שום שגיאה גלויה באפליקציה.
+          #
+          # וגם hosting: דף ההורדה שהאפליקציה משתפת יושב שם. קישור ששותף
+          # פעם אחת חי לנצח בהודעה של מישהו, ולכן הדף חייב לעלות יחד עם
+          # השאר ולא בפקודה נפרדת שאפשר לשכוח.
           firebase deploy \
-            --only functions,firestore:rules,firestore:indexes \
+            --only functions,firestore:rules,firestore:indexes,hosting \
             --project filter-tube-52d8e \
             --non-interactive \
             --force

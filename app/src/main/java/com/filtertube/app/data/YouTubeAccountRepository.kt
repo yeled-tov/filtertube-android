@@ -28,6 +28,27 @@ object YouTubeAccountRepository {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
+    /**
+     * הודעת שגיאה שאפשר לפעול לפיה.
+     *
+     * "YouTube API 403" לבדו לא אומר כלום: הוא יכול להיות מכסה יומית
+     * שנגמרה, API שלא הופעל בפרויקט, או הרשאה חסרה בטוקן — שלושה דברים עם
+     * שלושה פתרונות שונים לגמרי. גוגל מחזירה את הסיבה המדויקת בגוף
+     * התשובה (`quotaExceeded`, `accessNotConfigured`, `insufficientPermissions`),
+     * וזרקנו אותה. בלעדיה כל אבחון מתחיל מניחוש.
+     */
+    private fun apiError(code: Int, body: String): String {
+        val reason = runCatching {
+            val error = JSONObject(body).optJSONObject("error") ?: return@runCatching ""
+            val first = error.optJSONArray("errors")?.optJSONObject(0)
+            listOfNotNull(
+                first?.optString("reason")?.takeIf { it.isNotBlank() },
+                error.optString("message").takeIf { it.isNotBlank() },
+            ).joinToString(" · ")
+        }.getOrDefault("")
+        return if (reason.isBlank()) "YouTube API $code" else "YouTube API $code · $reason"
+    }
+
     /** סרטונים שהמשתמש סימן "אהבתי" ביוטיוב. */
     suspend fun likedVideos(token: String): List<Video> = withContext(Dispatchers.IO) {
         val url = "https://www.googleapis.com/youtube/v3/videos" +
@@ -38,8 +59,9 @@ object YouTubeAccountRepository {
             .header("Accept", "application/json")
             .build()
         http.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) throw RuntimeException("YouTube API ${resp.code}")
-            val body = resp.body?.string() ?: return@use emptyList()
+            val body = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) throw RuntimeException(apiError(resp.code, body))
+            if (body.isEmpty()) return@use emptyList()
             parseVideos(body)
         }
     }
@@ -61,8 +83,9 @@ object YouTubeAccountRepository {
                 .header("Accept", "application/json")
                 .build()
             val body = http.newCall(request).execute().use { resp ->
-                if (!resp.isSuccessful) throw RuntimeException("YouTube API ${resp.code}")
-                resp.body?.string()
+                val text = resp.body?.string()
+                if (!resp.isSuccessful) throw RuntimeException(apiError(resp.code, text.orEmpty()))
+                text
             } ?: break
             val root = JSONObject(body)
             root.optJSONArray("items")?.let { items ->
