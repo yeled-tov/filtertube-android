@@ -1,264 +1,258 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
-import 'package:app_links/app_links.dart';
-import 'theme.dart';
-import 'settings.dart';
-import 'models.dart';
-import 'youtube_api.dart';
-import 'channels_repo.dart';
-import 'screens/home_screen.dart';
-import 'screens/search_screen.dart';
-import 'screens/channels_screen.dart';
-import 'screens/player_screen.dart';
-import 'screens/library_screen.dart';
-import 'screens/music_screen.dart';
-import 'screens/shorts_screen.dart';
-import 'library.dart';
+import 'dart:io';
 
-/// מפתח ניווט גלובלי — לפתיחת קישורים חיצוניים מחוץ לעץ הווידג'טים.
+import 'package:app_links/app_links.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_displaymode/flutter_displaymode.dart';
+
+import 'data/app_state.dart';
+import 'data/auth.dart';
+import 'data/library_store.dart';
+import 'data/notifications.dart';
+import 'data/playback.dart';
+import 'data/settings_store.dart';
+import 'theme.dart';
+import 'ui/channel_request_dialog.dart';
+import 'ui/onboarding_screen.dart';
+import 'ui/shell.dart';
+import 'ui/widgets/common.dart';
+
 final navigatorKey = GlobalKey<NavigatorState>();
 
-/// המפתח הרשמי של YouTube Data API v3.
-/// לפני פרסום בחנות יש להגביל אותו ב-Google Cloud Console (חבילה/חתימה).
-const String kApiKey = 'AIzaSyDLAo5cUv4lt1Tsad50aMGFE0jl-mfRtOk';
-
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await appSettings.load();
+  await appLibrary.load();
+  await appAuth.load();
+  await AppNotifications.init();
   runApp(const FilterTubeApp());
 }
 
-class FilterTubeApp extends StatelessWidget {
+class FilterTubeApp extends StatefulWidget {
   const FilterTubeApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'FilterTube',
-      navigatorKey: navigatorKey,
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.dark(),
-      // האפליקציה בעברית — ברירת מחדל מימין לשמאל
-      builder: (context, child) =>
-          Directionality(textDirection: TextDirection.rtl, child: child!),
-      home: const _Root(),
-    );
-  }
+  State<FilterTubeApp> createState() => _FilterTubeAppState();
 }
 
-class _Root extends StatefulWidget {
-  const _Root();
-
-  @override
-  State<_Root> createState() => _RootState();
-}
-
-class _RootState extends State<_Root> {
-  final _api = YoutubeApi(kApiKey);
-  final _channels = ChannelsRepo();
-  final _appLinks = AppLinks();
+class _FilterTubeAppState extends State<FilterTubeApp> {
+  final AppLinks _appLinks = AppLinks();
   StreamSubscription<Uri>? _linkSub;
-  late Future<void> _ready;
-  int _index = 0;
-  int _feedKey = 0;
-
-  /// בית · [שורטס] · ערוצים · חיפוש · מוזיקה · ספרייה
-  int get _tabCount => appSettings.shortsEnabled ? 6 : 5;
+  bool _booted = false;
+  bool _onboarded = appSettings.onboardingDone;
 
   @override
   void initState() {
     super.initState();
-    _ready = _init();
+    _applyHighRefreshRate();
+    _boot();
     _setupDeepLinks();
-    appSettings.addListener(_onSettingsChanged);
   }
 
-  /// לשונית השורטס נוספת ונעלמת לפי ההגדרה, ולכן האינדקס עלול להישאר מחוץ
-  /// לתחום כשמכבים אותה — מקצצים אותו במקום ליפול.
-  void _onSettingsChanged() {
-    if (!mounted) return;
-    setState(() {
-      if (_index >= _tabCount) _index = _tabCount - 1;
-    });
+  @override
+  void dispose() {
+    _linkSub?.cancel();
+    super.dispose();
   }
 
-  Future<void> _init() async {
-    await appSettings.load();
-    await appLibrary.load();
-    await _channels.load(level: appSettings.filterLevel);
+  /// קצב רענון גבוה במכשירים שתומכים. אנדרואיד בלבד — ב-iOS המערכת
+  /// מחליטה בעצמה, ואין ממשק לבקש ממנה אחרת.
+  Future<void> _applyHighRefreshRate() async {
+    if (!appSettings.highRefreshRate) return;
+    if (!Platform.isAndroid) return;
+    try {
+      await FlutterDisplayMode.setHighRefreshRate();
+    } catch (_) {
+      // מכשיר שלא תומך פשוט נשאר בקצב שלו
+    }
+  }
+
+  Future<void> _boot() async {
+    // הפיד נטען רק אחרי שההיכרות הסתיימה: רמת הסינון והמגדר שנבחרים בה
+    // הם מה שקובע אילו ערוצים בכלל נמשכים.
+    if (_onboarded) await appState.boot();
+    if (mounted) setState(() => _booted = true);
   }
 
   Future<void> _setupDeepLinks() async {
-    final initial = await _appLinks.getInitialLink();
-    if (initial != null) _handleLink(initial);
-    _linkSub = _appLinks.uriLinkStream.listen(_handleLink);
+    try {
+      final initial = await _appLinks.getInitialLink();
+      if (initial != null) _handleLink(initial);
+      _linkSub = _appLinks.uriLinkStream.listen(_handleLink);
+    } catch (_) {
+      // בלי קישורים חיצוניים האפליקציה עובדת במלואה
+    }
   }
 
-  /// פותח קישור יוטיוב חיצוני בנגן שלנו במקום באפליקציית יוטיוב.
-  void _handleLink(Uri uri) {
-    final id = _extractYouTubeId(uri.toString());
-    if (id == null) return;
-    navigatorKey.currentState?.push(MaterialPageRoute(
-      builder: (_) => PlayerScreen(
-        video: Video(
-          id: id,
-          title: '',
-          channelTitle: '',
-          channelId: '',
-          thumbnail: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
-        ),
-        api: _api,
-        channels: _channels,
-      ),
-    ));
-  }
-
-  String? _extractYouTubeId(String url) {
-    for (final p in [
+  static String? extractVideoId(String url) {
+    for (final pattern in [
       r'[?&]v=([A-Za-z0-9_-]{11})',
       r'youtu\.be/([A-Za-z0-9_-]{11})',
       r'/shorts/([A-Za-z0-9_-]{11})',
       r'/live/([A-Za-z0-9_-]{11})',
       r'/embed/([A-Za-z0-9_-]{11})',
     ]) {
-      final m = RegExp(p).firstMatch(url);
-      if (m != null) return m.group(1);
+      final match = RegExp(pattern).firstMatch(url);
+      if (match != null) return match.group(1);
     }
     return null;
   }
 
-  @override
-  void dispose() {
-    appSettings.removeListener(_onSettingsChanged);
-    _linkSub?.cancel();
-    super.dispose();
+  /// קישור יוטיוב חיצוני נפתח בנגן שלנו — **אחרי** שנבדק שהערוץ מאושר.
+  ///
+  /// בלי הבדיקה הזו קישור חיצוני היה מנגן כל סרטון ביוטיוב, כלומר חור
+  /// שעוקף את כל מטרת האפליקציה.
+  Future<void> _handleLink(Uri uri) async {
+    final id = extractVideoId(uri.toString());
+    if (id == null) return;
+    final context = navigatorKey.currentContext;
+    if (context == null) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('בודק את הקישור…'),
+        content: Text(
+          'מוודאים שהערוץ נמצא ברשימת הערוצים המאושרים.',
+          style: TextStyle(color: AppTheme.subtext2, fontSize: 13),
+        ),
+      ),
+    );
+
+    final video = await appState.api.videoById(id);
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+
+    if (video == null) {
+      showToast(context, 'לא הצלחנו לפתוח את הסרטון הזה');
+      return;
+    }
+
+    final approved = appState.channels
+        .visible(appSettings.filterLevel, appSettings.userGender)
+        .any((c) => c.youtubeChannelId == video.channelId);
+    if (!approved) {
+      if (!context.mounted) return;
+      _showBlocked(context, video.channelName, video.channelId);
+      return;
+    }
+    await playback.play(video);
   }
 
-  Future<void> _onLevelChanged(int level) async {
-    await appSettings.setFilterLevel(level);
-    await _channels.load(level: level);
-    if (mounted) setState(() => _feedKey++);
+  void _showBlocked(BuildContext context, String channelName, String channelId) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('הערוץ אינו מאושר'),
+        content: Text(
+          'הערוץ "$channelName" לא נמצא ברשימת הערוצים המאושרים, ולכן '
+          'הסרטון לא מנוגן.\n\n'
+          'אם לדעתך הערוץ מתאים — אפשר לבקש להוסיף אותו. הפרטים כבר ימולאו '
+          'מהקישור שפתחת; נשאר רק להסביר מה הערוץ מכיל.',
+          style: TextStyle(
+              color: AppTheme.subtext2, fontSize: 13.5, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text('סגור', style: TextStyle(color: AppTheme.subtext2)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              showChannelRequestDialog(
+                context,
+                prefillName: channelName,
+                prefillUrl: channelId.isEmpty
+                    ? ''
+                    : 'https://www.youtube.com/channel/$channelId',
+              );
+            },
+            child: Text('בקש להוסיף ערוץ',
+                style: TextStyle(
+                    color: AppTheme.accent, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<void>(
-      future: _ready,
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            backgroundColor: AppTheme.bg,
-            body: Center(child: CircularProgressIndicator(color: AppTheme.accent)),
-          );
+    return ListenableBuilder(
+      listenable: ThemeState.instance,
+      builder: (context, _) {
+        final systemDark =
+            MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+        // מצב "מערכת" חייב לעקוב אחרי המכשיר גם כשהוא משתנה תוך כדי ריצה.
+        if (appSettings.themeMode == 0 &&
+            ThemeState.instance.dark != systemDark) {
+          WidgetsBinding.instance.addPostFrameCallback(
+              (_) => ThemeState.instance.setDark(systemDark));
         }
-        final shorts = appSettings.shortsEnabled;
-        final screens = [
-          HomeScreen(
-              key: ValueKey(_feedKey),
-              api: _api,
-              channels: _channels,
-              onFilterLevelChanged: _onLevelChanged),
-          if (shorts)
-            ShortsScreen(
-                key: ValueKey(_feedKey),
-                api: _api,
-                channels: _channels,
-                active: _index == 1),
-          ChannelsScreen(api: _api, channels: _channels),
-          SearchScreen(api: _api, channels: _channels),
-          MusicScreen(api: _api, channels: _channels),
-          LibraryScreen(api: _api, channels: _channels),
-        ];
-        return Scaffold(
-          extendBody: true,
-          body: IndexedStack(index: _index, children: screens),
-          bottomNavigationBar: _FloatingNav(
-            index: _index,
-            showShorts: shorts,
-            onTap: (i) => setState(() => _index = i),
+        return MaterialApp(
+          title: 'FilterTube',
+          navigatorKey: navigatorKey,
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.build(),
+          // האפליקציה בעברית — ברירת מחדל מימין לשמאל.
+          builder: (context, child) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: child ?? const SizedBox.shrink(),
           ),
+          home: _home(),
         );
       },
     );
   }
-}
 
-/// נאב בר צף יוקרתי — גלולה עם גרדיאנט לפריט הנבחר.
-class _FloatingNav extends StatelessWidget {
-  final int index;
-  final bool showShorts;
-  final ValueChanged<int> onTap;
-  const _FloatingNav({
-    required this.index,
-    required this.showShorts,
-    required this.onTap,
-  });
-
-  static const (IconData, String) _shortsItem = (Icons.bolt_rounded, 'שורטס');
-
-  static const List<(IconData, String)> _base = [
-    (Icons.home_rounded, 'בית'),
-    (Icons.subscriptions_rounded, 'ערוצים'),
-    (Icons.search_rounded, 'חיפוש'),
-    (Icons.music_note_rounded, 'מוזיקה'),
-    (Icons.library_books_rounded, 'ספרייה'),
-  ];
-
-  /// חייב להתאים בדיוק לסדר של screens ב-_RootState.
-  List<(IconData, String)> get _items =>
-      showShorts ? [_base.first, _shortsItem, ..._base.skip(1)] : _base;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-      child: Container(
-        height: 62,
-        decoration: BoxDecoration(
-          color: AppTheme.surface.withValues(alpha: 0.96),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: AppTheme.stroke),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.45),
-                blurRadius: 22,
-                offset: const Offset(0, 8)),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: List.generate(_items.length, (i) {
-            final selected = i == index;
-            return GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => onTap(i),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOut,
-                padding: EdgeInsets.symmetric(
-                    horizontal: selected ? 12 : 9, vertical: 9),
+  Widget _home() {
+    if (!_onboarded) {
+      return OnboardingScreen(onDone: () async {
+        setState(() {
+          _onboarded = true;
+          _booted = false;
+        });
+        await appState.boot();
+        if (mounted) setState(() => _booted = true);
+      });
+    }
+    if (!_booted) {
+      return Scaffold(
+        backgroundColor: AppTheme.bg,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 66,
+                height: 66,
                 decoration: BoxDecoration(
-                  gradient: selected ? AppTheme.accentGradient : null,
-                  borderRadius: BorderRadius.circular(16),
+                  gradient: AppTheme.accentGradient,
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                child: Row(
-                  children: [
-                    Icon(_items[i].$1,
-                        color: selected ? Colors.white : AppTheme.subtext,
-                        size: 22),
-                    if (selected) ...[
-                      const SizedBox(width: 6),
-                      Text(_items[i].$2,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13)),
-                    ],
-                  ],
-                ),
+                child: const Icon(Icons.play_arrow_rounded,
+                    color: Colors.white, size: 38),
               ),
-            );
-          }),
+              const SizedBox(height: 18),
+              Text('FilterTube',
+                  style: TextStyle(
+                      color: AppTheme.text,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800)),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: AppTheme.accent),
+              ),
+            ],
+          ),
         ),
-      ),
-    );
+      );
+    }
+    return const AppShell();
   }
 }

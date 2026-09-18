@@ -1,10 +1,10 @@
 name: filtertube
 description: "FilterTube — סינון יוטיוב כשר, לגוגל פליי ואפל סטור (API רשמי + נגן IFrame)."
 publish_to: 'none'
-version: 0.1.0+1
+version: 1.0.0+1
 
 environment:
-  sdk: '>=3.3.0 <4.0.0'
+  sdk: '>=3.5.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -15,9 +15,32 @@ dependencies:
   shared_preferences: ^2.2.2
   url_launcher: ^6.2.5
   app_links: ^6.3.0
+  crypto: ^3.0.3
+  xml: ^6.5.0
+  share_plus: ^12.0.0
+  package_info_plus: ^9.0.0
+  qr_flutter: ^4.1.0
+  flutter_local_notifications: ^19.0.0
+  flutter_displaymode: ^0.6.0
+  connectivity_plus: ^7.0.0
 
 dev_dependencies:
   flutter_lints: ^4.0.0
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/data/channels.json
+  fonts:
+    - family: Rubik
+      fonts:
+        - asset: assets/fonts/rubik_regular.ttf
+          weight: 400
+        - asset: assets/fonts/rubik_medium.ttf
+          weight: 500
+        - asset: assets/fonts/rubik_semibold.ttf
+          weight: 600
+        - asset: assets/fonts/rubik_bold.ttf
+          weight: 700
+        - asset: assets/fonts/rubik_extrabold.ttf
+          weight: 800
