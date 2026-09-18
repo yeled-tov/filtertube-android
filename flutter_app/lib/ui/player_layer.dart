@@ -187,7 +187,9 @@ class _PlayerLayerState extends State<PlayerLayer> with WidgetsBindingObserver {
 
               // במצב אודיו בלבד הווידאו לא מוצג — אבל הוא חייב להישאר
               // מחובר כדי שהקול ימשיך. הכיסוי נמצא *מעל* הנגן, ולכן
-              // המשתמש רואה עטיפה ולא תמונה נעה.
+              // המשתמש רואה עטיפה ולא תמונה נעה. גם הוא מוחרג ממגע: יש לו
+              // רקע, ובלי ההחרגה הוא היה חוסם את המחוות בדיוק כמו שהנגן
+              // עצמו חסם אותן.
               if (playback.isActive && playback.audioOnly)
                 AnimatedPositioned(
                   duration: const Duration(milliseconds: 260),
@@ -196,7 +198,7 @@ class _PlayerLayerState extends State<PlayerLayer> with WidgetsBindingObserver {
                   top: playerTop,
                   width: playerWidth,
                   height: playerHeight,
-                  child: const AudioOnlyCover(),
+                  child: const IgnorePointer(child: AudioOnlyCover()),
                 ),
             ],
           ),
