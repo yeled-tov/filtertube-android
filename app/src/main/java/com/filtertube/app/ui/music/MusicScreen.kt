@@ -118,6 +118,8 @@ fun FilterMusicScreen(
     var artists by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var favorites by remember { mutableStateOf<Set<String>>(emptySet()) }
     var downloads by remember { mutableStateOf<List<Video>>(emptyList()) }
+    // הפלייליסטים של הספרייה — כולל אלה שנמשכו מיוטיוב מיוזיק בסנכרון המלא.
+    var playlists by remember { mutableStateOf<List<com.filtertube.app.data.Playlist>>(emptyList()) }
     /** null = טרם נבדק. false = אין חיבור. */
     var online by remember { mutableStateOf<Boolean?>(null) }
     // התפריט הוא בדיוק זה של FilterTube, במצב מוזיקה: אותן פעולות, אותה
@@ -185,6 +187,9 @@ fun FilterMusicScreen(
         downloads = withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching { store.downloads() }.getOrNull().orEmpty()
         }.filter { it.localUri.isNotBlank() }
+        playlists = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { store.playlists() }.getOrNull().orEmpty()
+        }.filter { it.videos.isNotEmpty() }
 
         // ── המיקסים ───────────────────────────────────────────────────────
         // נבנים מהנתונים שכבר בזיכרון, על תהליכון רקע: זו עבודת מיון וסינון
@@ -223,6 +228,17 @@ fun FilterMusicScreen(
         }
     }
 
+    // ── הפלייליסטים שהסנכרון המלא הביא ───────────────────────────────────
+    // הסנכרון רץ מחוץ למסך ויכול להסתיים בזמן שהמשתמש כבר כאן. בלי הרענון
+    // הזה הפלייליסטים היו מופיעים רק ביציאה וכניסה מחדש — כלומר נראים כמו
+    // משיכה שלא עבדה.
+    LaunchedEffect(com.filtertube.app.data.AccountSync.completed) {
+        if (com.filtertube.app.data.AccountSync.completed == 0) return@LaunchedEffect
+        playlists = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { store.playlists() }.getOrNull().orEmpty()
+        }.filter { it.videos.isNotEmpty() }
+    }
+
     // ── זיהוי אופליין ─────────────────────────────────────────────────────
     // בלי חיבור, מסך בית שמנסה לנגן מיוטיוב הוא רק תסכול. הטאב מוחלף
     // אוטומטית להורדות — פעם אחת, כדי לא לחטוף למשתמש את הניווט בכל חזרה
@@ -258,7 +274,7 @@ fun FilterMusicScreen(
                     onMenu = { menuFor = it },
                 )
                 else -> MusicLibrary(
-                    likes, history, downloads, online, activeId, onPlay,
+                    likes, history, downloads, playlists, online, activeId, onPlay,
                     onMenu = { menuFor = it },
                 )
             }
@@ -697,6 +713,7 @@ private fun MusicLibrary(
     likes: List<Video>,
     history: List<Video>,
     downloads: List<Video>,
+    playlists: List<com.filtertube.app.data.Playlist>,
     online: Boolean?,
     activeId: String?,
     onPlay: (List<Video>, Int) -> Unit,
@@ -719,16 +736,35 @@ private fun MusicLibrary(
     // את התמונה המלאה במסך אחד, והכניסה היא החלטה של המשתמש.
     var open by remember { mutableStateOf<String?>(null) }
 
-    if (likes.isEmpty() && recent.isEmpty() && mine.isEmpty() && active.isEmpty()) {
+    if (likes.isEmpty() && recent.isEmpty() && mine.isEmpty() && active.isEmpty() &&
+        playlists.isEmpty()
+    ) {
         EmptyState("הספרייה תתמלא ממה שתשמע ותסמן בלב.")
         return
     }
 
-    val collections = listOf(
+    // ── הפלייליסטים כקוביות, בדיוק כמו שאר האוספים ────────────────────────
+    // אלה הפלייליסטים של הספרייה, כולל אלה שנמשכו מיוטיוב מיוזיק בסנכרון
+    // המלא. הם מוצגים כאן ולא רק בספרייה של FilterTube, כי זה המקום שבו
+    // מחפשים אלבום: FilterMusic היא מסך המוזיקה, והפלייליסטים הם מוזיקה.
+    //
+    // הם לא עוברים סינון מוזיקה נוסף בכוונה. כל שיר בהם כבר עבר את הרשימה
+    // הלבנה ברגע הייבוא, וסינון שני לפי קטגוריית הערוץ היה מעלים פלייליסט
+    // שלם רק בגלל שהאמן שלו מסווג אחרת — כלומר בדיוק "משכתי אותם והם לא
+    // נמצאים".
+    val fixed = listOf(
         Triple("שירים שאהבתי", likes, Icons.Rounded.Favorite to Tint.red),
         Triple("ההורדות שלי", mine, Icons.Rounded.Download to Tint.green),
         Triple("הושמע לאחרונה", recent, Icons.Rounded.History to Tint.orange),
     )
+    val taken = fixed.mapTo(HashSet()) { it.first }
+    val collections = fixed + playlists
+        // שם כפול לא רק מבלבל: מסך האוסף נבחר לפי הכותרת, ולכן פלייליסט
+        // בשם "שירים שאהבתי" היה פותח את האוסף הקבוע במקומו.
+        .filterNot { it.name in taken }
+        .map {
+            Triple(it.name, it.videos, Icons.AutoMirrored.Rounded.QueueMusic to Tint.violet)
+        }
 
     open?.let { title ->
         val songs = collections.firstOrNull { it.first == title }?.second.orEmpty()
@@ -802,24 +838,20 @@ private fun MusicLibrary(
             }
         }
 
-        // ── שלוש הקוביות ──────────────────────────────────────────────────
-        items(collections.chunked(2)) { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                row.forEach { (title, songs, look) ->
-                    val (icon, tint) = look
-                    MosaicTile(
-                        title = title,
-                        subtitle = "${songs.size} שירים",
-                        images = songs.map { it.thumbnailUrl },
-                        icon = icon,
-                        tint = tint,
-                        modifier = Modifier.weight(1f),
-                        // גם כשריק: קובייה שנראית לחיצה ולא נלחצת היא תקלה
-                        // בעיני המשתמש. המסך שנפתח יסביר שאין בו כלום.
-                        onClick = { open = title },
-                    )
-                }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
+        // ── שלוש הקוביות הקבועות ──────────────────────────────────────────
+        items(collections.take(fixed.size).chunked(2)) { row ->
+            TileRow(row) { open = it }
+        }
+
+        // ── ואחריהן הפלייליסטים ───────────────────────────────────────────
+        // כותרת משלהם, ולא רק עוד קוביות באותה ערימה: "אהבתי" ו"הורדות" הם
+        // אוספים שנבנים מאליהם, ופלייליסט הוא משהו שהמשתמש (או החשבון שלו
+        // ביוטיוב מיוזיק) בנה בעצמו. הכותרת גם אומרת בפירוש שהמשיכה עבדה.
+        val imported = collections.drop(fixed.size)
+        if (imported.isNotEmpty()) {
+            item { NavigationTitle("הפלייליסטים שלי", label = "${imported.size}") }
+            items(imported.chunked(2)) { row ->
+                TileRow(row) { open = it }
             }
         }
 
@@ -848,6 +880,37 @@ private fun MusicLibrary(
                 }
             }
         }
+    }
+}
+
+/**
+ * שורה של עד שתי קוביות אוסף.
+ *
+ * מוצא מהרשימה כדי ששתי הקבוצות — הקבועות והפלייליסטים — ייראו זהות לגמרי:
+ * אותו ריווח, אותו גובה ואותה התנהגות בלחיצה. שכפול הקוד היה מבטיח שהן
+ * יתפצלו בעיצוב בפעם הראשונה שמישהו נוגע רק באחת מהן.
+ */
+@Composable
+private fun TileRow(
+    row: List<Triple<String, List<Video>, Pair<ImageVector, Color>>>,
+    onOpen: (String) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        row.forEach { (title, songs, look) ->
+            val (icon, tint) = look
+            MosaicTile(
+                title = title,
+                subtitle = "${songs.size} שירים",
+                images = songs.map { it.thumbnailUrl },
+                icon = icon,
+                tint = tint,
+                modifier = Modifier.weight(1f),
+                // גם כשריק: קובייה שנראית לחיצה ולא נלחצת היא תקלה בעיני
+                // המשתמש. המסך שנפתח יסביר שאין בו כלום.
+                onClick = { onOpen(title) },
+            )
+        }
+        if (row.size == 1) Spacer(Modifier.weight(1f))
     }
 }
 

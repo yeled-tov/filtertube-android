@@ -53,7 +53,10 @@ import com.filtertube.app.data.YouTubeMusicApi
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.common.api.ApiException
+import com.filtertube.app.data.AccountSync
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * מריץ שלב סנכרון אחד ומחזיר רשימה ריקה אם הוא נפל.
@@ -125,6 +128,12 @@ fun LibraryScreen(
     var account by remember { mutableStateOf<GoogleSignInAccount?>(GoogleAuth.lastAccount(context)) }
     var status by remember { mutableStateOf("") }
     var syncing by remember { mutableStateOf(false) }
+    // ── חיווי אחד לשני מסלולי הסנכרון ─────────────────────────────────────
+    // מסלול הגוגל מדווח על עצמו במשתנים המקומיים, והסנכרון המלא רץ מחוץ
+    // למסך ומדווח ב-AccountSync. בלי האיחוד כאן, סנכרון מלא שהתחיל במסך אחד
+    // היה נראה במסך הזה כאילו לא קורה כלום.
+    val busy = syncing || AccountSync.running
+    val statusLine = if (status.isNotEmpty()) status else AccountSync.status
     var showCreate by remember { mutableStateOf(false) }
 
     // מסנכרן גם לייקים וגם מנויים מחשבון הגוגל
@@ -237,115 +246,10 @@ fun LibraryScreen(
      * ועוד היסטוריה שהיא ממילא לא יכולה.
      */
     fun syncInnerTube() {
-        if (!accountStore.isLoggedIn) return
-        syncing = true; status = "מסנכרן את החשבון שלך..."
-        scope.launch {
-            try {
-                val approvedList = ChannelsRepository.getChannels(context)
-                val approved = com.filtertube.app.data.ApprovedChannels(approvedList)
-                // ערוץ שלא זוהה נפסל. באפליקציית רשימה לבנה "לא ידוע" אינו
-                // "מותר", ו-InnerTube מחזירה לא מעט פריטים שלא הצליחה לחלץ
-                // להם מזהה ערוץ — כלומר זו הדרך העיקרית שבה תוכן לא מאושר
-                // יכול היה להגיע לספרייה ומשם לנגן.
-                val hist = InnerTube.history(accountStore.cookies).filter { approved.approves(it) }
-                store.setHistory(hist); history = hist
-                val rec = InnerTube.recommendations(accountStore.cookies).filter { approved.approves(it) }
-                store.setRecommendations(rec); recs = rec
-
-                // ── לייקים, מנויים ומוזיקה — אותן עוגיות, אותה פעולה ──────
-                // כל מקור מדווח שלוש מספרים: כמה הגיעו, כמה נפלו כי לא זוהה
-                // להם ערוץ, וכמה נשארו אחרי הרשימה הלבנה. "התחבר והכל נשאר
-                // ריק" יכול לנבוע מכל אחד מהשלושה, ובלי הפירוט אי אפשר לדעת
-                // מאיזה.
-                fun report(name: String, items: List<Video>): List<Video> {
-                    val noChannel = items.count { it.channelId.isBlank() }
-                    val kept = items.filter { approved.approves(it) }
-                    Diagnostics.log(
-                        "SYNC $name: ${items.size} התקבלו · $noChannel בלי מזהה ערוץ · " +
-                            "${kept.size} מאושרים",
-                    )
-                    return kept
-                }
-
-                // ── מוזיקה קודם, ובכוונה ──────────────────────────────────
-                // "מוזיקה שאהבתי" אינה רשימה נפרדת אצל יוטיוב אלא *תת-קבוצה*
-                // של אותו פלייליסט LL: שיר שסימנת במיוזיק מופיע גם ב"אהבתי"
-                // הרגיל. לכן מי שמושך את שתיהן בנפרד מקבל את אותם שירים
-                // פעמיים — וזה בדיוק הערבוב שנראה במכשיר.
-                //
-                // הפתרון: המיוזיק היא הקובעת מה שיר. מה שהיא החזירה הולך
-                // ל-FilterMusic, ומה שנשאר ב"אהבתי" אחרי החיסור הוא הווידאו
-                // האמיתי של FilterTube. החלוקה נעשית לפי הסיווג של יוטיוב
-                // עצמה, ולא לפי ניחוש שלנו.
-                val musicRaw = InnerTube.fillOwners(
-                    InnerTube.likedMusic(accountStore.cookies),
-                ) { !approved.approves(it) }
-                // ── נשמר הכל, כולל מערוצים שלא אושרו ──────────────────────
-                // כמו במנויים: רשימה קטועה בלי שום רמז שחסר בה משהו היא
-                // בלבול. מסך "אהבתי" מציג את הלא-מאושרים באפור ומאפשר לבקש
-                // להוסיף את הערוץ שלהם. הרשימה הלבנה נאכפת בלחיצה — פריט
-                // אפור לא מתנגן.
-                report("מיוזיק", musicRaw)
-                if (musicRaw.isNotEmpty()) store.setMusicLikes(musicRaw)
-                val musicIds = musicRaw.mapTo(HashSet()) { it.id }
-
-                // ── משלימים ערוץ לכל מה שלא נמצא ברשימה, לא רק לריקים ─────
-                // פלייליסט "אהבתי" מחזיר לחלק מהפריטים את ערוץ ה-Topic של
-                // האמן ולא את המעלה. הם קיבלו מזהה — ולכן לא נחשבו "ריקים" —
-                // אבל המזהה לא היה ברשימה הלבנה, והשיר הוצג אפור למרות
-                // שהערוץ שהעלה אותו מאושר לגמרי.
-                val likedRaw = InnerTube.fillOwners(
-                    InnerTube.likedVideos(accountStore.cookies),
-                ) { !approved.approves(it) }
-                val liked = likedRaw.filter { it.id !in musicIds }
-                report("אהבתי", liked)
-                if (liked.isNotEmpty()) { store.setYoutubeLikes(liked); ytLikes = liked }
-
-                val allSubs = InnerTube.subscriptions(accountStore.cookies)
-                val subsFromCookies = allSubs.map { (id, name) -> SubChannel(id, name) }
-                Diagnostics.log(
-                    "SYNC מנויים: ${allSubs.size} התקבלו · " +
-                        "${allSubs.count { approved.approves(it.first, it.second) }} מאושרים",
-                )
-                if (subsFromCookies.isNotEmpty()) {
-                    store.setSubscriptions(subsFromCookies); subs = subsFromCookies
-                }
-
-                // ── הפלייליסטים מיוטיוב מיוזיק ────────────────────────────
-                // נמשכים אחרונים בכוונה: זו הקריאה היקרה ביותר (בקשה לכל
-                // פלייליסט בנפרד), והיא לא אמורה לעכב את הלייקים וההיסטוריה
-                // שהמשתמש מחכה להם. כישלון כאן לא נוגע בשום דבר אחר.
-                val importedPlaylists = runCatching {
-                    val lists = InnerTube.musicPlaylists(accountStore.cookies)
-                    Diagnostics.log("SYNC פלייליסטים: ${lists.size} נמצאו במיוזיק")
-                    var saved = 0
-                    lists.forEach { list ->
-                        val items = InnerTube.playlistItems(accountStore.cookies, list.id)
-                        val allowed = InnerTube.fillOwners(items) { !approved.approves(it) }
-                            .filter { approved.approves(it) }
-                        Diagnostics.log(
-                            "SYNC פלייליסט \"${list.title}\": ${items.size} שירים · ${allowed.size} מאושרים",
-                        )
-                        // פלייליסט שלא נשאר בו שום שיר מאושר לא נוצר בכלל:
-                        // אלבום ריק במסך הוא רק שאלה בלי תשובה.
-                        if (allowed.isEmpty()) return@forEach
-                        store.createPlaylist(list.title)
-                        allowed.forEach { store.addToPlaylist(list.title, it) }
-                        saved += 1
-                    }
-                    saved
-                }.getOrElse {
-                    Diagnostics.log("SYNC פלייליסטים: נכשל — ${it.message}")
-                    0
-                }
-
-                status = "סונכרן ✓ ${hist.size} בהיסטוריה · ${liked.size} לייקים · " +
-                    "${musicRaw.size} שירים ממיוזיק · ${subsFromCookies.size} מנויים · " +
-                    "$importedPlaylists אלבומים · ${rec.size} המלצות"
-            } catch (e: Exception) {
-                status = "שגיאה בסנכרון מלא: ${e.message}"
-            } finally { syncing = false }
-        }
+        // מנקים את שורת המצב של מסלול הגוגל, כדי שהחיווי שמוצג יהיה של
+        // הסנכרון שרץ עכשיו ולא שארית מפעולה קודמת.
+        status = ""
+        AccountSync.start(context)
     }
 
     // סנכרון אוטומטי כשמתחברים (loggedIn עובר ל-true בחזרה ממסך ההתחברות)
@@ -354,6 +258,23 @@ fun LibraryScreen(
         // משהו לא קיבל לעולם את הלייקים והמנויים. ההתחברות עצמה היא
         // האירוע שמצדיק משיכה — לא מצב הספרייה.
         if (loggedIn) syncInnerTube()
+    }
+
+    // ── כשהסנכרון מסתיים, קוראים מחדש מהספרייה ────────────────────────────
+    // הסנכרון רץ מחוץ למסך (ראה AccountSync), ולכן הוא לא מחזיר ערכים לכאן
+    // אלא כותב לספרייה. המונה מספיק כטריגר: כל סיום מריץ קריאה אחת, גם אם
+    // המשתמש נכנס למסך רק אחרי שהסנכרון כבר נגמר.
+    LaunchedEffect(AccountSync.completed) {
+        if (AccountSync.completed == 0) return@LaunchedEffect
+        // ל-IO: אלה ארבע קריאות ל-SharedPreferences ופענוח JSON של מאות
+        // פריטים, וזה בדיוק מה שנראה כמו מסך שנתקע לרגע.
+        withContext(Dispatchers.IO) {
+            history = store.history()
+            recs = store.recommendations()
+            ytLikes = store.youtubeLikes()
+            subs = store.subscriptions()
+        }
+        version++
     }
 
     val signInLauncher = rememberLauncherForActivityResult(
@@ -413,7 +334,7 @@ fun LibraryScreen(
                             color = ThemeState.subtext, fontSize = 12.sp,
                         )
                     }
-                    if (syncing) CircularProgressIndicator(color = Color(0xFFFF0000), strokeWidth = 2.dp,
+                    if (busy) CircularProgressIndicator(color = Color(0xFFFF0000), strokeWidth = 2.dp,
                         modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.height(10.dp))
@@ -423,7 +344,7 @@ fun LibraryScreen(
                             val acct = account
                             if (acct != null) syncAccount(acct) else signInLauncher.launch(GoogleAuth.client(context).signInIntent)
                         },
-                        enabled = !syncing,
+                        enabled = !busy,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF0000)),
                     ) { Text(if (account != null) "סנכרן מחדש" else "התחבר") }
                     if (account != null) {
@@ -436,9 +357,9 @@ fun LibraryScreen(
                         }) { Text("התנתק") }
                     }
                 }
-                if (status.isNotEmpty()) {
+                if (statusLine.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    Text(status, color = Color(0xFFFFAA00), fontSize = 12.sp)
+                    Text(statusLine, color = Color(0xFFFFAA00), fontSize = 12.sp)
                 }
             }
         }
@@ -468,7 +389,7 @@ fun LibraryScreen(
                 Row {
                     Button(
                         onClick = { if (loggedIn) syncInnerTube() else onOpenLogin() },
-                        enabled = !syncing,
+                        enabled = !busy,
                         colors = ButtonDefaults.buttonColors(containerColor = ThemeState.accent),
                     ) { Text(if (loggedIn) "סנכרן עכשיו" else "התחבר (סנכרון מלא)") }
                     if (loggedIn) {
