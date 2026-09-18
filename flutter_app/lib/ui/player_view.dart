@@ -215,7 +215,6 @@ class _PlayerViewState extends State<PlayerView> {
                       ? 'טיימר ${playback.sleepMinutesLeft} דק׳'
                       : 'טיימר שינה',
                   _pickSleep),
-              _chip(Icons.hd_outlined, 'איכות ${_qualityLabel()}', _pickQuality),
               _chip(Icons.playlist_add, 'הוסף לאלבום',
                   () => showPlaylistPicker(context, video)),
               _chip(Icons.share, 'שתף', () {
@@ -306,10 +305,6 @@ class _PlayerViewState extends State<PlayerView> {
   String _speedLabel() =>
       '${(appSettings.playbackSpeed / 100).toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '')}x';
 
-  String _qualityLabel() => appSettings.preferredQuality == 0
-      ? 'אוטומטי'
-      : '${appSettings.preferredQuality}p';
-
   void _toggleAudio() {
     playback.toggleAudioOnly();
     setState(() {});
@@ -352,19 +347,6 @@ class _PlayerViewState extends State<PlayerView> {
         playback.sleepMinutesLeft,
         (v) {
           playback.setSleepTimer(v);
-          if (mounted) setState(() {});
-        },
-      );
-
-  /// איכות הצפייה מועברת לנגן ההטמעה כהצעה. יוטיוב שומרת לעצמה את ההחלטה
-  /// הסופית לפי רוחב הפס, ולכן זו העדפה ולא נעילה.
-  void _pickQuality() => _pickOption<int>(
-        'איכות צפייה',
-        const [0, 1080, 720, 480, 360, 240, 144],
-        (v) => v == 0 ? 'אוטומטי' : '${v}p',
-        appSettings.preferredQuality,
-        (v) async {
-          await appSettings.setPreferredQuality(v);
           if (mounted) setState(() {});
         },
       );

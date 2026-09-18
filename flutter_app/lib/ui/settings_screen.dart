@@ -375,30 +375,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         styleRow(1, 'מתנגן עכשיו', 'וידאו למעלה ובקרים גדולים מתחת'),
         styleRow(2, 'בקרים על הסרטון', 'הבקרים מרחפים על הווידאו, והרשימה עולה'),
         Divider(height: 24, color: AppTheme.divider),
-        _sectionTitle('איכות צפייה'),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            for (final q in const [0, 1080, 720, 480, 360, 240, 144])
-              ChoiceChipBox(
-                label: q == 0 ? 'אוטומטי' : '${q}p',
-                selected: appSettings.preferredQuality == q,
-                onTap: () async {
-                  await appSettings.setPreferredQuality(q);
-                  setSheetState(() {});
-                },
-              ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'נמסר לנגן ההטמעה כהעדפה. יוטיוב שומרת לעצמה את ההחלטה הסופית '
-          'לפי רוחב הפס, ולכן זו בקשה ולא נעילה.',
-          style: TextStyle(color: AppTheme.subtext, fontSize: 11, height: 1.4),
-        ),
-        Divider(height: 24, color: AppTheme.divider),
         _sectionTitle('מהירות נגינה'),
         const SizedBox(height: 8),
         Wrap(
@@ -492,9 +468,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
-            'הורדות, ניגון ברקע וחלון צף אינם קיימים בגרסה זו: נגן ההטמעה '
-            'הרשמי של YouTube אינו מתיר אותם, וזה מה שמאפשר לאפליקציה '
-            'להתפרסם ב-Google Play וב-App Store.',
+            'בחירת איכות צפייה אינה זמינה: יוטיוב הסירה את השליטה באיכות '
+            'מנגן ההטמעה, והנגן בוחר אותה לבד לפי רוחב הפס. הורדות, ניגון '
+            'ברקע וחלון צף אינם קיימים מאותה סיבה — נגן ההטמעה הרשמי אינו '
+            'מתיר אותם, וזה מה שמאפשר לאפליקציה להתפרסם ב-Google Play '
+            'וב-App Store.',
             style:
                 TextStyle(color: AppTheme.subtext, fontSize: 11.5, height: 1.5),
           ),

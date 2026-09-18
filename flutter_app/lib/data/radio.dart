@@ -4,6 +4,7 @@ import '../models/channel.dart';
 import '../models/video.dart';
 import 'channels_repo.dart';
 import 'library_store.dart';
+import 'settings_store.dart';
 import 'youtube_feed.dart';
 
 /// בניית תחנות רדיו מהטעם של המשתמש.
@@ -45,15 +46,24 @@ class StationBuilder {
     if (station.length >= size) return _shuffled(station).take(size).toList();
 
     final visible = channels.visible(level, gender);
+    bool style(Channel c) =>
+        !musicOnly || kMusicCategories.contains(c.category);
+
+    // סדר העדיפויות הוא סדר הוודאות: מה שהמשתמש בחר במפורש ("הזמרים
+    // שלי"), אחר כך מה שהוא עוקב אחריו, ורק אז כל המאושרים. בלי השלב
+    // הראשון הבחירה שנעשתה בחלון "איזה זמרים אתה אוהב?" לא הייתה משפיעה
+    // על התחנה בכלל.
+    final favorites = visible
+        .where((c) => appSettings.favoriteArtists.contains(c.youtubeChannelId))
+        .where(style)
+        .toList();
     final followed = visible
         .where((c) => appLibrary.isSubscribed(c.youtubeChannelId))
-        .where((c) => !musicOnly || kMusicCategories.contains(c.category))
+        .where(style)
         .toList();
-    final candidates = followed.isNotEmpty
-        ? followed
-        : visible
-            .where((c) => !musicOnly || kMusicCategories.contains(c.category))
-            .toList();
+    final candidates = favorites.isNotEmpty
+        ? favorites
+        : (followed.isNotEmpty ? followed : visible.where(style).toList());
     if (candidates.isEmpty) return _shuffled(station).take(size).toList();
 
     for (final channel in _shuffled(candidates).take(8)) {

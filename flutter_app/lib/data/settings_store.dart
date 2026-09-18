@@ -21,7 +21,6 @@ class SettingsStore extends ChangeNotifier {
   static const _kHighRefresh = 'high_refresh_rate';
   static const _kAccent = 'accent_color';
   static const _kAccent2 = 'accent2_color';
-  static const _kQuality = 'preferred_quality';
   static const _kPlayerStyle = 'player_style';
   static const _kFavoriteArtists = 'favorite_artists';
   static const _kArtistPickerSeen = 'artist_picker_seen';
@@ -75,9 +74,6 @@ class SettingsStore extends ChangeNotifier {
 
   // ── נגן ────────────────────────────────────────────────────────────────
 
-  /// 0 = אוטומטי, אחרת גובה בפיקסלים (1080, 720 ...)
-  int preferredQuality = 0;
-
   /// 1 = "מתנגן עכשיו" · 2 = בקרים על הווידאו
   int playerStyle = 1;
 
@@ -128,7 +124,6 @@ class SettingsStore extends ChangeNotifier {
     highRefreshRate = _p.getBool(_kHighRefresh) ?? true;
     accentColor = _p.getInt(_kAccent) ?? 0xFFFF2D43;
     accent2Color = _p.getInt(_kAccent2) ?? 0xFFFF6A5C;
-    preferredQuality = _p.getInt(_kQuality) ?? 0;
     playerStyle = _p.getInt(_kPlayerStyle) ?? 1;
     playbackSpeed = _p.getInt(_kSpeed) ?? 100;
     sleepTimerMinutes = _p.getInt(_kSleep) ?? 0;
@@ -220,11 +215,6 @@ class SettingsStore extends ChangeNotifier {
     await _p.setInt(_kAccent2, b);
     ThemeState.instance.setPalette(Color(a), Color(b));
     notifyListeners();
-  }
-
-  Future<void> setPreferredQuality(int v) async {
-    preferredQuality = v;
-    await _setInt(_kQuality, v);
   }
 
   Future<void> setPlayerStyle(int v) async {
