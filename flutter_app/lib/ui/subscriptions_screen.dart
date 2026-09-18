@@ -5,6 +5,7 @@ import '../data/library_store.dart';
 import '../theme.dart';
 import 'channel_videos_screen.dart';
 import 'widgets/common.dart';
+import 'player_layer.dart';
 
 /// הערוצים שהמשתמש עוקב אחריהם — הם מה שמזין את תיבת "סרטונים חדשים".
 class SubscriptionsScreen extends StatelessWidget {
@@ -30,7 +31,8 @@ class SubscriptionsScreen extends StatelessWidget {
                       'הסרטונים החדשים שלהם יופיעו בתיבה ותקבל עליהם התראה.',
                 )
               : ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 150),
+                  padding: EdgeInsets.only(
+                      bottom: PlayerLayer.bottomInset(context)),
                   itemCount: channels.length,
                   itemBuilder: (context, i) {
                     final channel = channels[i];

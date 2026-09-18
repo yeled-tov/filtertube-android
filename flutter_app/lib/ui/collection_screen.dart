@@ -4,7 +4,9 @@ import '../data/playback.dart';
 import '../models/video.dart';
 import '../theme.dart';
 import 'widgets/common.dart';
+import 'widgets/video_actions.dart';
 import 'widgets/video_row.dart';
+import 'player_layer.dart';
 
 /// מסך אוסף כללי — אהבתי, היסטוריה, חסומים. אותו מסך לכולם, כי ההבדל
 /// ביניהם הוא רק הרשימה והכותרת.
@@ -48,10 +50,17 @@ class CollectionScreen extends StatelessWidget {
               body: emptyBody,
             )
           : ListView.builder(
-              padding: const EdgeInsets.only(bottom: 150),
+              padding:
+                  EdgeInsets.only(bottom: PlayerLayer.bottomInset(context)),
               itemCount: videos.length,
               itemBuilder: (context, i) => readOnly
-                  ? VideoListTile(video: videos[i], onTap: () {})
+                  // רשימה לקריאה בלבד (סרטונים חסומים): הקשה פותחת את
+                  // תפריט הפעולות במקום לנגן — ניגון סרטון שהמשתמש חסם
+                  // לעצמו סותר בדיוק את מה שהוא ביקש.
+                  ? VideoListTile(
+                      video: videos[i],
+                      onTap: () => showVideoActions(context, videos[i]),
+                    )
                   : VideoRow(
                       video: videos[i],
                       onTap: () => playback.playFromList(videos, i),

@@ -14,6 +14,7 @@ import '../theme.dart';
 import 'account_screen.dart';
 import 'admin_screen.dart';
 import 'widgets/common.dart';
+import 'player_layer.dart';
 
 /// מסך ההגדרות — אותן קבוצות ואותם פריטים כמו באפליקציה הראשית, למעט מה
 /// שאינו קיים בגרסת החנות: הורדות, ניגון ברקע, חלון צף, Premium, שיתוף
@@ -33,7 +34,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       listenable: Listenable.merge([appSettings, appAuth]),
       builder: (context, _) => ListView(
         padding: EdgeInsets.only(
-            top: MediaQuery.of(context).padding.top + 26, bottom: 150),
+            top: MediaQuery.of(context).padding.top + 26,
+            bottom: PlayerLayer.bottomInset(context)),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
@@ -899,7 +901,11 @@ class _FilterGateDialogState extends State<_FilterGateDialog> {
       Navigator.pop(context, true);
       return;
     }
-    if (appSettings.checkFilterPassword(_code.text)) {
+    setState(() => _busy = true);
+    final ok = await appSettings.checkFilterPassword(_code.text);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (ok) {
       Navigator.pop(context, true);
     } else {
       setState(() => _error = 'קוד ההורים שגוי');
@@ -994,7 +1000,8 @@ class _ChangeCodeDialogState extends State<_ChangeCodeDialog> {
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: AppTheme.accent),
           onPressed: () async {
-            if (!appSettings.checkFilterPassword(_current.text)) {
+            if (!await appSettings.checkFilterPassword(_current.text)) {
+              if (!context.mounted) return;
               setState(() => _error = 'הקוד הנוכחי שגוי');
               return;
             }

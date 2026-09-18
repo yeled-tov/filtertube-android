@@ -12,6 +12,7 @@ import 'collection_screen.dart';
 import 'my_requests_screen.dart';
 import 'playlist_screen.dart';
 import 'subscriptions_screen.dart';
+import 'player_layer.dart';
 
 /// הספרייה — אריחי הפסיפס של האפליקציה הראשית: אהבתי, מנויים, ערוצים
 /// מאושרים, הבקשות שלי, היסטוריה, ואלבומים.
@@ -109,7 +110,8 @@ class LibraryScreen extends StatelessWidget {
 
         return ListView(
           padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + 22, bottom: 150),
+              top: MediaQuery.of(context).padding.top + 22,
+              bottom: PlayerLayer.bottomInset(context)),
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),

@@ -13,6 +13,7 @@ import '../theme.dart';
 import 'channel_request_dialog.dart';
 import 'widgets/common.dart';
 import 'widgets/video_row.dart';
+import 'player_layer.dart';
 
 enum _SearchStatus { idle, loading, empty, results, error }
 
@@ -186,7 +187,8 @@ class _SearchScreenState extends State<SearchScreen> {
         );
       case _SearchStatus.results:
         return ListView.builder(
-          padding: const EdgeInsets.only(top: 6, bottom: 150),
+          padding: EdgeInsets.only(
+              top: 6, bottom: PlayerLayer.bottomInset(context)),
           itemCount: _results.length,
           itemBuilder: (context, i) => VideoRow(
             video: _results[i],
@@ -208,7 +210,7 @@ class _SearchScreenState extends State<SearchScreen> {
       );
     }
     return ListView(
-      padding: const EdgeInsets.only(bottom: 150),
+      padding: EdgeInsets.only(bottom: PlayerLayer.bottomInset(context)),
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 8, 4),
@@ -253,7 +255,7 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget _instantResults() {
     final instant = _instant;
     return ListView(
-      padding: const EdgeInsets.only(bottom: 150),
+      padding: EdgeInsets.only(bottom: PlayerLayer.bottomInset(context)),
       children: [
         ..._suggestions.map(
           (s) => ListTile(

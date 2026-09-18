@@ -51,8 +51,10 @@ class MiniPlayer extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // מקום שמור לנגן עצמו — הוא מרחף מעל הנקודה הזו בדיוק.
-            SizedBox(width: thumbnailWidth + 14),
+            // מקום שמור לנגן עצמו — הוא מרחף מעל הנקודה הזו בדיוק. ב-RTL
+            // הילד הראשון ב-Row יושב בצד ימין, וזה בדיוק הצד שבו הנגן
+            // ממוקם (ראה חישוב playerLeft ב-AppShell).
+            SizedBox(width: thumbnailWidth + 10),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,

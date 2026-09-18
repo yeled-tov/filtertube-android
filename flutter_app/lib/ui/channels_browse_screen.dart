@@ -8,6 +8,7 @@ import '../theme.dart';
 import 'channel_request_dialog.dart';
 import 'channel_videos_screen.dart';
 import 'widgets/common.dart';
+import 'player_layer.dart';
 
 /// כל הערוצים המאושרים — חיפוש, סינון לפי קטגוריה, מעקב, ובקשה להוסיף
 /// ערוץ שחסר.
@@ -108,7 +109,8 @@ class _ChannelsBrowseScreenState extends State<ChannelsBrowseScreen> {
                         ),
                       )
                     : ListView.builder(
-                        padding: const EdgeInsets.only(bottom: 150),
+                        padding: EdgeInsets.only(
+                            bottom: PlayerLayer.bottomInset(context)),
                         itemCount: shown.length,
                         itemBuilder: (context, i) => _row(shown[i]),
                       ),

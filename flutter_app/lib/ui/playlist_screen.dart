@@ -6,6 +6,7 @@ import '../models/video.dart';
 import '../theme.dart';
 import 'widgets/common.dart';
 import 'widgets/video_row.dart';
+import 'player_layer.dart';
 
 /// אלבום — נגן הכל, ערבוב, הסרת פריט ומחיקת האלבום.
 class PlaylistScreen extends StatelessWidget {
@@ -66,7 +67,8 @@ class PlaylistScreen extends StatelessWidget {
                     ),
                     Expanded(
                       child: ListView.builder(
-                        padding: const EdgeInsets.only(bottom: 150),
+                        padding: EdgeInsets.only(
+                            bottom: PlayerLayer.bottomInset(context)),
                         itemCount: videos.length,
                         itemBuilder: (context, i) => VideoListTile(
                           video: videos[i],

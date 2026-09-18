@@ -1,12 +1,11 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_displaymode/flutter_displaymode.dart';
 
 import 'data/app_state.dart';
 import 'data/auth.dart';
+import 'data/display.dart';
 import 'data/library_store.dart';
 import 'data/notifications.dart';
 import 'data/playback.dart';
@@ -14,6 +13,7 @@ import 'data/settings_store.dart';
 import 'theme.dart';
 import 'ui/channel_request_dialog.dart';
 import 'ui/onboarding_screen.dart';
+import 'ui/player_layer.dart';
 import 'ui/shell.dart';
 import 'ui/widgets/common.dart';
 
@@ -55,22 +55,20 @@ class _FilterTubeAppState extends State<FilterTubeApp> {
     super.dispose();
   }
 
-  /// קצב רענון גבוה במכשירים שתומכים. אנדרואיד בלבד — ב-iOS המערכת
-  /// מחליטה בעצמה, ואין ממשק לבקש ממנה אחרת.
   Future<void> _applyHighRefreshRate() async {
     if (!appSettings.highRefreshRate) return;
-    if (!Platform.isAndroid) return;
-    try {
-      await FlutterDisplayMode.setHighRefreshRate();
-    } catch (_) {
-      // מכשיר שלא תומך פשוט נשאר בקצב שלו
-    }
+    await DisplayMode.applyHighRefreshRate();
   }
 
   Future<void> _boot() async {
-    // הפיד נטען רק אחרי שההיכרות הסתיימה: רמת הסינון והמגדר שנבחרים בה
-    // הם מה שקובע אילו ערוצים בכלל נמשכים.
-    if (_onboarded) await appState.boot();
+    if (_onboarded) {
+      await appState.boot();
+    } else {
+      // בהיכרות הראשונה המשתמש בוחר זמרים מתוך הרשימה הלבנה, ולכן היא
+      // חייבת להיות טעונה עוד לפני שהמסך מוצג. הפיד עצמו נטען רק אחריה:
+      // רמת הסינון והמגדר שנבחרים בה הם מה שקובע אילו ערוצים בכלל נמשכים.
+      await appState.channels.load();
+    }
     if (mounted) setState(() => _booted = true);
   }
 
@@ -196,10 +194,11 @@ class _FilterTubeAppState extends State<FilterTubeApp> {
           navigatorKey: navigatorKey,
           debugShowCheckedModeBanner: false,
           theme: AppTheme.build(),
-          // האפליקציה בעברית — ברירת מחדל מימין לשמאל.
+          // האפליקציה בעברית — ברירת מחדל מימין לשמאל. שכבת הנגן עוטפת
+          // את הניווט כולו, ולכן היא נראית גם מעל מסך שנפתח מעל הלשוניות.
           builder: (context, child) => Directionality(
             textDirection: TextDirection.rtl,
-            child: child ?? const SizedBox.shrink(),
+            child: PlayerLayer(child: child ?? const SizedBox.shrink()),
           ),
           home: _home(),
         );
@@ -208,6 +207,7 @@ class _FilterTubeAppState extends State<FilterTubeApp> {
   }
 
   Widget _home() {
+    if (!_booted) return _splash();
     if (!_onboarded) {
       return OnboardingScreen(onDone: () async {
         setState(() {
@@ -218,8 +218,11 @@ class _FilterTubeAppState extends State<FilterTubeApp> {
         if (mounted) setState(() => _booted = true);
       });
     }
-    if (!_booted) {
-      return Scaffold(
+    return const AppShell();
+  }
+
+  Widget _splash() {
+    return Scaffold(
         backgroundColor: AppTheme.bg,
         body: Center(
           child: Column(
@@ -251,8 +254,6 @@ class _FilterTubeAppState extends State<FilterTubeApp> {
             ],
           ),
         ),
-      );
-    }
-    return const AppShell();
+    );
   }
 }

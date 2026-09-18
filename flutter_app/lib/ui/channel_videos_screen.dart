@@ -8,6 +8,7 @@ import '../models/video.dart';
 import '../theme.dart';
 import 'widgets/common.dart';
 import 'widgets/video_row.dart';
+import 'player_layer.dart';
 
 /// כל הסרטונים של ערוץ אחד — נטענים מה-RSS שלו, כלומר בלי לשרוף מכסה.
 class ChannelVideosScreen extends StatefulWidget {
@@ -74,7 +75,8 @@ class _ChannelVideosScreenState extends State<ChannelVideosScreen> {
                       title: 'אין סרטונים להצגה',
                     )
                   : ListView.builder(
-                      padding: const EdgeInsets.only(bottom: 150),
+                      padding:
+                          EdgeInsets.only(bottom: PlayerLayer.bottomInset(context)),
                       itemCount: _videos.length,
                       itemBuilder: (context, i) => VideoRow(
                         video: _videos[i],

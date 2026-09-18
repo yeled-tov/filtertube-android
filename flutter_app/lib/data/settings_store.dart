@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -327,27 +328,33 @@ class SettingsStore extends ChangeNotifier {
 
   // ── קוד הורים ──────────────────────────────────────────────────────────
   //
-  // הקוד עצמו לא נשמר בשום מקום: נשמר רק אימות מלוח (salt) עם PBKDF2-
-  // דמוי — 120,000 סיבובי HMAC-SHA256. מי שיקרא את קובץ ההעדפות לא יוכל
-  // להסיק ממנו את הקוד, וזו כל הנקודה: הקוד הזה הוא מה שמגן על רמת הסינון.
-
-  static const int _iterations = 120000;
+  // הקוד עצמו לא נשמר בשום מקום: נשמר רק אימות מלוח (salt) שנגזר ב-PBKDF2-
+  // HMAC-SHA256 עם 120,000 סיבובים. מי שיקרא את קובץ ההעדפות לא יוכל להסיק
+  // ממנו את הקוד, וזו כל הנקודה — הקוד הזה הוא מה שמגן על רמת הסינון.
+  //
+  // הגזירה רצה ב-Isolate נפרד דרך `compute`. 120,000 סיבובי HMAC ב-Dart
+  // טהור לוקחים כמה מאות מילישניות, ועל תהליכון הממשק זה היה נראה כמו
+  // אפליקציה שנתקעה בכל פעם שמזינים את הקוד.
 
   Future<void> setFilterPassword(String password) async {
     final rnd = Random.secure();
     final salt = List<int>.generate(16, (_) => rnd.nextInt(256));
+    final verifier = await compute(_derivePassword, (password, salt));
     _pwSalt = base64Encode(salt);
-    _pwVerifier = base64Encode(_derive(password, salt));
+    _pwVerifier = base64Encode(verifier);
     await _p.setString(_kPwSalt, _pwSalt);
     await _p.setString(_kPwVerifier, _pwVerifier);
     notifyListeners();
   }
 
-  bool checkFilterPassword(String input) {
+  Future<bool> checkFilterPassword(String input) async {
     if (_pwVerifier.isEmpty || _pwSalt.isEmpty) return false;
     final expected = base64Decode(_pwVerifier);
-    final actual = _derive(input, base64Decode(_pwSalt));
+    final actual =
+        await compute(_derivePassword, (input, base64Decode(_pwSalt).toList()));
     if (expected.length != actual.length) return false;
+    // השוואה בזמן קבוע: יציאה מוקדמת בבית הראשון שנבדל מדליפה כמה תווים
+    // נכונים, וזה בדיוק מה שהופך ניחוש לחיפוש.
     var diff = 0;
     for (var i = 0; i < expected.length; i++) {
       diff |= expected[i] ^ actual[i];
@@ -361,18 +368,6 @@ class SettingsStore extends ChangeNotifier {
     await _p.remove(_kPwVerifier);
     await _p.remove(_kPwSalt);
     notifyListeners();
-  }
-
-  List<int> _derive(String password, List<int> salt) {
-    var block = Hmac(sha256, utf8.encode(password)).convert([...salt, 0, 0, 0, 1]).bytes;
-    final result = List<int>.from(block);
-    for (var i = 1; i < _iterations; i++) {
-      block = Hmac(sha256, utf8.encode(password)).convert(block).bytes;
-      for (var j = 0; j < result.length; j++) {
-        result[j] ^= block[j];
-      }
-    }
-    return result;
   }
 
   // ── היסטוריית חיפוש ────────────────────────────────────────────────────
@@ -404,4 +399,21 @@ class SettingsStore extends ChangeNotifier {
     await _p.setString(_kHistory, queries.take(20).join('\n'));
     notifyListeners();
   }
+}
+
+/// PBKDF2-HMAC-SHA256 באורך בלוק אחד. פונקציה ברמת הקובץ כי `compute`
+/// מריצה אותה ב-Isolate נפרד, ורק פונקציה כזו ניתנת להעברה לשם.
+List<int> _derivePassword((String, List<int>) input) {
+  const iterations = 120000;
+  final (password, salt) = input;
+  final key = utf8.encode(password);
+  var block = Hmac(sha256, key).convert([...salt, 0, 0, 0, 1]).bytes;
+  final result = List<int>.from(block);
+  for (var i = 1; i < iterations; i++) {
+    block = Hmac(sha256, key).convert(block).bytes;
+    for (var j = 0; j < result.length; j++) {
+      result[j] ^= block[j];
+    }
+  }
+  return result;
 }

@@ -11,6 +11,7 @@ import '../../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/video_row.dart';
 import 'music_settings_screen.dart';
+import '../player_layer.dart';
 
 /// FilterMusic — אותו תוכן מאושר, מצב אחר: הכל נשמע כאודיו, והמסך בנוי
 /// סביב שירים ומיקסים ולא סביב פיד.
@@ -53,45 +54,57 @@ class _MusicScreenState extends State<MusicScreen> {
                 .contains(appState.channels.categoryOf(v.channelId)))
             .toList();
 
-        final body = _query.isNotEmpty
-            ? _searchResults(pool)
-            : ListView(
-                padding: EdgeInsets.only(
-                  top: widget.fullScreen
-                      ? 8
-                      : MediaQuery.of(context).padding.top + 18,
-                  bottom: 150,
-                ),
-                children: [
-                  if (!widget.fullScreen) _header(context),
-                  _searchField(),
-                  if (quickPicks.isNotEmpty)
-                    _quickPicks(quickPicks)
-                  else
-                    Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Text(
-                        'עוד אין כאן מספיק מוזיקה להציג.\n'
-                        'הפיד מתעדכן מהערוצים המאושרים — נסה שוב בעוד רגע.',
-                        style: TextStyle(
-                            color: AppTheme.subtext, fontSize: 13, height: 1.6),
+        // שדה החיפוש נשאר קבוע מעל התוצאות. קודם הוא היה חלק מהרשימה
+        // הנגללת, ולכן ברגע שהוקלדה אות אחת הוא נעלם יחד איתה — כלומר אי
+        // אפשר היה לתקן את מה שהוקלד בלי לנקות ולהתחיל מחדש.
+        final body = Column(
+          children: [
+            SizedBox(
+                height: widget.fullScreen
+                    ? 8
+                    : MediaQuery.of(context).padding.top + 18),
+            if (!widget.fullScreen) _header(context),
+            _searchField(),
+            Expanded(
+              child: _query.isNotEmpty
+                  ? _searchResults(pool)
+                  : ListView(
+                      padding: EdgeInsets.only(
+                        bottom: PlayerLayer.bottomInset(context),
                       ),
+                      children: [
+                        if (quickPicks.isNotEmpty)
+                          _quickPicks(quickPicks)
+                        else
+                          Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Text(
+                              'עוד אין כאן מספיק מוזיקה להציג.\n'
+                              'הפיד מתעדכן מהערוצים המאושרים — נסה שוב בעוד רגע.',
+                              style: TextStyle(
+                                  color: AppTheme.subtext,
+                                  fontSize: 13,
+                                  height: 1.6),
+                            ),
+                          ),
+                        if (mixes.isNotEmpty) _mixes(mixes),
+                        if (liked.isNotEmpty)
+                          _shelf('השירים שאהבת', liked,
+                              onPlayAll: () =>
+                                  playback.playFromList(liked, 0, music: true)),
+                        if (appLibrary.localHistory.isNotEmpty)
+                          _shelf(
+                            'הושמע לאחרונה',
+                            appLibrary.localHistory
+                                .where((v) => kMusicCategories.contains(
+                                    appState.channels.categoryOf(v.channelId)))
+                                .toList(),
+                          ),
+                      ],
                     ),
-                  if (mixes.isNotEmpty) _mixes(mixes),
-                  if (liked.isNotEmpty)
-                    _shelf('השירים שאהבת', liked,
-                        onPlayAll: () => playback.playFromList(liked, 0,
-                            music: true)),
-                  if (appLibrary.localHistory.isNotEmpty)
-                    _shelf(
-                      'הושמע לאחרונה',
-                      appLibrary.localHistory
-                          .where((v) => kMusicCategories.contains(
-                              appState.channels.categoryOf(v.channelId)))
-                          .toList(),
-                    ),
-                ],
-              );
+            ),
+          ],
+        );
 
         if (!widget.fullScreen) return body;
         return Scaffold(
@@ -169,7 +182,7 @@ class _MusicScreenState extends State<MusicScreen> {
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.only(top: 60, bottom: 150),
+      padding: EdgeInsets.only(bottom: PlayerLayer.bottomInset(context)),
       itemCount: results.length,
       itemBuilder: (context, i) => VideoListTile(
         video: results[i],

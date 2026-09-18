@@ -11,7 +11,8 @@ import '../models/channel.dart';
 import '../models/video.dart';
 import '../theme.dart';
 import 'live_screen.dart';
-import 'music/music_screen.dart';
+import 'player_layer.dart';
+import 'shell.dart';
 import 'new_videos_screen.dart';
 import 'widgets/common.dart';
 import 'widgets/video_row.dart';
@@ -123,7 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
           backgroundColor: AppTheme.surface,
           onRefresh: () => appState.refresh(silent: true),
           child: ListView.builder(
-            padding: const EdgeInsets.only(top: 8, bottom: 150),
+            padding: EdgeInsets.only(top: 8, bottom: PlayerLayer.bottomInset(context)),
             itemCount: videos.length,
             itemBuilder: (context, i) => VideoRow(
               video: videos[i],
@@ -169,13 +170,10 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Row(
           children: [
             half('FilterTube', true, () {}),
-            half('FilterMusic', false, () {
-              Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                    builder: (_) => const MusicScreen(fullScreen: true)),
-              );
-            }),
+            // מעבר ללשונית ולא מסך חדש מעליה: מסך שנפתח מעל הלשוניות
+            // מכסה את סרגל הניווט ואת המיני-נגן, ואז אין ממנו דרך חזרה
+            // חוץ מכפתור המערכת.
+            half('FilterMusic', false, () => shellTab.value = musicTabIndex),
           ],
         ),
       ),
@@ -307,7 +305,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _radioButton() {
     return Positioned(
       right: 16,
-      bottom: playback.isActive ? 180 : 110,
+      bottom: PlayerLayer.bottomInset(context) + (playback.isActive ? 10 : -40),
       child: GestureDetector(
         onTap: _radioStarting ? null : _startRadio,
         child: Container(
