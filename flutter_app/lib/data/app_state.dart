@@ -41,9 +41,17 @@ class AppState extends ChangeNotifier {
 
   List<Video> _feed = [];
 
-  /// הפיד המדורג, בלי סרטונים שהמשתמש חסם לעצמו.
-  List<Video> get videos =>
-      _feed.where((v) => !appLibrary.blockedIds.contains(v.id)).toList();
+  /// הפיד המדורג, בלי סרטונים שהמשתמש חסם לעצמו ובלי מה שכבר זוהה
+  /// כ-Short.
+  ///
+  /// ההסתרה חלה רק על סרטון שאורכו **ידוע**: סרטון שטרם הועשר נשאר בפיד,
+  /// כי הסתרה על סמך ניחוש הייתה מעלימה תוכן אמיתי. כך כל סרטון מופיע
+  /// במקום אחד בלבד — בפיד או בלשונית ה-Shorts.
+  List<Video> get videos => _feed
+      .where((v) => !appLibrary.blockedIds.contains(v.id))
+      .where((v) =>
+          v.durationSec <= 0 || v.durationSec > AppState.shortMaxSeconds)
+      .toList();
 
   /// הקטגוריות שבאמת יש להן סרטונים בפיד הנוכחי — צ'יפ שמוביל למסך ריק
   /// הוא באג, לא תצוגה.
@@ -121,7 +129,7 @@ class AppState extends ChangeNotifier {
       // סרטונים חדשים מערוצים שעוקבים אחריהם — לתיבה ולהתראה.
       await _collectNewVideos(fetched);
 
-      _feed = _rank(fetched.where((v) => !v.isShort).toList());
+      _feed = _rank(fetched);
       status = FeedStatus.ready;
       errorMessage = '';
       notifyListeners();
@@ -199,19 +207,38 @@ class AppState extends ChangeNotifier {
 
   // ── שורטס ──────────────────────────────────────────────────────────────
 
+  /// ## למה האורך הוא מה שמגדיר Short כאן
+  /// האפליקציה הראשית מושכת את לשונית ה-Shorts של הערוץ דרך NewPipe. ל-API
+  /// הרשמי אין לשונית כזו, ופיד ה-RSS מחזיר לכל סרטון קישור `watch?v=` —
+  /// גם ל-Short. כלומר אין שום סימון להסתמך עליו, ומה שכן יש הוא האורך:
+  /// יוטיוב עצמה מגדירה Short כסרטון של עד שלוש דקות. הבדיקה נעשית מול
+  /// `videos.list` (בקשה אחת ל-50 סרטונים), והיא גם מאמתת שהסרטון ניתן
+  /// להטמעה.
+  ///
+  /// המחיר: סרטון רגיל וקצר במיוחד ייכנס ללשונית ה-Shorts. אין דרך לדעת
+  /// מ-API הרשמי אם הסרטון אנכי, ולכן זו ההפרדה הטובה ביותר שאפשר לעשות
+  /// בלי לצאת ממנו.
+  static const int shortMaxSeconds = 180;
+
   Future<void> loadShorts({bool force = false}) async {
     if (shortsLoading) return;
     if (shorts.isNotEmpty && !force) return;
     shortsLoading = true;
     notifyListeners();
     try {
-      final raw = await feed.allChannelsFeed(visibleChannels);
-      final candidates = raw.where((v) => v.isShort).take(120).toList();
-      // נכשלים סגור: בלי אורך מאומת אי אפשר לדעת שהסרטון באמת קצר.
-      shorts = await api.filterShorts(candidates);
-      shorts = shorts
-          .where((v) => !appLibrary.blockedIds.contains(v.id))
+      // כל הסרטונים הטריים הם מועמדים — לא רק אלה שסומנו, כי אין סימון.
+      final candidates = (_feed.isNotEmpty
+              ? _feed
+              : await feed.allChannelsFeed(visibleChannels))
+          .take(150)
           .toList();
+      // נכשלים סגור: בלי אורך מאומת אי אפשר לדעת שהסרטון באמת קצר.
+      final verified = await api.filterShorts(
+        candidates,
+        maxLength: const Duration(seconds: shortMaxSeconds),
+      );
+      shorts =
+          verified.where((v) => !appLibrary.blockedIds.contains(v.id)).toList();
     } catch (_) {
       // נשארים עם מה שכבר יש
     } finally {
