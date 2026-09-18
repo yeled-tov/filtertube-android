@@ -181,8 +181,13 @@ class PlaybackController extends ChangeNotifier {
   }
 
   /// מעבר לסרטון לפי מיקומו ברשימת ה-Shorts — נקרא מהחלקה אנכית.
+  ///
+  /// הבדיקה שהסרטון לא כבר מתנגן אינה ייתור: כשהסרטון מתחלף מעצמו בסוף
+  /// ניגון, הדף מדביק את הפער ביוזמתו — וזה מפעיל onPageChanged על אותו
+  /// סרטון בדיוק. בלי היציאה כאן הוא היה נטען מחדש ומתחיל מההתחלה.
   Future<void> playShortAt(int index) async {
     if (index < 0 || index >= shortsList.length) return;
+    if (shortsList[index].id == _current?.id) return;
     await play(shortsList[index],
         queue: shortsList.sublist(index + 1).take(_maxQueue).toList(),
         shorts: true,
