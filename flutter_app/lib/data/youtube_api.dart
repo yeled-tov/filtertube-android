@@ -194,33 +194,52 @@ class YoutubeApi {
   }
 
   /// שידורים חיים פעילים בערוצים המאושרים.
-  Future<List<Video>> liveNow(List<Channel> channels, {int perQuery = 25}) async {
-    final approved = channels.map((c) => c.youtubeChannelId).toSet();
+  ///
+  /// ## למה לא search.list
+  /// `search.list` עם `eventType=live` עולה 100 יחידות מכסה לכל קריאה. אחת
+  /// לכל ערוץ היא מאות קריאות ברענון אחד — כלומר מכסת היום כולה. חיפוש
+  /// גלובלי אחד עם סינון לרשימה הלבנה עולה אותו דבר ומחזיר כמעט תמיד
+  /// כלום, כי שידור של ערוץ מאושר מסוים כמעט לא יעלה בחיפוש חופשי.
+  ///
+  /// ## מה כן עובד
+  /// שידור חי מופיע בפיד ה-RSS של הערוץ כמו כל סרטון אחר. `videos.list`
+  /// מחזיר לכל מזהה את `liveBroadcastContent`, שאומר אם הוא משודר **עכשיו**
+  /// — בקשה אחת לכל 50 מזהים, יחידת מכסה אחת. כלומר מסך השידורים החיים
+  /// עולה פחות מרענון אחד של החיפוש.
+  Future<List<Video>> liveFrom(List<Video> recent, {int scan = 100}) async {
+    if (recent.isEmpty) return const [];
+    final scope = recent.take(scan).toList();
     final out = <Video>[];
-    // חיפוש אחד לכל ערוץ היה יקר מדי במכסה; במקום זאת שואלים את יוטיוב על
-    // שידורים חיים בעברית ומסננים לרשימה הלבנה, ואז משלימים מהערוצים
-    // שהמשתמש עוקב אחריהם בפועל.
-    final data = await _get(_uri('search', {
-      'part': 'snippet',
-      'type': 'video',
-      'eventType': 'live',
-      'maxResults': '$perQuery',
-      'q': 'שידור חי',
-      'relevanceLanguage': 'he',
-    }));
-    out.addAll(await _videosFromSearch(data, approved.contains));
+    for (var i = 0; i < scope.length; i += 50) {
+      final end = (i + 50) < scope.length ? i + 50 : scope.length;
+      final batch = scope.sublist(i, end);
+      final data = await _get(_uri('videos', {
+        'part': 'snippet,liveStreamingDetails,status',
+        'id': batch.map((v) => v.id).join(','),
+      }));
+      if (data == null) continue;
+      for (final raw in (data['items'] as List?) ?? const []) {
+        final it = raw as Map<String, dynamic>;
+        final id = it['id'] as String?;
+        final snippet = it['snippet'] as Map<String, dynamic>?;
+        if (id == null || snippet == null) continue;
+        if (snippet['liveBroadcastContent'] != 'live') continue;
+        if ((it['status'] as Map<String, dynamic>?)?['embeddable'] == false) {
+          continue;
+        }
+        final original = batch.firstWhere((v) => v.id == id);
+        out.add(original.copyWith(
+          title: (snippet['title'] as String?) ?? original.title,
+          channelName:
+              (snippet['channelTitle'] as String?) ?? original.channelName,
+          thumbnailUrl:
+              _thumb(snippet['thumbnails'] as Map<String, dynamic>?, id),
+          // לשידור חי אין אורך, והצגת "0:00" על כרטיס הייתה מטעה.
+          durationSec: 0,
+        ));
+      }
+    }
     return out;
-  }
-
-  Future<List<Video>> channelLive(String channelId) async {
-    final data = await _get(_uri('search', {
-      'part': 'snippet',
-      'type': 'video',
-      'eventType': 'live',
-      'channelId': channelId,
-      'maxResults': '5',
-    }));
-    return _videosFromSearch(data, (_) => true);
   }
 
   Future<List<Video>> _videosFromSearch(

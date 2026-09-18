@@ -21,7 +21,10 @@ class _AdminScreenState extends State<AdminScreen>
   late final TabController _tabs = TabController(length: 2, vsync: this);
 
   List<Map<String, dynamic>> _requests = [];
-  Map<String, dynamic> _dashboard = {};
+
+  /// המפתח שהשרת מחזיר הוא `summary`, לא `userCount`. קריאה לשם שאינו
+  /// קיים הייתה מציגה מקף לנצח בלי שום סימן שמשהו לא בסדר.
+  Map<String, dynamic> _summary = {};
   bool _loading = true;
   String _error = '';
 
@@ -51,7 +54,9 @@ class _AdminScreenState extends State<AdminScreen>
       } else {
         _error = (requests['message'] as String?) ?? 'לא ניתן לטעון בקשות';
       }
-      if (dashboard['ok'] == true) _dashboard = dashboard;
+      if (dashboard['ok'] == true) {
+        _summary = (dashboard['summary'] as Map<String, dynamic>?) ?? {};
+      }
     });
   }
 
@@ -109,11 +114,13 @@ class _AdminScreenState extends State<AdminScreen>
     return ListView(
       padding: const EdgeInsets.only(bottom: 24),
       children: [
-        if (_dashboard.isNotEmpty)
+        if (_summary.isNotEmpty)
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              'משתמשים רשומים: ${_dashboard['userCount'] ?? '—'} · '
+              'חשבונות: ${_summary['totalAccounts'] ?? '—'} · '
+              'מאומתים: ${_summary['verifiedAccounts'] ?? '—'} · '
+              'מנויים: ${_summary['premiumAccounts'] ?? '—'} · '
               'בקשות ממתינות: ${pending.length}',
               style: TextStyle(color: AppTheme.subtext, fontSize: 12.5),
             ),

@@ -28,7 +28,9 @@ class _LiveScreenState extends State<LiveScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final list = await appState.api.liveNow(appState.visibleChannels);
+    // הפיד כבר טעון; השידורים החיים מזוהים מתוכו בבקשה אחת ל-50 מזהים,
+    // במקום חיפוש נפרד לכל ערוץ.
+    final list = await appState.api.liveFrom(appState.videos);
     if (!mounted) return;
     setState(() {
       _live = list;
