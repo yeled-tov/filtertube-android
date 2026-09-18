@@ -311,8 +311,37 @@ fun LibraryScreen(
                     store.setSubscriptions(subsFromCookies); subs = subsFromCookies
                 }
 
+                // ── הפלייליסטים מיוטיוב מיוזיק ────────────────────────────
+                // נמשכים אחרונים בכוונה: זו הקריאה היקרה ביותר (בקשה לכל
+                // פלייליסט בנפרד), והיא לא אמורה לעכב את הלייקים וההיסטוריה
+                // שהמשתמש מחכה להם. כישלון כאן לא נוגע בשום דבר אחר.
+                val importedPlaylists = runCatching {
+                    val lists = InnerTube.musicPlaylists(accountStore.cookies)
+                    Diagnostics.log("SYNC פלייליסטים: ${lists.size} נמצאו במיוזיק")
+                    var saved = 0
+                    lists.forEach { list ->
+                        val items = InnerTube.playlistItems(accountStore.cookies, list.id)
+                        val allowed = InnerTube.fillOwners(items) { !approved.approves(it) }
+                            .filter { approved.approves(it) }
+                        Diagnostics.log(
+                            "SYNC פלייליסט \"${list.title}\": ${items.size} שירים · ${allowed.size} מאושרים",
+                        )
+                        // פלייליסט שלא נשאר בו שום שיר מאושר לא נוצר בכלל:
+                        // אלבום ריק במסך הוא רק שאלה בלי תשובה.
+                        if (allowed.isEmpty()) return@forEach
+                        store.createPlaylist(list.title)
+                        allowed.forEach { store.addToPlaylist(list.title, it) }
+                        saved += 1
+                    }
+                    saved
+                }.getOrElse {
+                    Diagnostics.log("SYNC פלייליסטים: נכשל — ${it.message}")
+                    0
+                }
+
                 status = "סונכרן ✓ ${hist.size} בהיסטוריה · ${liked.size} לייקים · " +
-                    "${musicRaw.size} שירים ממיוזיק · ${subsFromCookies.size} מנויים · ${rec.size} המלצות"
+                    "${musicRaw.size} שירים ממיוזיק · ${subsFromCookies.size} מנויים · " +
+                    "$importedPlaylists אלבומים · ${rec.size} המלצות"
             } catch (e: Exception) {
                 status = "שגיאה בסנכרון מלא: ${e.message}"
             } finally { syncing = false }
