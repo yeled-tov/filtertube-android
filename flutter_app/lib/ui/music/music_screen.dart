@@ -16,11 +16,7 @@ import '../player_layer.dart';
 /// FilterMusic — אותו תוכן מאושר, מצב אחר: הכל נשמע כאודיו, והמסך בנוי
 /// סביב שירים ומיקסים ולא סביב פיד.
 class MusicScreen extends StatefulWidget {
-  /// כשנפתח מתוך מחליף המצבים במסך הבית הוא מסך מלא עם חץ חזרה; כלשונית
-  /// הוא חלק מהקליפה.
-  final bool fullScreen;
-
-  const MusicScreen({super.key, this.fullScreen = false});
+  const MusicScreen({super.key});
 
   @override
   State<MusicScreen> createState() => _MusicScreenState();
@@ -59,11 +55,8 @@ class _MusicScreenState extends State<MusicScreen> {
         // אפשר היה לתקן את מה שהוקלד בלי לנקות ולהתחיל מחדש.
         final body = Column(
           children: [
-            SizedBox(
-                height: widget.fullScreen
-                    ? 8
-                    : MediaQuery.of(context).padding.top + 18),
-            if (!widget.fullScreen) _header(context),
+            SizedBox(height: MediaQuery.of(context).padding.top + 18),
+            _header(context),
             _searchField(),
             Expanded(
               child: _query.isNotEmpty
@@ -106,26 +99,7 @@ class _MusicScreenState extends State<MusicScreen> {
           ],
         );
 
-        if (!widget.fullScreen) return body;
-        return Scaffold(
-          backgroundColor: AppTheme.bg,
-          appBar: AppBar(
-            backgroundColor: AppTheme.bg,
-            title: const Text('FilterMusic'),
-            actions: [
-              IconButton(
-                tooltip: 'הגדרות FilterMusic',
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute<void>(
-                      builder: (_) => const MusicSettingsScreen()),
-                ),
-                icon: Icon(Icons.settings, color: AppTheme.text),
-              ),
-            ],
-          ),
-          body: body,
-        );
+        return body;
       },
     );
   }
