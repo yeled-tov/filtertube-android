@@ -465,11 +465,29 @@ class SettingsStore(context: Context) {
         }
     }
 
-    /** Clears data that must never cross from one Firebase account to another. */
+    /**
+     * Clears data that must never cross from one Firebase account to another.
+     *
+     * ## למה ההרשמה והקוד ההורי נמחקים כאן
+     * רמת הסינון (KEY_LEVEL) נמחקה, אבל הדגל "סיים הרשמה" והקוד ההורי לא —
+     * ומשם נולד באג חמור: חשבון חדש שנכנס באותו מכשיר ירש
+     * onboarding_done=true וקוד של מישהו אחר, ולכן האפליקציה דילגה על כל
+     * מסך ההרשמה ונחתה ישר במסך הבית. בלי בחירת רמה היא נפלה לברירת המחדל
+     * (רגיל), בלי מגדר, ועם קוד הורים שהמשתמש החדש כלל לא מכיר — כלומר הוא
+     * גם לא יכול לשנות את הסינון, והבעלים הקודם כן.
+     *
+     * שניהם שייכים לחשבון ולא למכשיר, בדיוק כמו רמת הסינון: מי שנכנס עכשיו
+     * לא בחר אותם, ולכן הוא חייב לבחור.
+     */
     fun clearAccountScopedData() {
         AccountDataGuard.withLock {
             AccountDataGuard.invalidate()
             prefs.edit()
+                .remove(KEY_ONBOARDED)
+                .remove(KEY_FILTER_PW_SALT)
+                .remove(KEY_FILTER_PW_VERIFIER)
+                .remove(KEY_FILTER_PW_KDF)
+                .remove(KEY_FILTER_PW_LEGACY)
                 .remove(KEY_USER_NAME)
                 .remove(KEY_USER_EMAIL)
                 .remove(KEY_USER_GENDER)
