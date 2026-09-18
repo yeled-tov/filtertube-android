@@ -662,7 +662,63 @@ fun VideoActionMenu(video: Video, onDismiss: () -> Unit, musicMode: Boolean = fa
     var playlistOpen by remember { mutableStateOf(false) }
     var reportOpen by remember { mutableStateOf(false) }
     var blockConfirm by remember { mutableStateOf(false) }
+    var requestOpen by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+
+    // ── תפריט הפעולות היה הדלת האחורית ────────────────────────────────────
+    // פריט אפור לא נפתח בלחיצה, אבל לחיצה ארוכה או שלוש הנקודות פתחו כאן
+    // את התפריט המלא: "הורד" הוריד את הקובץ למכשיר, ו"הבא בתור" — כשלא
+    // התנגן כלום — פשוט התחיל לנגן אותו. האפור היה חסם ויזואלי בלבד.
+    //
+    // השער האמיתי יושב עכשיו ב-ContentGate, בתוך הניגון, התור וההורדה,
+    // ולכן הפעולות האלה כבר לא יעבדו גם אם מסך כלשהו יקרא להן. הבדיקה
+    // כאן היא כדי שהמשתמש יקבל תשובה במקום כפתור שלא עושה כלום — ובעיקר
+    // כדי להציע לו את מה שכן אפשר: לבקש שהערוץ יתווסף.
+    val approved = remember(video.id) {
+        runCatching { com.filtertube.app.data.ContentGate.allows(context, video) }
+            .getOrDefault(false)
+    }
+    if (!approved) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = ThemeState.surface,
+            icon = { Icon(Icons.Rounded.Block, null, tint = ThemeState.subtext) },
+            title = { Text("הערוץ הזה לא אושר", color = ThemeState.text, fontSize = 17.sp) },
+            text = {
+                Column {
+                    Text(
+                        video.title, color = ThemeState.subtext2, fontSize = 13.sp,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "אי אפשר לנגן, להוריד או להוסיף לתור תוכן מערוץ שאינו " +
+                            "ברשימה המאושרת.",
+                        color = ThemeState.text, fontSize = 13.5.sp, lineHeight = 19.sp,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "אפשר לשלוח בקשה להוסיף את הערוץ — היא נבדקת ידנית.",
+                        color = ThemeState.accent, fontSize = 12.5.sp, lineHeight = 18.sp,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { requestOpen = true }) {
+                    Text("בקש להוסיף את הערוץ", color = ThemeState.accent)
+                }
+            },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("סגור") } },
+        )
+        if (requestOpen) {
+            ChannelRequestDialog(
+                onDismiss = { requestOpen = false; onDismiss() },
+                prefillName = video.channelName.ifBlank { video.title },
+                prefillUrl = "https://www.youtube.com/channel/${video.channelId}",
+            )
+        }
+        return
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -685,9 +741,10 @@ fun VideoActionMenu(video: Video, onDismiss: () -> Unit, musicMode: Boolean = fa
                     if (musicMode) "הורד שיר (אודיו)" else "הורד סרטון",
                     Icons.Rounded.Download,
                 ) {
-                    // הבדיקה כאן היא בשביל ההסבר: השער עצמו יושב בתוך
-                    // DownloadEngine, אבל בלי ההודעה הזו הלחיצה פשוט לא
-                    // עושה כלום ונראית כמו תקלה.
+                    // הבדיקה כאן היא בשביל ההסבר בלבד. שער הפרימיום יושב
+                    // בתוך DownloadEngine ושער הרשימה הלבנה ב-ContentGate;
+                    // בלי ההודעה הזו הלחיצה פשוט לא עושה כלום ונראית כמו
+                    // תקלה.
                     if (!DownloadEngine.canDownload(context)) {
                         onDismiss()
                         android.widget.Toast.makeText(
