@@ -214,8 +214,9 @@ class Cloud {
       'searchHistory': _arr(appSettings.searchHistory.take(20).toList()),
       'localSubscriptions':
           _arr(appLibrary.localSubscriptions.take(500).toList()),
-      'youtubeSubscriptions':
-          _arr(appLibrary.subscriptions.map((s) => s.channelId).take(250).toList()),
+      // הכללים דורשים שהמפתח יהיה קיים. הגרסה הזו אינה מסנכרנת מנויים
+      // מחשבון יוטיוב — אין לה חיבור כזה — ולכן הוא נשלח ריק במקום להישמט.
+      'youtubeSubscriptions': _arr(const []),
       'updatedAtMillis': _int(now),
     }, updateMask: [
       'schemaVersion',

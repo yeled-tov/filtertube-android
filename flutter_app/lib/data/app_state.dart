@@ -177,7 +177,7 @@ class AppState extends ChangeNotifier {
       clean.putIfAbsent(v.id, () => v);
     }
     final profile = TasteProfile.build(
-      likes: [...appLibrary.likes, ...appLibrary.youtubeLikes],
+      likes: appLibrary.likes,
       history: appLibrary.localHistory,
       subscriptions: appLibrary.localSubscriptions.toList(),
       searchTerms: appSettings.searchHistory,
@@ -198,7 +198,7 @@ class AppState extends ChangeNotifier {
 
   /// פרופיל הטעם הנוכחי — המיקסים והרדיו נבנים ממנו.
   TasteProfile tasteProfile() => TasteProfile.build(
-        likes: [...appLibrary.likes, ...appLibrary.youtubeLikes],
+        likes: appLibrary.likes,
         history: appLibrary.localHistory,
         subscriptions: appLibrary.localSubscriptions.toList(),
         searchTerms: appSettings.searchHistory,

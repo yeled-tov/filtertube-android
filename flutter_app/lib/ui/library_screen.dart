@@ -5,7 +5,6 @@ import '../data/app_state.dart';
 import '../data/auth.dart';
 import '../config.dart';
 import '../data/library_store.dart';
-import '../models/video.dart';
 import '../theme.dart';
 import 'account_screen.dart';
 import 'channels_browse_screen.dart';
@@ -30,13 +29,7 @@ class LibraryScreen extends StatelessWidget {
     return ListenableBuilder(
       listenable: Listenable.merge([appLibrary, appAuth, appState]),
       builder: (context, _) {
-        final likes = <Video>[
-          ...appLibrary.likes,
-          ...appLibrary.youtubeLikes,
-        ].fold<Map<String, Video>>({}, (acc, v) {
-          acc.putIfAbsent(v.id, () => v);
-          return acc;
-        }).values.toList();
+        final likes = appLibrary.likes;
 
         final tiles = <_TileSpec>[
           _TileSpec('סרטונים שאהבתי', likes.length, Icons.favorite,

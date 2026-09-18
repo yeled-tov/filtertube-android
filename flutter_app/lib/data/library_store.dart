@@ -18,10 +18,7 @@ final appLibrary = LibraryStore();
 class LibraryStore extends ChangeNotifier {
   static const _kLikes = 'likes';
   static const _kPlaylists = 'playlists';
-  static const _kYtLikes = 'youtube_likes';
-  static const _kMusicLikes = 'youtube_music_likes';
   static const _kBlocked = 'blocked_videos';
-  static const _kSubs = 'youtube_subscriptions';
   static const _kLocalHistory = 'local_history';
   static const _kLocalSubs = 'local_subscriptions';
   static const _kNewVideos = 'new_videos_inbox';
@@ -33,23 +30,17 @@ class LibraryStore extends ChangeNotifier {
   SharedPreferences? _p;
 
   List<Video> _likes = [];
-  List<Video> _ytLikes = [];
-  List<Video> _musicLikes = [];
   List<Video> _localHistory = [];
   List<Video> _blocked = [];
   List<Video> _newVideos = [];
   List<Playlist> _playlists = [];
-  List<SubChannel> _subs = [];
   Set<String> _localSubs = {};
 
   List<Video> get likes => List.unmodifiable(_likes);
-  List<Video> get youtubeLikes => List.unmodifiable(_ytLikes);
-  List<Video> get musicLikes => List.unmodifiable(_musicLikes);
   List<Video> get localHistory => List.unmodifiable(_localHistory);
   List<Video> get blockedVideos => List.unmodifiable(_blocked);
   List<Video> get newVideos => List.unmodifiable(_newVideos);
   List<Playlist> get playlists => List.unmodifiable(_playlists);
-  List<SubChannel> get subscriptions => List.unmodifiable(_subs);
   Set<String> get localSubscriptions => Set.unmodifiable(_localSubs);
 
   /// מזהים בלבד — לסימונים על כרטיסים, בלי לסרוק רשימות בכל בנייה מחדש.
@@ -61,20 +52,17 @@ class LibraryStore extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _p = prefs;
     _likes = _readVideos(prefs, _kLikes);
-    _ytLikes = _readVideos(prefs, _kYtLikes);
-    _musicLikes = _readVideos(prefs, _kMusicLikes);
     _localHistory = _readVideos(prefs, _kLocalHistory);
     _blocked = _readVideos(prefs, _kBlocked);
     _newVideos = _readVideos(prefs, _kNewVideos);
     _localSubs = (prefs.getStringList(_kLocalSubs) ?? const []).toSet();
     _playlists = _readList(prefs, _kPlaylists, Playlist.fromJson);
-    _subs = _readList(prefs, _kSubs, SubChannel.fromJson);
     _refreshBadges();
     notifyListeners();
   }
 
   void _refreshBadges() {
-    likedIds = {..._likes.map((v) => v.id), ..._ytLikes.map((v) => v.id)};
+    likedIds = _likes.map((v) => v.id).toSet();
     watchedIds = _localHistory.map((v) => v.id).toSet();
     blockedIds = _blocked.map((v) => v.id).toSet();
   }
@@ -103,7 +91,6 @@ class LibraryStore extends ChangeNotifier {
       jsonEncode(items.map((v) {
         if (v is Video) return v.toJson();
         if (v is Playlist) return v.toJson();
-        if (v is SubChannel) return v.toJson();
         return <String, dynamic>{};
       }).toList()),
     );
@@ -125,26 +112,6 @@ class LibraryStore extends ChangeNotifier {
     _refreshBadges();
     notifyListeners();
     return !wasLiked;
-  }
-
-  Future<void> replaceLikes(List<Video> list) async {
-    _likes = list.take(_maxLikes).toList();
-    await _write(_kLikes, _likes);
-    _refreshBadges();
-    notifyListeners();
-  }
-
-  Future<void> setYoutubeLikes(List<Video> list) async {
-    _ytLikes = list.take(_maxLikes).toList();
-    await _write(_kYtLikes, _ytLikes);
-    _refreshBadges();
-    notifyListeners();
-  }
-
-  Future<void> setMusicLikes(List<Video> list) async {
-    _musicLikes = list.take(_maxLikes).toList();
-    await _write(_kMusicLikes, _musicLikes);
-    notifyListeners();
   }
 
   // ── היסטוריה ───────────────────────────────────────────────────────────
@@ -272,12 +239,6 @@ class LibraryStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setSubscriptions(List<SubChannel> list) async {
-    _subs = list;
-    await _write(_kSubs, _subs);
-    notifyListeners();
-  }
-
   // ── תיבת "סרטונים חדשים" ───────────────────────────────────────────────
 
   Future<void> addNewVideos(List<Video> list) async {
@@ -298,23 +259,17 @@ class LibraryStore extends ChangeNotifier {
   /// מחיקת כל מה ששייך לחשבון — נקרא ביציאה מחשבון הענן.
   Future<void> clearAccountData() async {
     _likes = [];
-    _ytLikes = [];
-    _musicLikes = [];
     _localHistory = [];
     _blocked = [];
     _newVideos = [];
     _playlists = [];
-    _subs = [];
     _localSubs = {};
     for (final key in [
       _kLikes,
-      _kYtLikes,
-      _kMusicLikes,
       _kLocalHistory,
       _kBlocked,
       _kNewVideos,
       _kPlaylists,
-      _kSubs,
       _kLocalSubs,
     ]) {
       await _p?.remove(key);

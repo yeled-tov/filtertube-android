@@ -159,28 +159,6 @@ class Video {
   }
 }
 
-/// ערוץ שהמשתמש עוקב אחריו (מנוי מקומי או מיוטיוב).
-class SubChannel {
-  final String channelId;
-  final String title;
-  final String thumbnailUrl;
-
-  const SubChannel({
-    required this.channelId,
-    required this.title,
-    this.thumbnailUrl = '',
-  });
-
-  Map<String, dynamic> toJson() =>
-      {'channelId': channelId, 'title': title, 'thumbnailUrl': thumbnailUrl};
-
-  factory SubChannel.fromJson(Map<String, dynamic> j) => SubChannel(
-        channelId: (j['channelId'] as String?) ?? '',
-        title: (j['title'] as String?) ?? '',
-        thumbnailUrl: (j['thumbnailUrl'] as String?) ?? '',
-      );
-}
-
 /// אלבום/פלייליסט מקומי.
 class Playlist {
   final String name;
