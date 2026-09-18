@@ -7,12 +7,14 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config.dart';
 import '../data/app_state.dart';
 import '../data/auth.dart';
+import '../data/billing.dart';
 import '../data/library_store.dart';
 import '../data/notifications.dart';
 import '../data/settings_store.dart';
 import '../theme.dart';
 import 'account_screen.dart';
 import 'admin_screen.dart';
+import 'premium_screen.dart';
 import 'widgets/common.dart';
 import 'player_layer.dart';
 
@@ -31,7 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([appSettings, appAuth]),
+      listenable: Listenable.merge([appSettings, appAuth, appBilling]),
       builder: (context, _) => ListView(
         padding: EdgeInsets.only(
             top: MediaQuery.of(context).padding.top + 26,
@@ -66,10 +68,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
               subtitle: appAuth.ready
                   ? 'מחובר: ${appAuth.email}'
                   : 'שומר את הספרייה ומאפשר לבקש ערוצים',
-              last: true,
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute<void>(builder: (_) => const AccountScreen()),
+              ),
+            ),
+            GroupRow(
+              icon: Icons.workspace_premium,
+              tint: AppTheme.tintGold,
+              title: 'FilterTube Premium',
+              subtitle: appBilling.premiumActive
+                  ? 'המנוי פעיל — תודה!'
+                  : 'סנכרון ענן · אלבומים ללא הגבלה · בקשות בעדיפות',
+              last: true,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(builder: (_) => const PremiumScreen()),
               ),
             ),
           ]),

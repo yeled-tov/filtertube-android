@@ -3,10 +3,12 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../config.dart';
 import '../data/auth.dart';
+import '../data/billing.dart';
 import '../data/cloud.dart';
 import '../data/library_store.dart';
 import '../data/settings_store.dart';
 import '../theme.dart';
+import 'premium_screen.dart';
 import 'widgets/common.dart';
 
 /// חשבון FilterTube — הרשמה, כניסה, אימות מייל וסנכרון ענן.
@@ -67,11 +69,27 @@ class _AccountScreenState extends State<AccountScreen> {
     _report(result);
     if (result.ok && appAuth.ready) {
       await appSettings.setCloudAccount(appAuth.uid, appAuth.email);
-      await _sync();
+      // סנכרון אוטומטי רק למי שהוא פתוח בפניו; בלי זה כל כניסה הייתה
+      // פותחת חלון מכירה, וזה בדיוק מה שהופך אפליקציה למעצבנת.
+      if (Cloud.syncAllowed) await _sync();
     }
   }
 
   Future<void> _sync() async {
+    // השער מוסבר ולא שקט: לחיצה שלא עושה כלום נראית כמו תקלה.
+    if (!Cloud.syncAllowed) {
+      await showPremiumGate(
+        context,
+        title: 'סנכרון ענן',
+        body: 'שמירת הספרייה בענן ושחזור שלה במכשיר אחר הם חלק מ-Premium. '
+            'כל השאר — הסינון, הספרייה וההעדפות — עובד כרגיל בלעדיו.',
+        onOpenPremium: () => Navigator.push(
+          context,
+          MaterialPageRoute<void>(builder: (_) => const PremiumScreen()),
+        ),
+      );
+      return;
+    }
     setState(() {
       _busy = true;
       _status = 'מסנכרן…';
@@ -92,7 +110,7 @@ class _AccountScreenState extends State<AccountScreen> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: appAuth,
+      listenable: Listenable.merge([appAuth, appBilling]),
       builder: (context, _) => Scaffold(
         backgroundColor: AppTheme.bg,
         appBar: const DetailTopBar('חשבון וסנכרון ענן'),
@@ -150,8 +168,13 @@ class _AccountScreenState extends State<AccountScreen> {
               backgroundColor: AppTheme.accent,
               minimumSize: const Size.fromHeight(46)),
           onPressed: _busy ? null : _sync,
-          icon: const Icon(Icons.sync, size: 18),
-          label: Text(_busy ? 'מסנכרן…' : 'סנכרן עכשיו'),
+          icon: Icon(appBilling.premiumActive ? Icons.sync : Icons.lock_outline,
+              size: 18),
+          label: Text(_busy
+              ? 'מסנכרן…'
+              : (appBilling.premiumActive
+                  ? 'סנכרן עכשיו'
+                  : 'סנכרן עכשיו (Premium)')),
         ),
         const SizedBox(height: 10),
         OutlinedButton.icon(

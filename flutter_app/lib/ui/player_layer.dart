@@ -3,6 +3,7 @@ import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 import '../data/playback.dart';
 import 'player_view.dart';
+import 'shorts_player_view.dart';
 import 'widgets/mini_player.dart';
 
 /// שכבת הנגן — יושבת **מעל כל הניווט** של האפליקציה.
@@ -78,8 +79,11 @@ class _PlayerLayerState extends State<PlayerLayer> with WidgetsBindingObserver {
         final safeBottom = media.padding.bottom;
         final expanded = playback.expanded && playback.isActive;
 
+        // Shorts נפרשים על כל המסך ביחס 9:16; כל השאר נשאר 16:9.
+        final shorts = expanded && playback.shortsMode;
         final playerWidth = expanded ? width : PlayerLayer.miniThumbWidth;
-        final playerHeight = playerWidth * 9 / 16;
+        final playerHeight =
+            shorts ? media.size.height : playerWidth * 9 / 16;
         // הממשק כולו מימין לשמאל, ולכן החלון הקטן יושב בצד ימין של סרגל
         // המיני-נגן. מחושב כ-left ולא כ-right כי AnimatedPositioned מנפיש
         // מאפיין אחד בין שני המצבים, ובמצב הפרוש הנגן ממלא את כל הרוחב.
@@ -91,12 +95,14 @@ class _PlayerLayerState extends State<PlayerLayer> with WidgetsBindingObserver {
                 PlayerLayer.miniThumbWidth;
         final miniBottom =
             PlayerLayer.navHeight + PlayerLayer.navMargin + safeBottom + 4;
-        final playerTop = expanded
-            ? safeTop + 48
-            : media.size.height -
-                miniBottom -
-                PlayerLayer.miniHeight +
-                (PlayerLayer.miniHeight - playerHeight) / 2;
+        final playerTop = shorts
+            ? 0.0
+            : expanded
+                ? safeTop + 48
+                : media.size.height -
+                    miniBottom -
+                    PlayerLayer.miniHeight +
+                    (PlayerLayer.miniHeight - playerHeight) / 2;
 
         // BackButtonListener ולא PopScope: השכבה הזו יושבת *מעל* ה-Navigator,
         // ו-PopScope שם היה מתחרה על אותה לחיצה עם המסכים שמתחתיו.
@@ -123,7 +129,9 @@ class _PlayerLayerState extends State<PlayerLayer> with WidgetsBindingObserver {
                     child: AnimatedOpacity(
                       duration: const Duration(milliseconds: 200),
                       opacity: expanded ? 1 : 0,
-                      child: PlayerView(videoSlotHeight: width * 9 / 16),
+                      child: playback.shortsMode
+                          ? const ShortsPlayerView()
+                          : PlayerView(videoSlotHeight: width * 9 / 16),
                     ),
                   ),
                 ),
@@ -153,8 +161,13 @@ class _PlayerLayerState extends State<PlayerLayer> with WidgetsBindingObserver {
                 top: playerTop,
                 width: playerWidth,
                 height: playerHeight,
+                // ── הנגן אינו מקבל מגע, אף פעם ──────────────────────
+                // כל הבקרים הם שלנו (showControls: false), ולכן אין למשתמש
+                // שום סיבה לגעת ב-WebView עצמו. בלי ה-IgnorePointer הזה
+                // הוא בולע כל מחווה שעוברת מעליו: ההחלקה להחלפת סרטון,
+                // ההחלקה למטה לכיווץ, הדאבל-טאפ לדילוג, וההחלקה האנכית
+                // של ה-Shorts — כולן היו מוגדרות ופשוט לא עובדות.
                 child: IgnorePointer(
-                  ignoring: !playback.isActive,
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 180),
                     opacity: playback.isActive ? 1 : 0,
@@ -162,7 +175,7 @@ class _PlayerLayerState extends State<PlayerLayer> with WidgetsBindingObserver {
                       borderRadius: BorderRadius.circular(expanded ? 0 : 8),
                       child: YoutubePlayer(
                         controller: _controller,
-                        aspectRatio: 16 / 9,
+                        aspectRatio: shorts ? 9 / 16 : 16 / 9,
                         keepAlive: true,
                         enableFullScreenOnVerticalDrag: false,
                         backgroundColor: Colors.black,

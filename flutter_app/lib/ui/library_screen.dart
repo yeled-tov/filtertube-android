@@ -3,11 +3,14 @@ import 'package:flutter/material.dart';
 
 import '../data/app_state.dart';
 import '../data/auth.dart';
+import '../config.dart';
 import '../data/library_store.dart';
 import '../models/video.dart';
 import '../theme.dart';
 import 'account_screen.dart';
 import 'channels_browse_screen.dart';
+import 'premium_screen.dart';
+import 'widgets/common.dart';
 import 'collection_screen.dart';
 import 'my_requests_screen.dart';
 import 'playlist_screen.dart';
@@ -257,6 +260,20 @@ class LibraryScreen extends StatelessWidget {
   }
 
   void _createPlaylist(BuildContext context) {
+    if (!appLibrary.canCreatePlaylist) {
+      showPremiumGate(
+        context,
+        title: 'אלבומים ללא הגבלה',
+        body: 'בחינם אפשר ליצור עד ${AppConfig.freePlaylistLimit} אלבומים, '
+            'וכבר יצרת את כולם. עם Premium אין תקרה — וגם הספרייה כולה '
+            'נשמרת בענן ומשוחזרת בכל מכשיר.',
+        onOpenPremium: () => Navigator.push(
+          context,
+          MaterialPageRoute<void>(builder: (_) => const PremiumScreen()),
+        ),
+      );
+      return;
+    }
     final controller = TextEditingController();
     showDialog<void>(
       context: context,

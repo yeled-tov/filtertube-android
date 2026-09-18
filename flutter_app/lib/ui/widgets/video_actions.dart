@@ -3,10 +3,12 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../data/auth.dart';
 import '../../data/cloud.dart';
+import '../../config.dart';
 import '../../data/library_store.dart';
 import '../../data/playback.dart';
 import '../../models/video.dart';
 import '../../theme.dart';
+import '../premium_screen.dart';
 import 'common.dart';
 
 /// תפריט הפעולות של סרטון — אותן פעולות כמו באפליקציה הראשית, בלי
@@ -206,6 +208,23 @@ void showPlaylistPicker(BuildContext context, Video video) {
             onPressed: () async {
               final name = controller.text.trim();
               if (name.isEmpty) return;
+              if (!appLibrary.canCreatePlaylist) {
+                Navigator.pop(dialogContext);
+                if (!context.mounted) return;
+                showPremiumGate(
+                  context,
+                  title: 'אלבומים ללא הגבלה',
+                  body: 'בחינם אפשר ליצור עד '
+                      '${AppConfig.freePlaylistLimit} אלבומים. '
+                      'אפשר להוסיף לאלבום קיים, או לפתוח Premium.',
+                  onOpenPremium: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                        builder: (_) => const PremiumScreen()),
+                  ),
+                );
+                return;
+              }
               await appLibrary.addToPlaylist(name, video);
               if (!dialogContext.mounted) return;
               Navigator.pop(dialogContext);

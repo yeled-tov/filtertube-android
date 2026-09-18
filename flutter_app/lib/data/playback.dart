@@ -43,6 +43,11 @@ class PlaybackController extends ChangeNotifier {
   /// FilterMusic פתוח — משנה איזה מסך נגן נפתח ומכריח אודיו.
   bool musicMode = false;
 
+  /// ניגון Shorts — מסך מלא אנכי (9:16) עם החלקה למעלה לסרטון הבא, במקום
+  /// הנגן הרגיל. הדגל יושב כאן ולא במסך כי **גיאומטריית הנגן עצמו**
+  /// משתנה, והיא נקבעת בשכבה שמחזיקה אותו.
+  bool shortsMode = false;
+
   /// הנגן פרוש על כל המסך (להבדיל מהמיני-נגן).
   bool expanded = false;
 
@@ -125,9 +130,11 @@ class PlaybackController extends ChangeNotifier {
     Video video, {
     List<Video>? queue,
     bool music = false,
+    bool shorts = false,
     bool open = true,
   }) async {
     musicMode = music;
+    shortsMode = shorts;
     _current = video;
     stationMode = queue != null && queue.isNotEmpty;
     _queue
@@ -159,6 +166,29 @@ class PlaybackController extends ChangeNotifier {
         queue: items.sublist(start + 1).take(_maxQueue).toList(), music: music);
   }
 
+  /// ניגון Shorts. הרשימה נשמרת במלואה ולא נחתכת כמו תור רגיל: ההחלקה
+  /// האנכית היא הניווט, ורשימה קצוצה הייתה נגמרת באמצע הגלילה.
+  final List<Video> shortsList = [];
+
+  Future<void> playShorts(List<Video> items, int index) async {
+    if (items.isEmpty) return;
+    shortsList
+      ..clear()
+      ..addAll(items);
+    final start = index.clamp(0, items.length - 1);
+    await play(items[start],
+        queue: items.sublist(start + 1).take(_maxQueue).toList(), shorts: true);
+  }
+
+  /// מעבר לסרטון לפי מיקומו ברשימת ה-Shorts — נקרא מהחלקה אנכית.
+  Future<void> playShortAt(int index) async {
+    if (index < 0 || index >= shortsList.length) return;
+    await play(shortsList[index],
+        queue: shortsList.sublist(index + 1).take(_maxQueue).toList(),
+        shorts: true,
+        open: false);
+  }
+
   void _applyAudioOnly(Video video) {
     final category = channels?.categoryOf(video.channelId);
     _audioOnly = musicMode ||
@@ -174,7 +204,11 @@ class PlaybackController extends ChangeNotifier {
   Future<void> _advance() async {
     if (_queue.isNotEmpty) {
       final next = _queue.first;
-      await play(next, queue: _queue.sublist(1), music: musicMode, open: false);
+      await play(next,
+          queue: _queue.sublist(1),
+          music: musicMode,
+          shorts: shortsMode,
+          open: false);
       return;
     }
     // כשהתור נגמר, ממשיכים באותו סגנון במקום לעצור.
@@ -191,7 +225,11 @@ class PlaybackController extends ChangeNotifier {
   Future<void> next() async {
     if (_queue.isEmpty) return;
     final target = _queue.first;
-    await play(target, queue: _queue.sublist(1), music: musicMode, open: false);
+    await play(target,
+        queue: _queue.sublist(1),
+        music: musicMode,
+        shorts: shortsMode,
+        open: false);
   }
 
   /// "הקודם" מתחיל את השיר מחדש אם עברו יותר מ-4 שניות — כמו בכל נגן.
@@ -283,6 +321,8 @@ class PlaybackController extends ChangeNotifier {
     await _controller?.stopVideo();
     _current = null;
     _queue.clear();
+    shortsList.clear();
+    shortsMode = false;
     expanded = false;
     isPlaying = false;
     notifyListeners();

@@ -22,6 +22,7 @@ dependencies:
   qr_flutter: ^4.1.0
   flutter_local_notifications: ^19.0.0
   connectivity_plus: ^7.0.0
+  in_app_purchase: ^3.2.0
 
 dev_dependencies:
   flutter_lints: ^4.0.0

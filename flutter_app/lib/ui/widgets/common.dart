@@ -368,3 +368,38 @@ void showToast(BuildContext context, String message) {
       duration: const Duration(seconds: 2),
     ));
 }
+
+/// חלון "זה שייך ל-Premium". שער שחוסם בשקט הוא באג מבחינת המשתמש: הוא
+/// לוחץ, כלום לא קורה, והוא מסיק שהאפליקציה שבורה. ההסבר כאן הוא מה
+/// שהופך את החסימה למידע.
+Future<void> showPremiumGate(
+  BuildContext context, {
+  required String title,
+  required String body,
+  required VoidCallback onOpenPremium,
+}) {
+  return showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      icon: const Icon(Icons.workspace_premium, color: AppTheme.tintGold),
+      title: Text(title),
+      content: Text(body,
+          style: TextStyle(
+              color: AppTheme.subtext2, fontSize: 13, height: 1.5)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: Text('לא עכשיו', style: TextStyle(color: AppTheme.subtext)),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppTheme.accent),
+          onPressed: () {
+            Navigator.pop(dialogContext);
+            onOpenPremium();
+          },
+          child: const Text('מה זה Premium'),
+        ),
+      ],
+    ),
+  );
+}

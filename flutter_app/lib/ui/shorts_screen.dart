@@ -93,7 +93,7 @@ class _ShortsScreenState extends State<ShortsScreen> {
   Widget _tile(List<Video> shorts, int index) {
     final video = shorts[index];
     return GestureDetector(
-      onTap: () => playback.playFromList(shorts, index),
+      onTap: () => playback.playShorts(shorts, index),
       onLongPress: () => showVideoActions(context, video),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),

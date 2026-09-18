@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config.dart';
 import '../models/video.dart';
+import 'billing.dart';
 
 final appLibrary = LibraryStore();
 
@@ -189,9 +191,14 @@ class LibraryStore extends ChangeNotifier {
 
   // ── אלבומים ────────────────────────────────────────────────────────────
 
+  /// האם אפשר ליצור עוד אלבום ברמה הנוכחית (חינם/Premium).
+  bool get canCreatePlaylist =>
+      appBilling.premiumActive || _playlists.length < AppConfig.freePlaylistLimit;
+
   Future<void> createPlaylist(String name) async {
     final clean = name.trim();
     if (clean.isEmpty || _playlists.any((p) => p.name == clean)) return;
+    if (!canCreatePlaylist) return;
     _playlists = [..._playlists, Playlist(name: clean, videos: const [])];
     await _write(_kPlaylists, _playlists);
     notifyListeners();
@@ -207,6 +214,7 @@ class LibraryStore extends ChangeNotifier {
     final clean = name.trim();
     final index = _playlists.indexWhere((p) => p.name == clean);
     if (index == -1) {
+      if (!canCreatePlaylist) return;
       _playlists = [
         ..._playlists,
         Playlist(name: clean, videos: [video])

@@ -63,6 +63,33 @@ class AppConfig {
       'https://play.google.com/store/apps/details?id=com.filtertube.filtertube';
   static const String appleListingUrl = 'https://apps.apple.com/app/filtertube';
 
+  // ── מנוי Premium ───────────────────────────────────────────────────────
+  //
+  // ## למה דרך חיוב החנות ולא Stripe
+  // שתי החנויות מחייבות שמנוי לתוכן דיגיטלי בתוך האפליקציה ייגבה דרך
+  // מערכת החיוב שלהן. מסך שמפנה לתשלום חיצוני — קישור, מייל או Stripe —
+  // הוא עילת דחייה מפורשת, ולכן הגרסה הזו משתמשת ב-Google Play Billing
+  // וב-StoreKit דרך התוסף הרשמי in_app_purchase.
+  //
+  // המזהים חייבים להיות זהים למה שמוגדר ב-Play Console וב-App Store
+  // Connect, אחרת המסך פשוט לא ימצא מוצרים להציג.
+  static const String premiumMonthlyId = 'filtertube_premium_monthly';
+  static const String premiumYearlyId = 'filtertube_premium_yearly';
+
+  static const Set<String> premiumProductIds = {
+    premiumMonthlyId,
+    premiumYearlyId,
+  };
+
+  /// כמה אלבומים אפשר ליצור בלי מנוי. מעבר לזה נדרש Premium.
+  static const int freePlaylistLimit = 3;
+
+  /// ניהול או ביטול המנוי — נעשה במסך המנויים של החנות, לא באפליקציה.
+  static const String manageSubscriptionAndroid =
+      'https://play.google.com/store/account/subscriptions';
+  static const String manageSubscriptionApple =
+      'https://apps.apple.com/account/subscriptions';
+
   // ── קישורים שהחנויות דורשות שיהיו נגישים מתוך האפליקציה ───────────────
   static const String youtubeTermsUrl = 'https://www.youtube.com/t/terms';
   static const String googlePrivacyUrl = 'https://policies.google.com/privacy';

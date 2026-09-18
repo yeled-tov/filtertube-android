@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'data/app_state.dart';
 import 'data/auth.dart';
+import 'data/billing.dart';
 import 'data/crash_log.dart';
 import 'data/display.dart';
 import 'data/library_store.dart';
@@ -29,6 +30,7 @@ void main() {
     await appSettings.load();
     await appLibrary.load();
     await appAuth.load();
+    await appBilling.load();
     await AppNotifications.init();
     runApp(const FilterTubeApp());
   });

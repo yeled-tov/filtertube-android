@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../config.dart';
 import '../models/video.dart';
 import 'auth.dart';
+import 'billing.dart';
 import 'library_store.dart';
 import 'settings_store.dart';
 
@@ -338,8 +339,14 @@ class Cloud {
     return profile != null || state != null;
   }
 
+  /// האם הסנכרון פתוח למשתמש הזה. הסנכרון הוא מה ש-Premium מוכר, ולכן
+  /// השער יושב כאן — בנקודה אחת שכל מסלולי הסנכרון עוברים דרכה — ולא
+  /// בכפתור כזה או אחר שאפשר לשכוח.
+  static bool get syncAllowed => appAuth.ready && appBilling.premiumActive;
+
   /// סנכרון דו-כיווני: קודם מושכים (כדי לא לדרוס מכשיר אחר), ואז דוחפים.
   static Future<bool> synchronize({String appVersion = ''}) async {
+    if (!syncAllowed) return false;
     final down = await download();
     final up = await upload(appVersion: appVersion);
     return down || up;
