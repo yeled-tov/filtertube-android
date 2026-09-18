@@ -54,12 +54,22 @@ class Billing extends ChangeNotifier {
     return null;
   }
 
+  /// נקרא בעלייה. קורא את המצב שנשמר ומחזיר **מיד** — החיבור לחנות
+  /// נמשך ברקע.
+  ///
+  /// isAvailable() הוא קריאה לשירותי החנות, והיא יכולה לקחת שניות במכשיר
+  /// בלי רשת או בלי Play Services. המתנה לה לפני המסך הראשון הייתה הופכת
+  /// את זמן הפתיחה של האפליקציה לתלוי בחנות התשלומים, וזה מחיר שאין שום
+  /// סיבה לשלם עליו: רוב המשתמשים לא נוגעים במנוי בכלל.
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     _active = prefs.getBool(_kActive) ?? false;
     _productId = prefs.getString(_kProduct) ?? '';
     notifyListeners();
+    unawaited(_connect());
+  }
 
+  Future<void> _connect() async {
     try {
       _available = await _iap.isAvailable();
     } catch (_) {
