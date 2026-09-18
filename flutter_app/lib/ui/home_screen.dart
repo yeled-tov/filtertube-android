@@ -10,6 +10,7 @@ import '../data/settings_store.dart';
 import '../models/channel.dart';
 import '../models/video.dart';
 import '../theme.dart';
+import 'artist_picker_dialog.dart';
 import 'live_screen.dart';
 import 'player_layer.dart';
 import 'shell.dart';
@@ -341,6 +342,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _startRadio() async {
+    // התקנה טרייה: אין ממה להסיק טעם, ושאלה אחת עדיפה על "רדיו אישי"
+    // שהוא בעצם הפיד הכללי בסדר אחר.
+    if (appState.stations.needsArtistPicker() && !appSettings.artistPickerSeen) {
+      final picked = await showArtistPicker(context);
+      if (!picked) return;
+    }
+    if (!mounted) return;
     setState(() => _radioStarting = true);
     try {
       final station = await appState.stations.personalStation(

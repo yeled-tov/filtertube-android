@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'data/app_state.dart';
 import 'data/auth.dart';
+import 'data/crash_log.dart';
 import 'data/display.dart';
 import 'data/library_store.dart';
 import 'data/notifications.dart';
@@ -12,6 +13,7 @@ import 'data/playback.dart';
 import 'data/settings_store.dart';
 import 'theme.dart';
 import 'ui/channel_request_dialog.dart';
+import 'ui/crash_dialog.dart';
 import 'ui/onboarding_screen.dart';
 import 'ui/player_layer.dart';
 import 'ui/shell.dart';
@@ -19,13 +21,17 @@ import 'ui/widgets/common.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await appSettings.load();
-  await appLibrary.load();
-  await appAuth.load();
-  await AppNotifications.init();
-  runApp(const FilterTubeApp());
+void main() {
+  // כל ההרצה עטופה בתופס שגיאות: קריסה שאיש לא רואה היא באג שאיש לא
+  // מדווח עליו, והדוח נשמר במכשיר ומוצג בהפעלה הבאה.
+  CrashLog.install(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    await appSettings.load();
+    await appLibrary.load();
+    await appAuth.load();
+    await AppNotifications.init();
+    runApp(const FilterTubeApp());
+  });
 }
 
 class FilterTubeApp extends StatefulWidget {
@@ -69,7 +75,14 @@ class _FilterTubeAppState extends State<FilterTubeApp> {
       // רמת הסינון והמגדר שנבחרים בה הם מה שקובע אילו ערוצים בכלל נמשכים.
       await appState.channels.load();
     }
-    if (mounted) setState(() => _booted = true);
+    if (!mounted) return;
+    setState(() => _booted = true);
+    // אחרי שהמסך הראשון נבנה: לפני כן ל-navigatorKey עוד אין הקשר, והדוח
+    // פשוט לא היה מוצג.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = navigatorKey.currentContext;
+      if (context != null) showCrashDialogIfNeeded(context);
+    });
   }
 
   Future<void> _setupDeepLinks() async {

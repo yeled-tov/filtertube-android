@@ -21,14 +21,16 @@ class ShortsScreen extends StatefulWidget {
 }
 
 class _ShortsScreenState extends State<ShortsScreen> {
-  bool _requested = false;
+  @override
+  void initState() {
+    super.initState();
+    // הטעינה מתחילה אחרי הפריים הראשון: היא מרעננת את appState, וקריאה
+    // לכך מתוך build הייתה מזמינה בנייה מחדש בזמן בנייה.
+    WidgetsBinding.instance.addPostFrameCallback((_) => appState.loadShorts());
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (!_requested) {
-      _requested = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) => appState.loadShorts());
-    }
     return ListenableBuilder(
       listenable: appState,
       builder: (context, _) {
