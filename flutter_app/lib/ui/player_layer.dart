@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 import '../data/playback.dart';
+import '../data/settings_store.dart';
 import 'player_view.dart';
 import 'shorts_player_view.dart';
+import 'widgets/player_controls.dart';
 import 'widgets/mini_player.dart';
 
 /// שכבת הנגן — יושבת **מעל כל הניווט** של האפליקציה.
@@ -184,6 +186,22 @@ class _PlayerLayerState extends State<PlayerLayer> with WidgetsBindingObserver {
                   ),
                 ),
               ),
+
+              // ── סגנון "בקרים על הסרטון" ──────────────────────────────
+              // הם חייבים להיות כאן ולא ב-PlayerView: ה-WebView מרחף מעל
+              // המסך, וכל מה שמצויר מתחתיו פשוט נעלם מאחוריו. זה גם מה
+              // שהפך את ההגדרה "עיצוב הנגן" למתג שלא שינה כלום.
+              if (expanded && !shorts && appSettings.playerStyle == 2)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: playerTop,
+                  height: playerHeight,
+                  child: const Align(
+                    alignment: Alignment.bottomCenter,
+                    child: PlayerControls(onVideo: true),
+                  ),
+                ),
 
               // במצב אודיו בלבד הווידאו לא מוצג — אבל הוא חייב להישאר
               // מחובר כדי שהקול ימשיך. הכיסוי נמצא *מעל* הנגן, ולכן

@@ -373,7 +373,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return [
         _sectionTitle('עיצוב הנגן'),
         styleRow(1, 'מתנגן עכשיו', 'וידאו למעלה ובקרים גדולים מתחת'),
-        styleRow(2, 'בקרים צמודים', 'בקרים מיד מתחת לווידאו, ״הבא בתור״ למטה'),
+        styleRow(2, 'בקרים על הסרטון', 'הבקרים מרחפים על הווידאו, והרשימה עולה'),
         Divider(height: 24, color: AppTheme.divider),
         _sectionTitle('איכות צפייה'),
         const SizedBox(height: 8),

@@ -1,18 +1,15 @@
-import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 import '../data/app_state.dart';
-import '../data/library_store.dart';
 import '../data/playback.dart';
 import '../data/settings_store.dart';
 import '../models/video.dart';
 import '../theme.dart';
 import 'widgets/common.dart';
-import 'widgets/seek_bar.dart';
+import 'widgets/player_controls.dart';
 import 'widgets/video_actions.dart';
 import 'widgets/video_row.dart';
 
@@ -89,43 +86,13 @@ class PlayerView extends StatefulWidget {
 }
 
 class _PlayerViewState extends State<PlayerView> {
-  Duration _position = Duration.zero;
-  StreamSubscription<YoutubeVideoState>? _sub;
-
-  @override
-  void initState() {
-    super.initState();
-    _listen();
-  }
-
-  void _listen() {
-    _sub?.cancel();
-    final controller = playback.controller;
-    if (controller == null) return;
-    _sub = controller.videoStateStream.listen((state) {
-      if (!mounted) return;
-      setState(() => _position = state.position);
-    });
-  }
-
-  @override
-  void dispose() {
-    _sub?.cancel();
-    super.dispose();
-  }
-
-  static String _fmt(Duration d) {
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return d.inHours > 0 ? '${d.inHours}:$m:$s' : '$m:$s';
-  }
-
   @override
   Widget build(BuildContext context) {
     final video = playback.current;
     if (video == null) return const SizedBox.shrink();
     final safeTop = MediaQuery.of(context).padding.top;
-    // סגנון 2 = בקרים על הווידאו; סגנון 1 = "מתנגן עכשיו" עם בקרים מתחת.
+    // סגנון 2 מציג את אותם בקרים *מעל* הווידאו. הם מצוירים ב-PlayerLayer,
+    // כי שם הם יכולים לשבת מעל ה-WebView; כאן רק לא מציירים אותם פעמיים.
     final overlayControls = appSettings.playerStyle == 2;
 
     return Material(
@@ -165,9 +132,7 @@ class _PlayerViewState extends State<PlayerView> {
               child: playback.hasError ? _errorOverlay(video) : null,
             ),
           ),
-          if (overlayControls) const SizedBox(height: 4),
-          _progress(),
-          _controls(video),
+          if (!overlayControls) const PlayerControls(),
           Divider(height: 1, color: AppTheme.divider),
           Expanded(child: _details(video)),
         ],
@@ -198,93 +163,6 @@ class _PlayerViewState extends State<PlayerView> {
           icon: Icon(Icons.more_vert, color: AppTheme.text),
         ),
       ],
-    );
-  }
-
-  Widget _progress() {
-    final total = playback.duration.inMilliseconds == 0
-        ? 1
-        : playback.duration.inMilliseconds;
-    final value = (_position.inMilliseconds / total).clamp(0.0, 1.0);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(
-        children: [
-          Text(_fmt(_position),
-              style: TextStyle(color: AppTheme.subtext, fontSize: 11)),
-          Expanded(
-            child: SeekBar(
-              value: value,
-              shape: appSettings.seekBarShape,
-              thickness: appSettings.seekBarThickness.toDouble(),
-              glow: appSettings.seekBarGlow,
-              onChanged: (v) => setState(() =>
-                  _position = Duration(milliseconds: (v * total).round())),
-              onChangeEnd: (v) => playback.seekTo(v * total / 1000),
-            ),
-          ),
-          Text(_fmt(playback.duration),
-              style: TextStyle(color: AppTheme.subtext, fontSize: 11)),
-        ],
-      ),
-    );
-  }
-
-  Widget _controls(Video video) {
-    final liked = appLibrary.isLiked(video.id);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          IconButton(
-            tooltip: '⏪ 10 ש׳',
-            onPressed: () => playback.seekRelative(-10),
-            icon: Icon(Icons.replay_10_rounded, color: AppTheme.text, size: 26),
-          ),
-          IconButton(
-            tooltip: 'הקודם',
-            onPressed: playback.previous,
-            icon: Icon(Icons.skip_previous_rounded,
-                color: AppTheme.text, size: 28),
-          ),
-          Container(
-            decoration:
-                BoxDecoration(gradient: AppTheme.accentGradient, shape: BoxShape.circle),
-            child: IconButton(
-              tooltip: playback.isPlaying ? 'השהה' : 'נגן',
-              onPressed: playback.togglePlay,
-              icon: Icon(
-                  playback.isPlaying
-                      ? Icons.pause_rounded
-                      : Icons.play_arrow_rounded,
-                  color: Colors.white,
-                  size: 32),
-            ),
-          ),
-          IconButton(
-            tooltip: 'הבא',
-            onPressed: playback.queue.isEmpty ? null : playback.next,
-            icon: Icon(Icons.skip_next_rounded,
-                color: playback.queue.isEmpty ? AppTheme.divider : AppTheme.text,
-                size: 28),
-          ),
-          IconButton(
-            tooltip: '10 ש׳ ⏩',
-            onPressed: () => playback.seekRelative(10),
-            icon: Icon(Icons.forward_10_rounded, color: AppTheme.text, size: 26),
-          ),
-          IconButton(
-            tooltip: 'אהבתי',
-            onPressed: () async {
-              await appLibrary.toggleLike(video);
-              if (mounted) setState(() {});
-            },
-            icon: Icon(liked ? Icons.favorite : Icons.favorite_border,
-                color: liked ? AppTheme.accent : AppTheme.text, size: 24),
-          ),
-        ],
-      ),
     );
   }
 
