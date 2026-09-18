@@ -158,6 +158,16 @@ object AccountSync {
      * כל פלייליסט נשמר בפני עצמו, מיד אחרי שנמשך: אם הבקשה השלישית תיפול,
      * שני הראשונים כבר בספרייה. שמירה מרוכזת בסוף הייתה הופכת תקלה אחת
      * לאובדן של הכל.
+     *
+     * ## למה נשמר גם מה שלא אושר
+     * בהתחלה סוננו כאן השירים הלא-מאושרים והפלייליסט נשמר חתוך. התוצאה
+     * הייתה אלבום שמספר שקר: 100 שירים ביוטיוב, 38 באפליקציה, ואפס רמז
+     * לאן נעלמו ה-62 — בדיוק אותה תקלה שכבר תוקנה ב"אהבתי" ובמנויים.
+     *
+     * עכשיו נשמר הכל, והמסך מאפיר את מה שלא אושר. אפור אינו דלת: הלחיצה
+     * עליו מגיעה לטופס הבקשה ולא לנגן, ו"נגן הכל" מדלג עליו. כלומר
+     * הרשימה הלבנה נאכפת בדיוק כמו קודם — רק שעכשיו אפשר גם לבקש להוסיף
+     * את הערוץ במקום לתהות לאן השיר נעלם.
      */
     private suspend fun importPlaylists(
         accountStore: AccountStore,
@@ -168,23 +178,24 @@ object AccountSync {
         Diagnostics.log("SYNC פלייליסטים: ${lists.size} נמצאו במיוזיק")
         var saved = 0
         lists.forEach { list ->
-            val allowed = runCatching {
-                val items = InnerTube.playlistItems(accountStore.cookies, list.id)
-                val kept = InnerTube.fillOwners(items) { !approved.approves(it) }
-                    .filter { approved.approves(it) }
+            val songs = runCatching {
+                // fillOwners משלים את הערוץ המעלה לכל מה שלא נמצא ברשימה.
+                // בלעדיו שיר מערוץ Topic של אמן מאושר היה נראה לא מאושר.
+                val items = InnerTube.fillOwners(
+                    InnerTube.playlistItems(accountStore.cookies, list.id),
+                ) { !approved.approves(it) }
                 Diagnostics.log(
-                    "SYNC פלייליסט \"${list.title}\": ${items.size} שירים · ${kept.size} מאושרים",
+                    "SYNC פלייליסט \"${list.title}\": ${items.size} שירים · " +
+                        "${items.count { approved.approves(it) }} מאושרים",
                 )
-                kept
+                items
             }.getOrElse {
                 Diagnostics.log("SYNC פלייליסט \"${list.title}\": נכשל — ${it.message}")
                 emptyList()
             }
-            // פלייליסט שלא נשאר בו שום שיר מאושר לא נוצר בכלל: אלבום ריק
-            // במסך הוא רק שאלה בלי תשובה.
-            if (allowed.isEmpty()) return@forEach
+            if (songs.isEmpty()) return@forEach
             store.createPlaylist(list.title)
-            allowed.forEach { store.addToPlaylist(list.title, it) }
+            songs.forEach { store.addToPlaylist(list.title, it) }
             saved += 1
         }
         Diagnostics.log("SYNC פלייליסטים: $saved נשמרו בספרייה")

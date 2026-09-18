@@ -287,18 +287,53 @@ class PlaybackService : MediaSessionService() {
         // אבחון והתאוששות אוטומטית (Auto Recovery) בשגיאות ניגון/רשת
         player.addListener(object : androidx.media3.common.Player.Listener {
             private var stallStart = 0L
+            private var stallWatchdog: Runnable? = null
+
+            private fun cancelWatchdog() {
+                stallWatchdog?.let(crossfadeHandler::removeCallbacks)
+                stallWatchdog = null
+            }
+
             override fun onPlaybackStateChanged(playbackState: Int) {
                 when (playbackState) {
                     androidx.media3.common.Player.STATE_BUFFERING ->
                         if (player.currentPosition > 1500 && player.playWhenReady && stallStart == 0L) {
                             stallStart = android.os.SystemClock.elapsedRealtime()
+                            // ── שומר זמן, ולא רק מדידה בדיעבד ─────────────
+                            // קודם נמדדה כאן העצירה *אחרי* שנגמרה, ולכן
+                            // היומן ידע לספר על 39 שניות שקט אבל שום דבר
+                            // לא ניסה לקצר אותן. אחרי STALL_LIMIT_MS
+                            // מחלצים כתובת חדשה במקום להמשיך לחכות.
+                            val watchdog = Runnable {
+                                if (player.playbackState ==
+                                    androidx.media3.common.Player.STATE_BUFFERING &&
+                                    player.playWhenReady
+                                ) {
+                                    PlayerRecoveryHandler.handleStall(
+                                        context = this@PlaybackService,
+                                        player = player,
+                                        stalledMs = android.os.SystemClock.elapsedRealtime() - stallStart,
+                                        scope = serviceScope,
+                                    )
+                                }
+                                stallWatchdog = null
+                            }
+                            stallWatchdog = watchdog
+                            crossfadeHandler.postDelayed(watchdog, STALL_LIMIT_MS)
                         }
-                    androidx.media3.common.Player.STATE_READY ->
+                    androidx.media3.common.Player.STATE_READY -> {
+                        cancelWatchdog()
                         if (stallStart > 0L) {
                             val ms = android.os.SystemClock.elapsedRealtime() - stallStart
                             com.filtertube.app.data.Diagnostics.log("⚠ עצירה ${ms}ms בשנייה ${player.currentPosition / 1000}")
                             stallStart = 0L
                         }
+                    }
+                    androidx.media3.common.Player.STATE_IDLE,
+                    androidx.media3.common.Player.STATE_ENDED -> {
+                        cancelWatchdog()
+                        stallStart = 0L
+                    }
                 }
             }
 
@@ -346,6 +381,17 @@ class PlaybackService : MediaSessionService() {
         if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
             stopSelf()
         }
+    }
+
+    private companion object {
+        /**
+         * כמה זמן מחכים לנגן לפני שמתערבים.
+         *
+         * שמונה שניות הן הרבה יותר ממה שלוקח חיבור בריא להתאושש, והרבה
+         * פחות מהעצירות שנראו ביומן. הסף גם ארוך מספיק כדי לא להפריע
+         * לניסיון החוזר של שכבת הרשת, שבדרך כלל מסתיים בתוך שנייה.
+         */
+        const val STALL_LIMIT_MS = 8_000L
     }
 
     override fun onDestroy() {

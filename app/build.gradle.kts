@@ -152,6 +152,14 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:1.11.0")
     implementation("androidx.media3:media3-ui:1.11.0")
     implementation("androidx.media3:media3-session:1.11.0")
+    // ── למה מקור הנתונים של הנגן עובר ל-OkHttp ────────────────────────────
+    // ברירת המחדל של media3 היא HttpURLConnection, שלא יודעת שחיבור
+    // שנשמר במאגר מת. כשגוגל סוגרת חיבור סרק באמצע שיר, הקריאה הבאה
+    // תוקעת שמונה שניות עד ל-timeout, וכל ניסיון חוזר מתחיל את אותה
+    // המתנה מחדש — כך נוצרה עצירה של 39 שניות. OkHttp מזהה חיבור מת
+    // ופותח אחד חדש בעצמה (retryOnConnectionFailure), בלי שהנגן בכלל
+    // יידע, ומשתפת את מאגר החיבורים עם שאר האפליקציה.
+    implementation("androidx.media3:media3-datasource-okhttp:1.11.0")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
