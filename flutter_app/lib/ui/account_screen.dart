@@ -6,7 +6,6 @@ import '../data/auth.dart';
 import '../data/billing.dart';
 import '../data/cloud.dart';
 import '../data/library_store.dart';
-import '../data/settings_store.dart';
 import '../theme.dart';
 import 'premium_screen.dart';
 import 'widgets/common.dart';
@@ -68,7 +67,6 @@ class _AccountScreenState extends State<AccountScreen> {
     setState(() => _busy = false);
     _report(result);
     if (result.ok && appAuth.ready) {
-      await appSettings.setCloudAccount(appAuth.uid, appAuth.email);
       // סנכרון אוטומטי רק למי שהוא פתוח בפניו; בלי זה כל כניסה הייתה
       // פותחת חלון מכירה, וזה בדיוק מה שהופך אפליקציה למעצבנת.
       if (Cloud.syncAllowed) await _sync();
@@ -183,7 +181,6 @@ class _AccountScreenState extends State<AccountScreen> {
               ? null
               : () async {
                   await appAuth.signOut();
-                  await appSettings.setCloudAccount('', '');
                   if (mounted) setState(() => _status = 'התנתקת');
                 },
           icon: const Icon(Icons.logout, size: 18),

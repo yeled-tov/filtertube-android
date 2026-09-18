@@ -338,7 +338,6 @@ class PlaybackController extends ChangeNotifier {
   void setSleepTimer(int minutes) {
     _sleepTimer?.cancel();
     sleepMinutesLeft = minutes;
-    appSettings.setSleepTimerMinutes(minutes);
     if (minutes > 0) {
       _sleepTimer = Timer(Duration(minutes: minutes), () {
         _controller?.pauseVideo();

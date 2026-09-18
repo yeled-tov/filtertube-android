@@ -27,7 +27,6 @@ class SettingsStore extends ChangeNotifier {
   static const _kSpeed = 'playback_speed';
   static const _kAutoRadio = 'auto_radio_queue';
   static const _kNoDuplicates = 'prevent_queue_duplicates';
-  static const _kSleep = 'sleep_timer_minutes';
   static const _kMiniSwipe = 'mini_player_swipe';
   static const _kMiniRestart = 'mini_swipe_right_restarts';
   static const _kAudioOnly = 'audio_only_mode';
@@ -44,8 +43,6 @@ class SettingsStore extends ChangeNotifier {
   static const _kSeekThickness = 'seek_bar_thickness';
   static const _kSeekGlow = 'seek_bar_glow';
   static const _kHistory = 'search_history';
-  static const _kCloudEmail = 'cloud_email';
-  static const _kCloudUid = 'cloud_uid';
 
   late SharedPreferences _p;
   bool _loaded = false;
@@ -80,7 +77,6 @@ class SettingsStore extends ChangeNotifier {
   /// אחוזים: 100 = מהירות רגילה
   int playbackSpeed = 100;
 
-  int sleepTimerMinutes = 0;
   bool autoRadioQueue = true;
   bool preventQueueDuplicates = true;
 
@@ -105,9 +101,6 @@ class SettingsStore extends ChangeNotifier {
   Set<String> favoriteArtists = {};
   bool artistPickerSeen = false;
 
-  String cloudEmail = '';
-  String cloudUid = '';
-
   String _pwVerifier = '';
   String _pwSalt = '';
 
@@ -126,7 +119,6 @@ class SettingsStore extends ChangeNotifier {
     accent2Color = _p.getInt(_kAccent2) ?? 0xFFFF6A5C;
     playerStyle = _p.getInt(_kPlayerStyle) ?? 1;
     playbackSpeed = _p.getInt(_kSpeed) ?? 100;
-    sleepTimerMinutes = _p.getInt(_kSleep) ?? 0;
     autoRadioQueue = _p.getBool(_kAutoRadio) ?? true;
     preventQueueDuplicates = _p.getBool(_kNoDuplicates) ?? true;
     seekBarShape = _p.getInt(_kSeekShape) ?? 0;
@@ -143,8 +135,6 @@ class SettingsStore extends ChangeNotifier {
     userName = _p.getString(_kUserName) ?? '';
     favoriteArtists = (_p.getStringList(_kFavoriteArtists) ?? const []).toSet();
     artistPickerSeen = _p.getBool(_kArtistPickerSeen) ?? false;
-    cloudEmail = _p.getString(_kCloudEmail) ?? '';
-    cloudUid = _p.getString(_kCloudUid) ?? '';
     _pwVerifier = _p.getString(_kPwVerifier) ?? '';
     _pwSalt = _p.getString(_kPwSalt) ?? '';
     _loaded = true;
@@ -227,11 +217,6 @@ class SettingsStore extends ChangeNotifier {
     await _setInt(_kSpeed, percent);
   }
 
-  Future<void> setSleepTimerMinutes(int v) async {
-    sleepTimerMinutes = v;
-    await _setInt(_kSleep, v);
-  }
-
   Future<void> setAutoRadioQueue(bool v) async {
     autoRadioQueue = v;
     await _setBool(_kAutoRadio, v);
@@ -306,14 +291,6 @@ class SettingsStore extends ChangeNotifier {
   Future<void> setArtistPickerSeen(bool v) async {
     artistPickerSeen = v;
     await _setBool(_kArtistPickerSeen, v);
-  }
-
-  Future<void> setCloudAccount(String uid, String email) async {
-    cloudUid = uid;
-    cloudEmail = email;
-    await _p.setString(_kCloudUid, uid);
-    await _p.setString(_kCloudEmail, email);
-    notifyListeners();
   }
 
   // ── קוד הורים ──────────────────────────────────────────────────────────
