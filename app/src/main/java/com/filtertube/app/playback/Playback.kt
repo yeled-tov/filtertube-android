@@ -9,6 +9,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import com.filtertube.app.data.AccountDataGuard
 import com.filtertube.app.data.ChannelsRepository
+import com.filtertube.app.data.ContentGate
 import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Diagnostics
@@ -52,6 +53,11 @@ object Playback {
 
     /** Add a video after the current item, or remember it for the next session. */
     suspend fun enqueueNext(context: Context, video: Video): Boolean {
+        // ── "הבא בתור" היה הדלת האחורית ────────────────────────────────
+        // כשלא התנגן כלום, הפונקציה הזו לא הוסיפה לתור אלא *התחילה לנגן*.
+        // כלומר שלוש הנקודות שליד פריט אפור ניגנו בדיוק את מה שהלחיצה
+        // עליו לא ניגנה.
+        if (ContentGate.deny(context, video, "הבא בתור")) return false
         val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull()
         if (data == null) {
             synchronized(pendingNext) { pendingNext.removeAll { it.id == video.id }; pendingNext.addLast(video) }
@@ -88,9 +94,14 @@ object Playback {
     }
 
     private suspend fun addPendingNext(context: Context, controller: MediaController) {
-        val requested = synchronized(pendingNext) {
-            val copy = pendingNext.toList(); pendingNext.clear(); copy
-        }.take(10)
+        // הרשימה נבדקת שוב ולא רק בכניסה אליה: בין הרגע שפריט נשמר לבין
+        // הרגע שהוא נכנס לתור ההורה יכול היה להעלות את רמת הסינון.
+        val requested = ContentGate.filter(
+            context,
+            synchronized(pendingNext) {
+                val copy = pendingNext.toList(); pendingNext.clear(); copy
+            },
+        ).take(10)
         if (requested.isEmpty()) return
         val settings = SettingsStore(context)
         for (video in requested) {
@@ -315,6 +326,14 @@ object Playback {
         station: List<Video>,
     ) {
         activeController = c
+        // ── השער, לפני הכל ──────────────────────────────────────────────
+        // כולל לפני הבדיקה של קובץ שכבר הורד: רמת סינון שהורדה אחרי
+        // ההורדה חייבת להשבית גם את מה שכבר על המכשיר, אחרת ההורדה היא
+        // דרך לשמר תוכן מעבר לשינוי בהגדרות.
+        //
+        // זו נקודת האכיפה האחרונה בשרשרת. כל מסך באפליקציה מגיע לכאן,
+        // ולכן מסך שישכח לסנן כבר לא יכול לפתוח פרצה.
+        if (ContentGate.deny(context, video, "ניגון")) return
         // יציאה שקטה כאן נראית למשתמש בדיוק כמו תקלה: המסך נשאר על "טוען..."
         // בלי שום הסבר. רושמים ליומן כדי שהמקרה הזה יהיה ניתן לאבחון.
         val firebaseUser = FirebaseAuth.getInstance().currentUser

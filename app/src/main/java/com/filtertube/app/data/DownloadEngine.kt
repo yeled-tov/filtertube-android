@@ -193,6 +193,12 @@ object DownloadEngine {
         isAudio: Boolean,
         fromMusic: Boolean = false,
     ): Boolean {
+        // ── הרשימה הלבנה לפני הפרימיום ──────────────────────────────────
+        // ההורדה היא הדליפה החמורה מכולן: קובץ שירד יושב על המכשיר, נפתח
+        // מהגלריה, ושורד גם העלאה של רמת הסינון וגם הסרה של הערוץ
+        // מהרשימה. עד עכשיו לא הייתה כאן שום בדיקת חברות — רק בדיקת
+        // פרימיום — והמסכים הם שהיו אמורים למנוע את הלחיצה.
+        if (ContentGate.deny(context, video, "הורדה")) return false
         if (!SettingsStore(context.applicationContext).premiumActive) return false
         val data = runCatching { StreamRepository.getStream(video.id) }.getOrNull() ?: return false
         val v = video.copy(

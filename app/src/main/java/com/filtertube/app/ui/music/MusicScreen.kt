@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import com.filtertube.app.ThemeState
 import com.filtertube.app.ui.theme.MosaicTile
 import com.filtertube.app.ui.theme.Tint
+import com.filtertube.app.ui.theme.unapprovedLook
 import com.filtertube.app.data.Channel
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.FeedCache
@@ -75,11 +76,15 @@ private enum class MusicChip(val label: String) {
 private enum class MusicTab(val label: String, val icon: ImageVector) {
     HOME("בית", Icons.Rounded.Home),
     SEARCH("חיפוש", Icons.Rounded.Search),
-    // ── למה אין כאן "הורדות" ──────────────────────────────────────────
+    // ── למה אין כאן "הורדות" ולמה כבר אין "מיקסים" ────────────────────
     // הורדות הן חלק מהספרייה ולא מקום אחר: זה עדיין "מה ששלי", רק שהוא
     // כבר על המכשיר. לשונית נפרדת אילצה לזכור בשתי רשימות שונות איפה שיר
     // נמצא, וגזלה רבע מסרגל הניווט בשביל הבחנה שאינה מעניינת את המאזין.
-    MIXES("מיקסים", Icons.AutoMirrored.Rounded.QueueMusic),
+    //
+    // המיקסים ירדו מהסרגל מאותה סיבה בדיוק. הם לא מקום — הם הצעה להאזנה,
+    // ומקומה של הצעה הוא במסך הבית, שם ממילא מחפשים מה לשמוע. עכשיו הם
+    // מופיעים גם בבית וגם בספרייה, ושורת הניווט ירדה לשלושה יעדים
+    // אמיתיים: מה חדש, חיפוש, ומה ששלי.
     LIBRARY("ספריה", Icons.Rounded.LibraryMusic),
 }
 
@@ -118,6 +123,19 @@ fun FilterMusicScreen(
     var artists by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var favorites by remember { mutableStateOf<Set<String>>(emptySet()) }
     var downloads by remember { mutableStateOf<List<Video>>(emptyList()) }
+    // הפלייליסטים של הספרייה — כולל אלה שנמשכו מיוטיוב מיוזיק בסנכרון המלא.
+    var playlists by remember { mutableStateOf<List<com.filtertube.app.data.Playlist>>(emptyList()) }
+    // ── הרשימה המאושרת המלאה, ולא רק ערוצי המוזיקה ────────────────────────
+    // פלייליסט מיובא נשמר שלם, כולל שירים מערוצים שלא אושרו, והמסך מאפיר
+    // אותם. מה שקובע אם שיר מתנגן הוא הרשימה הלבנה לרמת הסינון — לא
+    // השאלה אם הערוץ מסווג כמוזיקה, שהיא רק שאלת תצוגה.
+    var approvedAll by remember {
+        mutableStateOf(com.filtertube.app.data.ApprovedChannels(emptyList()))
+    }
+    var requestFor by remember { mutableStateOf<Video?>(null) }
+    // המיקס הפתוח. ברמת המסך ולא בתוך הלשונית, כי אליו נכנסים גם מהבית
+    // וגם מהספרייה, ובשני המקרים זה אותו מסך אוסף בדיוק.
+    var openMix by remember { mutableStateOf<String?>(null) }
     /** null = טרם נבדק. false = אין חיבור. */
     var online by remember { mutableStateOf<Boolean?>(null) }
     // התפריט הוא בדיוק זה של FilterTube, במצב מוזיקה: אותן פעולות, אותה
@@ -134,6 +152,7 @@ fun FilterMusicScreen(
         // ApprovedChannels ולא סט מזהים: שיר שהועלה ע"י ערוץ ה-Topic של אמן
         // מאושר נשא מזהה שאינו ברשימה, ולכן נפל כאן בשקט — הוא לא הוצג אפור
         // אלא פשוט לא הופיע, ו"אהבתי" ב-FilterMusic נראה חסר בלי שום הסבר.
+        approvedAll = com.filtertube.app.data.ApprovedChannels(channels)
         val musicOnlyChannels = channels.filter { it.category in MUSIC_CATEGORIES }
         searchChannels = musicOnlyChannels
         val musicChannels = com.filtertube.app.data.ApprovedChannels(musicOnlyChannels)
@@ -185,6 +204,9 @@ fun FilterMusicScreen(
         downloads = withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching { store.downloads() }.getOrNull().orEmpty()
         }.filter { it.localUri.isNotBlank() }
+        playlists = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { store.playlists() }.getOrNull().orEmpty()
+        }.filter { it.videos.isNotEmpty() }
 
         // ── המיקסים ───────────────────────────────────────────────────────
         // נבנים מהנתונים שכבר בזיכרון, על תהליכון רקע: זו עבודת מיון וסינון
@@ -223,6 +245,17 @@ fun FilterMusicScreen(
         }
     }
 
+    // ── הפלייליסטים שהסנכרון המלא הביא ───────────────────────────────────
+    // הסנכרון רץ מחוץ למסך ויכול להסתיים בזמן שהמשתמש כבר כאן. בלי הרענון
+    // הזה הפלייליסטים היו מופיעים רק ביציאה וכניסה מחדש — כלומר נראים כמו
+    // משיכה שלא עבדה.
+    LaunchedEffect(com.filtertube.app.data.AccountSync.completed) {
+        if (com.filtertube.app.data.AccountSync.completed == 0) return@LaunchedEffect
+        playlists = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { store.playlists() }.getOrNull().orEmpty()
+        }.filter { it.videos.isNotEmpty() }
+    }
+
     // ── זיהוי אופליין ─────────────────────────────────────────────────────
     // בלי חיבור, מסך בית שמנסה לנגן מיוטיוב הוא רק תסכול. הטאב מוחלף
     // אוטומטית להורדות — פעם אחת, כדי לא לחטוף למשתמש את הניווט בכל חזרה
@@ -244,24 +277,53 @@ fun FilterMusicScreen(
                 loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                     CircularProgressIndicator(color = ThemeState.accent)
                 }
+                // מיקס פתוח מכסה את הלשונית שממנה נכנסו אליו — חזרה
+                // מחזירה בדיוק לשם, כי הלשונית עצמה לא זזה.
+                openMix != null -> {
+                    val mix = mixes.firstOrNull { it.id == openMix }
+                    if (mix == null) {
+                        LaunchedEffect(openMix) { openMix = null }
+                    } else {
+                        MusicCollection(
+                            title = mix.title,
+                            songs = mix.songs,
+                            approved = approvedAll,
+                            activeId = activeId,
+                            onPlay = onPlay,
+                            onMenu = { menuFor = it },
+                            onRequest = { requestFor = it },
+                            onBack = { openMix = null },
+                        )
+                    }
+                }
                 tab == MusicTab.HOME -> MusicHome(
-                    feed, likes, history, artists, favorites, activeId, onPlay,
+                    feed, likes, history, artists, favorites, mixes, activeId, onPlay,
                     onOpenArtist = { artist ->
                         val songs = feed.filter { it.channelId == artist.youtubeChannelId }
                         if (songs.isNotEmpty()) onPlay(songs, 0)
                     },
                     onMenu = { menuFor = it },
+                    onOpenMix = { openMix = it },
                 )
-                tab == MusicTab.MIXES -> MusicMixes(mixes, activeId, onPlay, onMenu = { menuFor = it })
                 tab == MusicTab.SEARCH -> MusicSearch(
                     feed + likes + history, searchChannels, activeId, onPlay,
                     onMenu = { menuFor = it },
                 )
                 else -> MusicLibrary(
-                    likes, history, downloads, online, activeId, onPlay,
+                    likes, history, downloads, playlists, mixes, approvedAll, online, activeId, onPlay,
                     onMenu = { menuFor = it },
+                    onRequest = { requestFor = it },
+                    onOpenMix = { openMix = it },
                 )
             }
+        }
+
+        requestFor?.let { target ->
+            com.filtertube.app.ui.ChannelRequestDialog(
+                onDismiss = { requestFor = null },
+                prefillName = target.channelName.ifBlank { target.title },
+                prefillUrl = "https://www.youtube.com/channel/${target.channelId}",
+            )
         }
 
         menuFor?.let { song ->
@@ -359,10 +421,12 @@ private fun MusicHome(
     history: List<Video>,
     artists: List<Channel>,
     favorites: Set<String>,
+    mixes: List<com.filtertube.app.data.Mix>,
     activeId: String?,
     onPlay: (List<Video>, Int) -> Unit,
     onOpenArtist: (Channel) -> Unit,
     onMenu: (Video) -> Unit,
+    onOpenMix: (String) -> Unit,
 ) {
     if (feed.isEmpty() && likes.isEmpty() && history.isEmpty()) {
         EmptyState("עוד אין מוזיקה להציג.\nהפיד מתעדכן מהערוצים המאושרים — נסה שוב בעוד רגע.")
@@ -404,6 +468,33 @@ private fun MusicHome(
                         ),
                         border = null,
                     )
+                }
+            }
+        }
+
+        // ── המיקסים, מיד אחרי השבבים ──────────────────────────────────
+        // הם היו לשונית משלהם, ולשונית היא מקום שצריך להחליט ללכת אליו.
+        // מיקס הוא הצעה, ומקומה של הצעה הוא במסך שאליו נכנסים כדי לבחור
+        // מה לשמוע. שורה אופקית ולא רשת: היא מציגה את ההצעות בלי לדחוק
+        // את "בחירה מהירה" מתחת לקיפול.
+        if (mixes.isNotEmpty()) {
+            item { NavigationTitle("המיקסים שלך", label = "נבנים ממה שאתה שומע") }
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = MusicDim.screenPadding),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    items(mixes, key = { "mix_${it.id}" }) { mix ->
+                        MosaicTile(
+                            title = mix.title,
+                            subtitle = mix.subtitle,
+                            images = mix.songs.map { it.thumbnailUrl },
+                            icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                            tint = ThemeState.accent,
+                            modifier = Modifier.width(150.dp),
+                            onClick = { onOpenMix(mix.id) },
+                        )
+                    }
                 }
             }
         }
@@ -619,88 +710,21 @@ private fun MusicSearch(
     }
 }
 
-// ── מיקסים ───────────────────────────────────────────────────────────────
-/**
- * רשימות ההשמעה שנבנות מהטעם.
- *
- * כל מיקס הוא קובייה שבנויה מהכריכות שבתוכו, ולחיצה עליה פותחת אותו.
- * המיקסים עצמם נבנים ב-MixBuilder; כאן רק התצוגה.
- */
-@Composable
-private fun MusicMixes(
-    mixes: List<com.filtertube.app.data.Mix>,
-    activeId: String?,
-    onPlay: (List<Video>, Int) -> Unit,
-    onMenu: (Video) -> Unit,
-) {
-    var open by remember { mutableStateOf<String?>(null) }
-
-    if (mixes.isEmpty()) {
-        EmptyState(
-            "המיקסים נבנים ממה שתשמע.\nתן לזה כמה שירים והם יופיעו כאן מעצמם.",
-        )
-        return
-    }
-
-    open?.let { id ->
-        val mix = mixes.firstOrNull { it.id == id }
-        if (mix != null) {
-            MusicCollection(
-                title = mix.title,
-                songs = mix.songs,
-                activeId = activeId,
-                onPlay = onPlay,
-                onMenu = onMenu,
-                onBack = { open = null },
-            )
-            return
-        }
-    }
-
-    LazyColumn(
-        contentPadding = PaddingValues(
-            start = MusicDim.screenPadding, end = MusicDim.screenPadding,
-            top = 6.dp, bottom = 24.dp,
-        ),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            Text(
-                "נבנה ממה שאתה שומע — מתעדכן מעצמו",
-                color = ThemeState.subtext,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(bottom = 2.dp),
-            )
-        }
-        items(mixes.chunked(2)) { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                row.forEach { mix ->
-                    MosaicTile(
-                        title = mix.title,
-                        subtitle = mix.subtitle,
-                        images = mix.songs.map { it.thumbnailUrl },
-                        icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                        tint = ThemeState.accent,
-                        modifier = Modifier.weight(1f),
-                        onClick = { open = mix.id },
-                    )
-                }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
-            }
-        }
-    }
-}
-
 // ── ספריה ────────────────────────────────────────────────────────────────
 @Composable
 private fun MusicLibrary(
     likes: List<Video>,
     history: List<Video>,
     downloads: List<Video>,
+    playlists: List<com.filtertube.app.data.Playlist>,
+    mixes: List<com.filtertube.app.data.Mix>,
+    approved: com.filtertube.app.data.ApprovedChannels,
     online: Boolean?,
     activeId: String?,
     onPlay: (List<Video>, Int) -> Unit,
     onMenu: (Video) -> Unit,
+    onRequest: (Video) -> Unit,
+    onOpenMix: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -719,25 +743,46 @@ private fun MusicLibrary(
     // את התמונה המלאה במסך אחד, והכניסה היא החלטה של המשתמש.
     var open by remember { mutableStateOf<String?>(null) }
 
-    if (likes.isEmpty() && recent.isEmpty() && mine.isEmpty() && active.isEmpty()) {
+    if (likes.isEmpty() && recent.isEmpty() && mine.isEmpty() && active.isEmpty() &&
+        playlists.isEmpty() && mixes.isEmpty()
+    ) {
         EmptyState("הספרייה תתמלא ממה שתשמע ותסמן בלב.")
         return
     }
 
-    val collections = listOf(
+    // ── הפלייליסטים כקוביות, בדיוק כמו שאר האוספים ────────────────────────
+    // אלה הפלייליסטים של הספרייה, כולל אלה שנמשכו מיוטיוב מיוזיק בסנכרון
+    // המלא. הם מוצגים כאן ולא רק בספרייה של FilterTube, כי זה המקום שבו
+    // מחפשים אלבום: FilterMusic היא מסך המוזיקה, והפלייליסטים הם מוזיקה.
+    //
+    // הם לא עוברים סינון מוזיקה נוסף בכוונה. כל שיר בהם כבר עבר את הרשימה
+    // הלבנה ברגע הייבוא, וסינון שני לפי קטגוריית הערוץ היה מעלים פלייליסט
+    // שלם רק בגלל שהאמן שלו מסווג אחרת — כלומר בדיוק "משכתי אותם והם לא
+    // נמצאים".
+    val fixed = listOf(
         Triple("שירים שאהבתי", likes, Icons.Rounded.Favorite to Tint.red),
         Triple("ההורדות שלי", mine, Icons.Rounded.Download to Tint.green),
         Triple("הושמע לאחרונה", recent, Icons.Rounded.History to Tint.orange),
     )
+    val taken = fixed.mapTo(HashSet()) { it.first }
+    val collections = fixed + playlists
+        // שם כפול לא רק מבלבל: מסך האוסף נבחר לפי הכותרת, ולכן פלייליסט
+        // בשם "שירים שאהבתי" היה פותח את האוסף הקבוע במקומו.
+        .filterNot { it.name in taken }
+        .map {
+            Triple(it.name, it.videos, Icons.AutoMirrored.Rounded.QueueMusic to Tint.violet)
+        }
 
     open?.let { title ->
         val songs = collections.firstOrNull { it.first == title }?.second.orEmpty()
         MusicCollection(
             title = title,
             songs = songs,
+            approved = approved,
             activeId = activeId,
             onPlay = onPlay,
             onMenu = onMenu,
+            onRequest = onRequest,
             onBack = { open = null },
         )
         return
@@ -802,24 +847,44 @@ private fun MusicLibrary(
             }
         }
 
-        // ── שלוש הקוביות ──────────────────────────────────────────────────
-        items(collections.chunked(2)) { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                row.forEach { (title, songs, look) ->
-                    val (icon, tint) = look
-                    MosaicTile(
-                        title = title,
-                        subtitle = "${songs.size} שירים",
-                        images = songs.map { it.thumbnailUrl },
-                        icon = icon,
-                        tint = tint,
-                        modifier = Modifier.weight(1f),
-                        // גם כשריק: קובייה שנראית לחיצה ולא נלחצת היא תקלה
-                        // בעיני המשתמש. המסך שנפתח יסביר שאין בו כלום.
-                        onClick = { open = title },
-                    )
+        // ── שלוש הקוביות הקבועות ──────────────────────────────────────────
+        items(collections.take(fixed.size).chunked(2)) { row ->
+            TileRow(row) { open = it }
+        }
+
+        // ── ואחריהן הפלייליסטים ───────────────────────────────────────────
+        // כותרת משלהם, ולא רק עוד קוביות באותה ערימה: "אהבתי" ו"הורדות" הם
+        // אוספים שנבנים מאליהם, ופלייליסט הוא משהו שהמשתמש (או החשבון שלו
+        // ביוטיוב מיוזיק) בנה בעצמו. הכותרת גם אומרת בפירוש שהמשיכה עבדה.
+        val imported = collections.drop(fixed.size)
+        if (imported.isNotEmpty()) {
+            item { NavigationTitle("הפלייליסטים שלי", label = "${imported.size}") }
+            items(imported.chunked(2)) { row ->
+                TileRow(row) { open = it }
+            }
+        }
+
+        // ── המיקסים ───────────────────────────────────────────────────────
+        // אותם מיקסים שבמסך הבית, גם כאן. בבית הם הצעה למי שעוד לא יודע
+        // מה לשמוע; בספרייה הם חלק מ"מה שיש לי", לצד האהובים וההורדות.
+        // אותה רשימה בדיוק — לא שני מקומות שיכולים להיפרד.
+        if (mixes.isNotEmpty()) {
+            item { NavigationTitle("המיקסים שלך", label = "${mixes.size}") }
+            items(mixes.chunked(2)) { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    row.forEach { mix ->
+                        MosaicTile(
+                            title = mix.title,
+                            subtitle = mix.subtitle,
+                            images = mix.songs.map { it.thumbnailUrl },
+                            icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                            tint = ThemeState.accent,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onOpenMix(mix.id) },
+                        )
+                    }
+                    if (row.size == 1) Spacer(Modifier.weight(1f))
                 }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
 
@@ -851,14 +916,47 @@ private fun MusicLibrary(
     }
 }
 
+/**
+ * שורה של עד שתי קוביות אוסף.
+ *
+ * מוצא מהרשימה כדי ששתי הקבוצות — הקבועות והפלייליסטים — ייראו זהות לגמרי:
+ * אותו ריווח, אותו גובה ואותה התנהגות בלחיצה. שכפול הקוד היה מבטיח שהן
+ * יתפצלו בעיצוב בפעם הראשונה שמישהו נוגע רק באחת מהן.
+ */
+@Composable
+private fun TileRow(
+    row: List<Triple<String, List<Video>, Pair<ImageVector, Color>>>,
+    onOpen: (String) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        row.forEach { (title, songs, look) ->
+            val (icon, tint) = look
+            MosaicTile(
+                title = title,
+                subtitle = "${songs.size} שירים",
+                images = songs.map { it.thumbnailUrl },
+                icon = icon,
+                tint = tint,
+                modifier = Modifier.weight(1f),
+                // גם כשריק: קובייה שנראית לחיצה ולא נלחצת היא תקלה בעיני
+                // המשתמש. המסך שנפתח יסביר שאין בו כלום.
+                onClick = { onOpen(title) },
+            )
+        }
+        if (row.size == 1) Spacer(Modifier.weight(1f))
+    }
+}
+
 /** אוסף אחד פרוש ככוורת, עם דרך חזרה. */
 @Composable
 private fun MusicCollection(
     title: String,
     songs: List<Video>,
+    approved: com.filtertube.app.data.ApprovedChannels,
     activeId: String?,
     onPlay: (List<Video>, Int) -> Unit,
     onMenu: (Video) -> Unit,
+    onRequest: (Video) -> Unit,
     onBack: () -> Unit,
 ) {
     androidx.activity.compose.BackHandler(onBack = onBack)
@@ -878,19 +976,38 @@ private fun MusicCollection(
             Text("${songs.size}", color = ThemeState.subtext,
                 style = MaterialTheme.typography.bodyMedium)
         }
+        // ── מה מותר לנגן ──────────────────────────────────────────────────
+        // רשימה ריקה פירושה שהרשימה המאושרת עוד לא נטענה, ואז לא מאפירים
+        // כלום: אוסף שלם אפור לרגע בכל כניסה גרוע מלא להאפיר בכלל.
+        fun allowed(song: Video) = approved.isEmpty() || approved.approves(song)
+        val playable = remember(songs, approved) { songs.filter(::allowed) }
+        val greyed = songs.size - playable.size
+
         Row(
             modifier = Modifier.fillMaxWidth()
                 .padding(horizontal = MusicDim.screenPadding, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            BigAction("נגן הכל", Icons.Rounded.PlayArrow, Modifier.weight(1f)) { onPlay(songs, 0) }
+            // ── נגן הכל מנגן רק את המאושרים ────────────────────────────────
+            // זו נקודת האכיפה האמיתית של המסך: האפור הוא הצגה, וכפתור
+            // שמנגן את כל הרשימה היה עוקף אותו בלחיצה אחת.
+            BigAction("נגן הכל", Icons.Rounded.PlayArrow, Modifier.weight(1f)) {
+                if (playable.isNotEmpty()) onPlay(playable, 0)
+            }
             BigAction("ערבוב", Icons.Rounded.Shuffle, Modifier.weight(1f)) {
-                onPlay(songs.shuffled(), 0)
+                if (playable.isNotEmpty()) onPlay(playable.shuffled(), 0)
             }
         }
         if (songs.isEmpty()) {
             EmptyState("עוד אין כאן שירים.")
             return@Column
+        }
+        if (greyed > 0) {
+            Text(
+                "$greyed באפור — מערוצים שלא אושרו. לחיצה עליהם שולחת בקשה להוסיף.",
+                color = ThemeState.subtext2, fontSize = 12.sp, lineHeight = 17.sp,
+                modifier = Modifier.padding(horizontal = MusicDim.screenPadding, vertical = 4.dp),
+            )
         }
         LazyVerticalGrid(
             columns = GridCells.Adaptive(MusicDim.cellMinWidth),
@@ -902,8 +1019,19 @@ private fun MusicCollection(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             items(songs, key = { it.id }) { song ->
-                MusicCell(song, active = song.id == activeId, onMenu = { onMenu(song) }) {
-                    onPlay(songs, songs.indexOf(song))
+                if (allowed(song)) {
+                    MusicCell(song, active = song.id == activeId, onMenu = { onMenu(song) }) {
+                        onPlay(playable, playable.indexOf(song))
+                    }
+                } else {
+                    // אפור אינו דלת: אין מכאן שום מסלול לנגן, והתפריט
+                    // (שמכיל הורדה) לא נפתח על פריט שאינו מאושר.
+                    Box(Modifier.unapprovedLook()) {
+                        MusicCell(
+                            song, active = false,
+                            onMenu = { onRequest(song) },
+                        ) { onRequest(song) }
+                    }
                 }
             }
         }

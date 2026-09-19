@@ -17,7 +17,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.draw.alpha
 import com.filtertube.app.data.ApprovedChannels
 import com.filtertube.app.data.ChannelsRepository
 import com.filtertube.app.data.LibraryBadges
@@ -25,6 +24,7 @@ import com.filtertube.app.data.LibraryStore
 import com.filtertube.app.data.SettingsStore
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.forLevel
+import com.filtertube.app.ui.theme.unapprovedLook
 
 /**
  * אלבום שהמשתמש בנה בעצמו.
@@ -88,7 +88,7 @@ fun PlaylistScreen(name: String, onVideoClick: (Video) -> Unit, onBack: () -> Un
                     if (approved.isEmpty() || approved.approves(v)) {
                         VideoRow(v, onClick = { onVideoClick(v) })
                     } else {
-                        Box(Modifier.alpha(0.45f)) {
+                        Box(Modifier.unapprovedLook()) {
                             VideoRow(v, onClick = { requestFor = v })
                         }
                     }

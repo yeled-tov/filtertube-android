@@ -37,6 +37,7 @@ import com.filtertube.app.data.SubChannel
 import com.filtertube.app.data.Video
 import com.filtertube.app.data.YouTubeRepository
 import com.filtertube.app.data.forLevel
+import com.filtertube.app.ui.theme.unapprovedLook
 
 /**
  * סרגל עליון אחיד עם כפתור חזרה לכל מסכי הפירוט.
@@ -215,7 +216,7 @@ fun CollectionScreen(type: String, onVideoClick: (Video) -> Unit, onBack: () -> 
                 if (ok) {
                     VideoRow(v, onClick = { onVideoClick(v) })
                 } else {
-                    Box(Modifier.alpha(0.45f)) {
+                    Box(Modifier.unapprovedLook()) {
                         VideoRow(v, onClick = { requestFor = v })
                     }
                 }
@@ -410,21 +411,17 @@ private fun SubRow(
     onClick: () -> Unit,
 ) {
     // האפור הוא המסר: הערוץ קיים אצלך ביוטיוב, אבל הוא לא חלק מהאפליקציה.
-    val alpha = if (approved) 1f else 0.45f
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(modifier = Modifier.alpha(alpha)) {
+        Box(modifier = Modifier.unapprovedLook(!approved)) {
             if (sub.thumbnailUrl.isNotEmpty()) {
                 AsyncImage(
                     model = sub.thumbnailUrl,
                     contentDescription = sub.title,
                     modifier = Modifier.size(48.dp).clip(CircleShape).background(ThemeState.divider),
                     contentScale = ContentScale.Crop,
-                    colorFilter = if (approved) null else ColorFilter.colorMatrix(
-                        ColorMatrix().apply { setToSaturation(0f) },
-                    ),
                 )
             } else {
                 Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(channelColor(sub.title)),

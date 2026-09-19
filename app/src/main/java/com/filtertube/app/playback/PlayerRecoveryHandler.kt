@@ -91,11 +91,70 @@ object PlayerRecoveryHandler {
 
         recoveryAttempts[videoId] = Attempts(attempt, now)
 
-        // המנוע שהפיק את הכתובת המתה — כדי לא לבקש ממנו בדיוק אותה כתובת שוב.
-        val failedBy = StreamRepository.getCached(videoId)?.resolvedBy
-
         // תיעוד כשל בבריאות ה-Resolver
         ResolverHealthMonitor.recordFailure("ExoPlayerIO", codeName)
+
+        reresolve(context, player, videoId, pos, attempt, scope)
+    }
+
+    /**
+     * עצירה ארוכה באמצע ניגון — התאוששות בלי שהנגן דיווח על שגיאה בכלל.
+     *
+     * ## למה זה נחוץ בנפרד
+     * ביומן מהמכשיר הופיעו עצירות של 24 ו-39 שניות **בלי שום שורת
+     * PLAYER ERROR לידן**. זה לא פער בתיעוד: ExoPlayer באמת לא נכשל. הוא
+     * ניסה שוב ושוב בשקט, הצליח בסוף, והמשיך — ומבחינתו זה סיפור הצלחה.
+     * מבחינת מי ששומע, זו דקה של שקט.
+     *
+     * [handlePlayerError] לא יכול היה לעזור כאן, כי הוא תלוי בשגיאה שלא
+     * הגיעה. השומר הזה קוצב את הזמן מהכיוון השני: אחרי [STALL_LIMIT_MS]
+     * של המתנה באמצע רצועה, מחלצים כתובת חדשה וממשיכים מאותה שנייה — בלי
+     * לחכות לראות אם הניסיון הנוכחי יצליח בסוף.
+     *
+     * זו הרשת האחרונה ולא ההגנה הראשונה: רוב העצירות נעלמות כבר בשכבת
+     * הרשת (ראה FilterTubeMediaSourceFactory). מה שמגיע לכאן הוא מה שאף
+     * אחת מהשכבות שמתחת לא הצליחה לפתור.
+     */
+    fun handleStall(
+        context: Context,
+        player: Player,
+        stalledMs: Long,
+        scope: CoroutineScope,
+    ) {
+        val videoId = player.currentMediaItem?.mediaId
+        if (videoId.isNullOrBlank()) return
+        val pos = player.currentPosition.coerceAtLeast(0L)
+        val now = System.currentTimeMillis()
+        val previous = recoveryAttempts[videoId]
+            ?.takeIf { now - it.lastAt < ATTEMPT_WINDOW_MS }
+        val attempt = (previous?.count ?: 0) + 1
+
+        Diagnostics.log(
+            "STALL videoId=$videoId ${stalledMs}ms בשנייה ${pos / 1000} — " +
+                "מחלץ כתובת חדשה (ניסיון $attempt)",
+        )
+        if (attempt > MAX_RECOVERY_ATTEMPTS) {
+            // לא מוותרים ולא מדלגים: הנגן עדיין מנסה מצדו, ועצירה אינה
+            // שגיאה. רק מפסיקים להחליף לו את הכתובת מתחת לידיים.
+            Diagnostics.log("STALL videoId=$videoId חרג מ-$MAX_RECOVERY_ATTEMPTS ניסיונות — משאירים לנגן")
+            return
+        }
+        recoveryAttempts[videoId] = Attempts(attempt, now)
+        ResolverHealthMonitor.recordFailure("ExoPlayerStall", "STALL_${stalledMs}ms")
+        reresolve(context, player, videoId, pos, attempt, scope)
+    }
+
+    /** חילוץ כתובת חדשה והחלפתה בנגן, בלי לאבד את מיקום הניגון. */
+    private fun reresolve(
+        context: Context,
+        player: Player,
+        videoId: String,
+        pos: Long,
+        attempt: Int,
+        scope: CoroutineScope,
+    ) {
+        // המנוע שהפיק את הכתובת המתה — כדי לא לבקש ממנו בדיוק אותה כתובת שוב.
+        val failedBy = StreamRepository.getCached(videoId)?.resolvedBy
 
         // חילוץ חדש והחלפה אוטומטית בנגן
         scope.launch(Dispatchers.IO) {

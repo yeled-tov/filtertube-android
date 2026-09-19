@@ -171,11 +171,26 @@ object InnerTube {
      * לאותו פלייליסט; ההבדל הוא בזהות שמציגים — וזה מה שמאפשר למשוך את
      * המוזיקה גם כשההתחברות עם גוגל לא זמינה.
      */
-    suspend fun likedMusic(cookies: String): List<Video> = withContext(Dispatchers.IO) {
+    suspend fun likedMusic(cookies: String): List<Video> =
+        musicBrowse(cookies, "FEmusic_liked_videos", "מוזיקה שאהבתי")
+            ?.let { collectVideos(it) }.orEmpty()
+
+    /**
+     * דפדוף אחד מול יוטיוב מיוזיק, עם אותן עוגיות.
+     *
+     * הוצא מ-[likedMusic] כדי שכל קריאה למיוזיק תעבור באותו מקום: אותו
+     * לקוח, אותן כותרות, ואותה שורת יומן כשמשהו נכשל. הוספת יעד חדש היא
+     * עכשיו שורה אחת, ולא העתקה של שלושים.
+     */
+    private suspend fun musicBrowse(
+        cookies: String,
+        browseId: String,
+        label: String,
+    ): JSONObject? = withContext(Dispatchers.IO) {
         val musicOrigin = "https://music.youtube.com"
-        val auth = authHeader(cookies, musicOrigin) ?: return@withContext emptyList()
+        val auth = authHeader(cookies, musicOrigin) ?: return@withContext null
         val body = JSONObject().apply {
-            put("browseId", "FEmusic_liked_videos")
+            put("browseId", browseId)
             put(
                 "context",
                 JSONObject().put(
@@ -205,14 +220,86 @@ object InnerTube {
             http.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) {
                     val why = resp.body?.string().orEmpty().take(160)
-                    Diagnostics.log("YT MUSIC (עוגיות): HTTP ${resp.code} · $why")
-                    return@use emptyList()
+                    Diagnostics.log("YT MUSIC ($label): HTTP ${resp.code} · $why")
+                    return@use null
                 }
-                resp.body?.string()?.let { collectVideos(JSONObject(it)) }.orEmpty()
+                resp.body?.string()?.let { JSONObject(it) }
             }
         }.getOrElse {
-            Diagnostics.log("YT MUSIC (עוגיות): נכשל — ${it.message}")
-            emptyList()
+            Diagnostics.log("YT MUSIC ($label): נכשל — ${it.message}")
+            null
+        }
+    }
+
+    /** פלייליסט של המשתמש ביוטיוב מיוזיק, כפי שהוא מופיע בספרייה שלו. */
+    data class MusicPlaylist(val id: String, val title: String)
+
+    /**
+     * כל הפלייליסטים שבספריית יוטיוב מיוזיק של המשתמש.
+     *
+     * ## למה לא ספרייה חיצונית
+     * ytmusicapi היא ספריית Python, ואי אפשר להריץ אותה באפליקציית אנדרואיד.
+     * מה שהיא עושה בפועל הוא בדיוק מה שנעשה כאן: קריאה ל-API הפנימי של
+     * יוטיוב מיוזיק (youtubei/v1/browse) עם העוגיות של המשתמש. אותו מסלול,
+     * בלי שכבה נוספת שצריך לעדכן.
+     *
+     * ## יציבות
+     * הפענוח לא מחפש שמות של רכיבים אלא עובר על כל התשובה ומחפש צומת שיש בו
+     * גם מזהה פלייליסט וגם כותרת — בדיוק כמו [collectVideos]. שינוי פריסה
+     * אצל יוטיוב לא שובר את זה, וזה מה שכבר הציל כאן את "אהבתי" ואת המנויים
+     * כשהפריסות שלהם התחלפו.
+     */
+    suspend fun musicPlaylists(cookies: String): List<MusicPlaylist> {
+        val root = musicBrowse(cookies, "FEmusic_liked_playlists", "פלייליסטים") ?: return emptyList()
+        val found = LinkedHashMap<String, String>()
+        walkAll(root) { node ->
+            val id = playlistIdOf(node) ?: return@walkAll
+            if (found.containsKey(id)) return@walkAll
+            // titleIn היא אותה חילוץ כותרת שמשמש את הסרטונים, כולל הפריסה
+            // החדשה ואת העמודות של מיוזיק — אין סיבה לכתוב שנייה.
+            val title = titleIn(node) ?: return@walkAll
+            found[id] = title
+        }
+        // "אהבתי" ו"הורדות" הם תצוגות מובנות של יוטיוב ולא פלייליסטים
+        // שהמשתמש בנה; הם כבר מיוצגים במקום אחר באפליקציה.
+        val skip = setOf("LM", "SE")
+        return found.entries
+            .filterNot { it.key in skip }
+            .map { MusicPlaylist(it.key, it.value) }
+    }
+
+    /**
+     * התוכן של פלייליסט אחד.
+     *
+     * הקידומת VL היא מה שהופך מזהה פלייליסט למזהה דפדוף — אותו דבר בדיוק
+     * שנעשה ב-[likedVideos] עם VLLL.
+     */
+    suspend fun playlistItems(cookies: String, playlistId: String): List<Video> {
+        val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
+        val root = musicBrowse(cookies, browseId, "פלייליסט $playlistId") ?: return emptyList()
+        return collectVideos(root)
+    }
+
+    /**
+     * מזהה פלייליסט מתוך צומת, בלי להסתמך על שם הרכיב שמכיל אותו.
+     *
+     * מזהי פלייליסט מתחילים ב-PL/VL/OLAK/RDCLAK, או מגיעים כ-browseId
+     * שמתחיל ב-VL. שם השדה משתנה בין פריסות; הצורה של המזהה לא.
+     */
+    private fun playlistIdOf(node: JSONObject): String? {
+        val candidates = listOfNotNull(
+            node.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("browseEndpoint")?.optString("browseId"),
+            node.optJSONObject("browseEndpoint")?.optString("browseId"),
+            node.optString("playlistId").takeIf { it.isNotBlank() },
+        )
+        return candidates.firstNotNullOfOrNull { raw ->
+            val id = raw.removePrefix("VL")
+            id.takeIf {
+                it.length in 2..64 &&
+                    (it.startsWith("PL") || it.startsWith("OLAK") || it.startsWith("RDCLAK") ||
+                        it == "LM" || it == "SE")
+            }
         }
     }
 
